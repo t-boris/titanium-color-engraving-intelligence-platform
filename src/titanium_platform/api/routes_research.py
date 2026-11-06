@@ -19,6 +19,7 @@ class SessionIn(BaseModel):
 
 class MessageIn(BaseModel):
     message: str
+    advisory: bool = False
 
 
 class TestIn(BaseModel):
@@ -28,6 +29,10 @@ class TestIn(BaseModel):
 
 class ReplaceTestIn(TestIn):
     plan_id: int
+
+
+class ConfirmProposalIn(BaseModel):
+    replace_plan_id: int | None = None
 
 
 class CancelTestIn(BaseModel):
@@ -83,6 +88,11 @@ def preview_test(session_id: int, body: TestIn, request: Request):
     return research.preview_plate(store_of(request), session_id, body.test_type, body.settings)
 
 
+@router.post("/sessions/{session_id}/proposals/{message_id}/{trace_index}/create", status_code=201)
+def create_proposal(session_id: int, message_id: int, trace_index: int, body: ConfirmProposalIn, request: Request):
+    return research.create_proposed_plate(store_of(request), session_id, message_id, trace_index, replace_plan_id=body.replace_plan_id)
+
+
 @router.post("/sessions/{session_id}/tests", status_code=201)
 def create_test(session_id: int, body: TestIn, request: Request):
     return research.create_plate(store_of(request), session_id, body.test_type, body.settings)
@@ -117,4 +127,4 @@ def save_insight(session_id: int, body: InsightIn, request: Request):
 
 @router.post("/sessions/{session_id}/messages")
 def chat(session_id: int, body: MessageIn, request: Request):
-    return research.answer(store_of(request), session_id, body.message)
+    return research.answer(store_of(request), session_id, body.message, advisory=body.advisory)

@@ -125,7 +125,7 @@ def test_evidence_and_insight_are_scoped_to_exact_hardware_and_accepted_photo(st
         research.save_insight(store, session["id"], "text", "Готовый режим для работы.", "confirmed", [accepted[0]])
 
 
-def test_ai_uses_bounded_local_tools_and_persists_evidence_trace(store):
+def test_ai_previews_a_test_and_creation_requires_a_separate_idempotent_action(store):
     laser, _, material = hardware(store)
     session = research.create_session(store, laser["id"], material["id"], "line", "найти непрерывную линию")
 
@@ -138,18 +138,23 @@ def test_ai_uses_bounded_local_tools_and_persists_evidence_trace(store):
             assert kwargs["model"] == "gpt-6.1-sol"
             assert kwargs["store"] is False
             if self.calls == 1:
-                return SimpleNamespace(output=[SimpleNamespace(type="function_call", name="create_test",
+                assert not any(spec["name"] in {"create_test", "replace_pending_test"} for spec in kwargs["tools"])
+                return SimpleNamespace(output=[SimpleNamespace(type="function_call", name="preview_test",
                     arguments=json.dumps({"test_type": "line_resolution", "settings": JOB}), call_id="call-1")], output_text="")
             assert any(item.get("type") == "function_call_output" for item in kwargs["input"] if isinstance(item, dict))
-            return SimpleNamespace(output=[], output_text="Плата создана. После гравировки добавьте RAW-фото.")
+            return SimpleNamespace(output=[], output_text="Предлагаю тест линий; подтвердите создание отдельно.")
 
     result = research.answer(store, session["id"], "Создай тест разрешения линий", client=SimpleNamespace(responses=FakeResponses()))
-    assert result["tool_trace"][0]["result"]["plan_id"]
-    assert result["session"]["messages"][-1]["role"] == "assistant"
-    assert result["session"]["plans"][0]["id"] == result["tool_trace"][0]["result"]["plan_id"]
+    proposal = result["tool_trace"][0]["result"]
+    assert proposal["context_signature"] and proposal["summary"]["size_mm"] and proposal["time_estimate"] is None
+    assert not result["session"]["plans"]
+    message = result["session"]["messages"][-1]
+    made = research.create_proposed_plate(store, session["id"], message["id"], 0)
+    assert research.create_proposed_plate(store, session["id"], message["id"], 0) == made
+    assert [p["id"] for p in research.get_session(store, session["id"])["plans"]] == [made["plan_id"]]
 
 
-def test_ai_keeps_created_plate_when_followup_response_fails(store):
+def test_ai_cannot_create_a_plate_by_calling_a_forbidden_tool(store):
     laser, _, material = hardware(store)
     session = research.create_session(store, laser["id"], material["id"], "line", "найти непрерывную линию")
 
@@ -161,13 +166,109 @@ def test_ai_keeps_created_plate_when_followup_response_fails(store):
             if self.calls == 1:
                 return SimpleNamespace(output=[SimpleNamespace(type="function_call", name="create_test",
                     arguments=json.dumps({"test_type": "line_resolution", "settings": JOB}), call_id="call-1")], output_text="")
-            raise RuntimeError("provider became unavailable")
+            assert not kwargs["input"][-1]["output"].startswith('{"ok": true')
+            return SimpleNamespace(output=[], output_text="Потребуется отдельное подтверждение.")
 
     result = research.answer(store, session["id"], "Создай тест разрешения линий",
                              client=SimpleNamespace(responses=FailingResponses()))
-    assert "Плата №" in result["text"]
-    assert len(result["session"]["plans"]) == 1
-    assert result["session"]["messages"][-1]["tool_trace"][0]["tool"] == "create_test"
+    assert not result["session"]["plans"]
+    assert "отдельного действия" in result["tool_trace"][0]["error"]
+
+
+def test_proposal_cannot_be_created_after_its_context_changes(store):
+    laser, _, material = hardware(store)
+    session = research.create_session(store, laser["id"], material["id"], "line", "найти непрерывную линию")
+    args = {"test_type": "line_resolution", "settings": JOB}
+    preview = research.preview_plate(store, session["id"], **args)
+    research._save_exchange(store, session["id"], "Предложи тест", "Предложение", [{"tool": "preview_test", "arguments": args, "result": preview}])
+    message = research.get_session(store, session["id"])["messages"][-1]
+    store.execute("UPDATE research_session SET target=? WHERE id=?", ("Другая цель", session["id"]))
+    with pytest.raises(research.ResearchError, match="контекст исследования изменился"):
+        research.create_proposed_plate(store, session["id"], message["id"], 0)
+    assert not research.get_session(store, session["id"])["plans"]
+
+
+def test_concurrent_retries_of_the_same_proposal_create_only_one_plate(store):
+    from concurrent.futures import ThreadPoolExecutor
+
+    laser, _, material = hardware(store)
+    session = research.create_session(store, laser["id"], material["id"], "line", "найти непрерывную линию")
+    args = {"test_type": "line_resolution", "settings": JOB}
+    preview = research.preview_plate(store, session["id"], **args)
+    research._save_exchange(store, session["id"], "Предложи тест", "Предложение", [{"tool": "preview_test", "arguments": args, "result": preview}])
+    message = research.get_session(store, session["id"])["messages"][-1]
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        made = list(pool.map(lambda _: research.create_proposed_plate(store, session["id"], message["id"], 0), range(2)))
+    assert made[0]["plan_id"] == made[1]["plan_id"]
+    reloaded = research.get_session(store, session["id"])
+    assert len(reloaded["plans"]) == 1 and reloaded["messages"][-1]["tool_trace"][0]["created_plan"]["plan_id"] == made[0]["plan_id"]
+
+
+def test_changed_marker_settings_require_a_fresh_preview(store):
+    laser, _, material = hardware(store)
+    session = research.create_session(store, laser["id"], material["id"], "line", "найти непрерывную линию")
+    args = {"test_type": "line_resolution", "settings": JOB}
+    preview = research.preview_plate(store, session["id"], **args)
+    research._save_exchange(store, session["id"], "Предложи тест", "Предложение", [{"tool": "preview_test", "arguments": args, "result": preview}])
+    message_id = research.get_session(store, session["id"])["messages"][-1]["id"]
+    plans.save_marker_layer_settings(store, 35, 60, 150, pulse_width=200, line_interval=0.01, passes=1)
+    with pytest.raises(research.ResearchError, match="настройки или размер"):
+        research.create_proposed_plate(store, session["id"], message_id, 0)
+    assert not research.get_session(store, session["id"])["plans"]
+
+
+def test_pending_plate_is_replaced_only_by_the_separate_confirmed_action(store):
+    laser, _, material = hardware(store)
+    session = research.create_session(store, laser["id"], material["id"], "line", "найти непрерывную линию")
+    old = research.create_plate(store, session["id"], "line_resolution", JOB)
+    args = {"test_type": "line_resolution", "settings": JOB}
+    preview = research.preview_plate(store, session["id"], **args)
+    assert preview["pending_plan_id"] == old["plan_id"] and preview["pending_replaceable"]
+    research._save_exchange(store, session["id"], "Предложи замену", "Предложение", [{"tool": "preview_test", "arguments": args, "result": preview}])
+    message_id = research.get_session(store, session["id"])["messages"][-1]["id"]
+    with pytest.raises(research.ResearchError, match="отдельная проверка"):
+        research.create_proposed_plate(store, session["id"], message_id, 0)
+    made = research.create_proposed_plate(store, session["id"], message_id, 0, replace_plan_id=old["plan_id"])
+    assert made["replaced_plan_id"] == old["plan_id"]
+    assert store.one("SELECT status FROM plan WHERE id=?", (old["plan_id"],))["status"] == "Superseded"
+    assert research.create_proposed_plate(store, session["id"], message_id, 0, replace_plan_id=old["plan_id"]) == made
+
+
+def test_advisory_actions_cannot_write_even_if_the_model_requests_it(store):
+    laser, _, material = hardware(store)
+    session = research.create_session(store, laser["id"], material["id"], "line", "найти непрерывную линию")
+
+    class Responses:
+        calls = 0
+
+        def create(self, **kwargs):
+            self.calls += 1
+            assert not {"create_test", "replace_pending_test", "cancel_pending_test", "run_photo_mapping", "save_research_insight"} & {t["name"] for t in kwargs["tools"]}
+            if self.calls == 1:
+                return SimpleNamespace(output=[SimpleNamespace(type="function_call", name="save_research_insight",
+                    arguments=json.dumps({"purpose": "line", "claim": "Достаточно длинный вывод", "confidence": "hypothesis", "evidence_pair_ids": [1]}), call_id="x")], output_text="")
+            return SimpleNamespace(output=[], output_text="Это только объяснение.")
+
+    result = research.answer(store, session["id"], "Объясни результат", client=SimpleNamespace(responses=Responses()), advisory=True)
+    assert result["tool_trace"][0].get("error") and not result["session"]["insights"] and not result["session"]["plans"]
+
+
+def test_confirm_proposal_route_survives_retry_and_preserves_the_link(tmp_path):
+    app = create_app(tmp_path / "data")
+    with TestClient(app) as client:
+        store = app.state.store
+        laser, _, material = hardware(store)
+        session = research.create_session(store, laser["id"], material["id"], "line", "найти непрерывную линию")
+        args = {"test_type": "line_resolution", "settings": JOB}
+        preview = research.preview_plate(store, session["id"], **args)
+        research._save_exchange(store, session["id"], "Предложи тест", "Предложение", [{"tool": "preview_test", "arguments": args, "result": preview}])
+        message_id = research.get_session(store, session["id"])["messages"][-1]["id"]
+        path = f"/api/research/sessions/{session['id']}/proposals/{message_id}/0/create"
+        first = client.post(path, json={})
+        retry = client.post(path, json={})
+        assert first.status_code == retry.status_code == 201 and first.json()["plan_id"] == retry.json()["plan_id"]
+        loaded = client.get(f"/api/research/sessions/{session['id']}").json()
+        assert loaded["messages"][-1]["tool_trace"][0]["created_plan"]["plan_url"] == first.json()["plan_url"]
 
 
 def test_ai_reports_invalid_tool_arguments_without_losing_the_chat(store):

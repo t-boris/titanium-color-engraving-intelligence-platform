@@ -7,6 +7,7 @@ Photographic measurements remain in the ingestion pipeline and are never invente
 from __future__ import annotations
 
 import importlib.util
+import hashlib
 import json
 import os
 import re
@@ -230,6 +231,13 @@ def next_test(store: Store, session_id: int) -> dict:
     return application_guide.suggest(store, session["device_id"], session["material_id"], session["goal"])
 
 
+def _proposal_signature(store: Store, session_id: int) -> str:
+    """The physical setup and evidence a proposal was based on; chat-memory updates do not invalidate it."""
+    snapshot = context(store, session_id)
+    snapshot.pop("working_memory", None)
+    return hashlib.sha256(json.dumps(snapshot, sort_keys=True, ensure_ascii=False, default=str).encode()).hexdigest()
+
+
 def preview_plate(store: Store, session_id: int, test_type: str, settings: dict | None = None) -> dict:
     session, device, _ = _scope(store, session_id)
     if session["goal"] in {"deep", "relief_3d", "cutting"}:
@@ -237,14 +245,63 @@ def preview_plate(store: Store, session_id: int, test_type: str, settings: dict 
                             "поверхностный фототест не проверяет эту цель")
     if not device.get("lens") or device["lens"]["id"] != session["lens_id"]:
         raise ResearchError("установленная линза изменилась; создайте новое исследование для новой пары лазер–линза")
-    prepared = capability_plates.preview(store, session["device_id"], session["material_id"], test_type, settings or {})
+    values = {**(settings or {}), "research_goal": session["goal"], "research_session_id": session_id}
+    prepared = capability_plates.preview(store, session["device_id"], session["material_id"], test_type, values)
+    pending = _pending_plate(store, session_id)
     return {"test_type": test_type, "name": prepared["experiment"]["test_name"],
             "summary": prepared["experiment"]["summary"],
             "test_settings": prepared["experiment"]["test_settings"],
             "cleanup_settings": prepared["experiment"]["cleanup_settings"],
             "label_settings": prepared["experiment"]["label_settings"],
             "output_layers": len(prepared["layers"]) + 2,
-            "description": prepared["experiment"]["test_description"]}
+            "description": prepared["experiment"]["test_description"],
+            "context_signature": _proposal_signature(store, session_id),
+            "pending_plan_id": pending["id"] if pending else None,
+            "pending_replaceable": bool(pending and not pending["photo_count"]),
+            "time_estimate": None, "time_unavailable_reason": "Для этой платы оценка времени ещё не рассчитана."}
+
+
+def create_proposed_plate(store: Store, session_id: int, message_id: int, trace_index: int, *, replace_plan_id: int | None = None) -> dict:
+    """Commit the exact saved preview once, with a fresh context check in the same transaction."""
+    if trace_index < 0:
+        raise ResearchError("предложение не найдено")
+    with store.transaction():
+        session, _, _ = _scope(store, session_id)
+        row = store.one("SELECT tool_trace_json FROM research_message WHERE id=? AND session_id=? AND role='assistant'",
+                        (message_id, session_id))
+        if row is None:
+            raise ResearchError("сообщение с предложением не найдено")
+        trace = json.loads(row["tool_trace_json"])
+        if trace_index >= len(trace):
+            raise ResearchError("предложение не найдено")
+        item = trace[trace_index]
+        if item.get("tool") != "preview_test" or not item.get("result", {}).get("context_signature"):
+            raise ResearchError("это сообщение не содержит подтверждённого предложения")
+        if item.get("created_plan"):
+            return item["created_plan"]
+        if item["result"]["context_signature"] != _proposal_signature(store, session_id):
+            raise ResearchError("контекст исследования изменился; запросите новый предпросмотр теста")
+        pending = _pending_plate(store, session_id)
+        if pending and (replace_plan_id != pending["id"] or pending["photo_count"]):
+            raise ResearchError(f"плата №{pending['id']} уже ожидает гравировку и фото; для замены нужна отдельная проверка")
+        if replace_plan_id is not None and (not pending or pending["id"] != replace_plan_id):
+            raise ResearchError("выбранная для замены плата больше не ожидает гравировку")
+        args = item.get("arguments") or {}
+        test_type, settings = args["test_type"], args.get("settings") or {}
+        current_preview = preview_plate(store, session_id, test_type, settings)
+        checked = ("test_type", "summary", "test_settings", "cleanup_settings", "label_settings", "description")
+        if any(current_preview.get(key) != item["result"].get(key) for key in checked):
+            raise ResearchError("настройки или размер предложенной платы изменились; запросите новый предпросмотр")
+        values = {**settings, "research_goal": session["goal"], "research_session_id": session_id}
+        prepared = capability_plates.preview(store, session["device_id"], session["material_id"], test_type, values)
+        plate = capability_plates._persist_prepared(store, prepared, session["device_id"], session["material_id"], test_type,
+                                                   research_session_id=session_id, supersede_plan_id=replace_plan_id)
+        result = {**plate, "plan_url": f"#/plans/{plate['plan_id']}",
+                  "download_url": f"/api/plans/{plate['plan_id']}/export.lbrn2", "replaced_plan_id": replace_plan_id}
+        item["created_plan"] = result
+        store.execute("UPDATE research_message SET tool_trace_json=? WHERE id=?", (_json(trace), message_id))
+        store.audit("research_plate_created", session_id=session_id, plan_id=plate["plan_id"], proposal_message_id=message_id)
+        return result
 
 
 def _pending_plate(store: Store, session_id: int):
@@ -594,9 +651,8 @@ working_memory — конспект прошлых решений и гипот�
 matrix.geometry="vector_text", осями speed и wobble_size (ноль выключает wobble) и matrix.wobble_step.
 Этот тип делает одинаковые A8M B012 высотой 2 и 4 мм дважды в каждой ячейке, режим LightBurn Cut.
 text_readability перебирает только мощность × скорость. Сначала проверь файл через preview_test.
-Создавай плату только по явной просьбе пользователя. Не создавай более одной платы за ответ.
-Если пользователь просит переделать ожидающую плату без фото, используй replace_pending_test:
-старая останется в истории как заменённая, новая появится в той же сессии. Не проси ручной отмены.
+Не создавай и не заменяй плату из разговора. Покажи проверенный preview_test и объясни, что оператор
+может отдельно нажать «Создать тест» под предложением. Если уже есть ожидающая плата, назови её.
 Если пользователь просит только отменить ожидающую плату, используй cancel_pending_test.
 Если к плате уже привязано фото, не заменяй и не отменяй её автоматически.
 Не запускай лазер. Пользователь гравирует, загружает RAW, проверяет совмещение и принимает измерения.
@@ -670,7 +726,7 @@ def _interrupted_after_write(store: Store, session_id: int, question: str, trace
             "session": get_session(store, session_id)}
 
 
-def answer(store: Store, session_id: int, message: str, client=None) -> dict:
+def answer(store: Store, session_id: int, message: str, client=None, *, advisory: bool = False) -> dict:
     """One bounded Responses tool loop, persisting the conversation and tool evidence locally."""
     text = str(message or "").strip()
     if not 2 <= len(text) <= 4000:
@@ -704,6 +760,10 @@ def answer(store: Store, session_id: int, message: str, client=None) -> dict:
     input_items: list[Any] = [*history, {"role": "user", "content": text}]
     scope = context(store, session_id)
     instructions = INSTRUCTIONS + "\nКонтекст на начало ответа:\n" + _json(scope)[:45000]
+    blocked_tools = {"create_test", "replace_pending_test"}
+    if advisory:
+        blocked_tools |= {"cancel_pending_test", "run_photo_mapping", "save_research_insight"}
+        instructions += "\nЭто консультация: только читай данные, не изменяй и не сохраняй никакие предметные объекты."
     trace: list[dict] = []
     created = False
     response = None
@@ -711,7 +771,7 @@ def answer(store: Store, session_id: int, message: str, client=None) -> dict:
         for _ in range(MAX_TOOL_CALLS + 1):
             response = client.responses.create(model=session["model"], reasoning={"effort": "medium"},
                                                instructions=instructions, input=input_items,
-                                               tools=TOOL_SPECS, parallel_tool_calls=False,
+                                               tools=[s for s in TOOL_SPECS if s["name"] not in blocked_tools], parallel_tool_calls=False,
                                                max_output_tokens=2400, store=False)
             calls = [item for item in response.output if getattr(item, "type", None) == "function_call"]
             if not calls:
@@ -721,6 +781,8 @@ def answer(store: Store, session_id: int, message: str, client=None) -> dict:
                 args: dict = {}
                 try:
                     args = json.loads(item.arguments or "{}")
+                    if item.name in blocked_tools:
+                        raise ResearchError("это действие недоступно в консультации или требует отдельного действия оператора; сначала покажите preview_test")
                     result = call_tool(store, session_id, item.name, args, allow_create=not created)
                     if item.name in {"create_test", "replace_pending_test"}:
                         created = True
