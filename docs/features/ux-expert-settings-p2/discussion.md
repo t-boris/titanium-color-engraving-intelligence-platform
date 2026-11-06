@@ -109,3 +109,7 @@ The prior coarse-pointer sizing applied under main, but dialogs are body-level s
 ### Implementation · 2026-11-06
 
 MarkView browser first-run light-study scenario on a new disposable 0.40.0 workshop: vector and photo-engraving empty states opened. Created synthetic laser/lens/stock only in that workshop, selected a synthetic 64×64 PNG in New work, reviewed the four generated previews, chose Color regions and reached settings. With no measurements the UI explained the missing measurements and disabled Create work. Back returned to the result step with Color regions still selected and all four images loaded. No work or measurement was created and no operator timing, physical engraving, export or tablet test is claimed.
+
+### Implementation · 2026-11-06
+
+After the operator removed delivery blocks, opened PR #35 and enabled the previously disabled CI workflow for the requested checks. Additional domain regression selection passed 16 tests covering stored picture through scale/width/undo, palettes, exported-file and measurement history, delayed preview responses and preview/export smoothness. Physical workshop-lighting/tablet comparison remains pending and the light theme remains research-only.
