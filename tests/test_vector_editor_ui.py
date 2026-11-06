@@ -242,7 +242,7 @@ def test_the_picture_is_painted_in_titanium_and_the_panel_shows_layers_colours_t
     assert set(classes) == {"e11", "e12", "e13", "e14"} and "as-shot" in classes["e14"] and "not-auto" in classes["e14"] and "as-shot" not in classes["e11"]
     assert all(re.search(r"(ΔE [\d.]+ · )?([\d.]+ с/см²|не оценено)", title) for _, _, title in out["palette"])
     text = out["text"]
-    for part in ("Разбиение", "Цвета", "AI", "Файл", "Файл LightBurn", "Слоёв 3 из 29 · время слоёв цвета 2 мин 05 с · средний ΔE 3.10", "Слои титана",
+    for part in ("Разбиение", "Цвета", "AI", "Файл", "LightBurn file", "Слоёв 3 из 29 · время слоёв цвета 2 мин 05 с · средний ΔE 3.10", "Слои титана",
                  "Исходные цвета", "вне допуска", "Показать далёкие от оригинала", "C01", "2.00 см² · областей 2 · 1 с", "№ 2", "ΔE 17.70",
                  "Дальше допуска ΔE 3: цветов 1, областей 2 (25.0 % площади)", "Палитра: 4", "на разбиении № 0", "Авто",
                  "2 из 3 слоёв: цвет при длине их строк (↔) не измерен"):
@@ -251,9 +251,9 @@ def test_the_picture_is_painted_in_titanium_and_the_panel_shows_layers_colours_t
                            ["↔ 40.0 мм", "vw-rows warn vw-bad", "строки 40.0 мм: цвет рецепта измерен при 4.4 мм, при такой длине — нет; на титане может выйти другим"],
                            ["↔ 30.0 мм", "vw-rows warn vw-bad", "строки 30.0 мм: цвет взят между измерениями при 20.0 и 50.0 мм"]]
     strip, *folds = out["details"]                                  # the first fold is the strip under the head: the path of the file and the forecast (ux-accessible-layout-p0)
-    assert strip.startswith("Путь файла и прогноз")
+    assert strip.startswith("File lifecycle and prediction")
     assert folds[0].startswith("Important regions: faces, eyes, lips") and "Подробно по цветам…" in text                   # the wide table is a window
-    assert folds[1:] == ["Полный рецепт и слои (4)", "Прежние файлы", "Параметры работы",                              # the file tab folds its long parts (the recipe and
+    assert folds[1:] == ["Полный рецепт и слои (4)", "Previous files", "Параметры работы",                              # the file tab folds its long parts (the recipe and
                          "2 из 3 слоёв: цвет при длине их строк (↔) не измерен"]                                      # the files made before), the layers why their sizes matter
     assert out["renders"] == 0
 

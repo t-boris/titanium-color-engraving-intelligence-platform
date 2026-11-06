@@ -313,14 +313,14 @@ def test_a_plate_shows_the_path_of_its_file_and_one_download_action_that_reloads
   const chain = tree.querySelectorAll('div').find((d) => has(d, 'ep-chain'));
   out.chain = chain.querySelectorAll('li').map((li) => li.querySelector('.lc-name').textContent + li.querySelector('.lc-word').textContent);
   const side = tree.querySelectorAll('aside').find((s) => has(s, 'ep-side'));
-  const button = byText(side, 'button', 'Скачать LightBurn');
+  const button = byText(side, 'button', 'Download LightBurn');
   out.disabled = button.disabled; out.side = side.textContent;
   out.folds = side.querySelectorAll('summary').map((x) => x.textContent);
   await button.dispatch('click'); await tick();
   out.requests = ctx.requests.map((r) => r.path).filter((p) => p.includes('export')); out.saved = saved; out.renders = ctx.__renders || 0;
 """)
-    assert out["chain"] == ["Подготовлено (выполнено)", "Файл получен (сейчас)", "Результат добавлен (впереди)", "Проверено (впереди)"]
-    assert out["disabled"] is False and "Файл LightBurn: готов к выгрузке" in out["side"] and out["folds"] == ["Прежние файлы (1)"]
+    assert out["chain"] == ["Prepared (done)", "File downloaded (current)", "Result added (upcoming)", "Verified (upcoming)"]
+    assert out["disabled"] is False and "LightBurn file: ready to export" in out["side"] and out["folds"] == ["Previous files (1)"]
     assert out["requests"] == ["/api/plans/22/export.lbrn2"] and out["saved"] == [["blob:x", "plate.lbrn2"]] and out["renders"] == 1
 
 
@@ -330,10 +330,10 @@ def test_a_plate_that_cannot_be_exported_says_why_and_keeps_the_action_off_inste
     routes["/api/plans/22/lifecycle"] = {"status": 200, "json": lifecycle("prepared", kind="plain", plan_id=22, ready=False, layers=None, blockers=[{"code": "draft"}])}
     out = run(tmp_path, routes, "plan-22", """
   const side = tree.querySelectorAll('aside').find((s) => has(s, 'ep-side'));
-  const button = byText(side, 'button', 'Скачать LightBurn');
+  const button = byText(side, 'button', 'Download LightBurn');
   out.disabled = button.disabled; out.side = side.textContent;
 """)
-    assert out["disabled"] is True and "Файл LightBurn: пока нельзя" in out["side"] and "План — черновик: завершите преобразование" in out["side"]
+    assert out["disabled"] is True and "LightBurn file: not ready" in out["side"] and "The plan is a draft. Complete conversion" in out["side"]
 
 
 @node
@@ -343,10 +343,10 @@ def test_the_chain_of_an_experiment_offers_the_action_of_its_stage_and_the_compa
     out = run(tmp_path, routes, "plan-5", """
   const chain = tree.querySelectorAll('div').find((d) => has(d, 'ep-chain'));
   out.buttons = chain.querySelectorAll('button').map((b) => b.textContent);
-  await byText(chain, 'button', 'Сравнить с ожиданием').dispatch('click'); await tick();
+  await byText(chain, 'button', 'Compare with expected').dispatch('click'); await tick();
   out.shown = shownPanels(tree);
 """)
-    assert out["buttons"] == ["Сравнить с ожиданием"] and out["shown"] == ["ep-tab-panel-result"]
+    assert out["buttons"] == ["Compare with expected"] and out["shown"] == ["ep-tab-panel-result"]
 
 
 @node
@@ -357,15 +357,15 @@ def test_the_chain_of_a_plate_with_a_file_asks_for_the_result_and_the_download_a
   const chain = tree.querySelectorAll('div').find((d) => has(d, 'ep-chain'));
   out.links = chain.querySelectorAll('a').map((a) => [a.textContent, a.getAttribute('href')]);
 """)
-    assert waiting["links"] == [["Добавить результат", "#/ingest?plan=22"]]
+    assert waiting["links"] == [["Add result", "#/ingest?plan=22"]]
     routes["/api/plans/22/lifecycle"] = {"status": 200, "json": lifecycle("prepared", kind="plain", plan_id=22)}
     ready = run(tmp_path, routes, "plan-22", """
   const chain = tree.querySelectorAll('div').find((d) => has(d, 'ep-chain'));
   out.buttons = chain.querySelectorAll('button').map((b) => b.textContent);
-  await byText(chain, 'button', 'К файлу').dispatch('click'); await tick();
+  await byText(chain, 'button', 'Go to file').dispatch('click'); await tick();
   out.shown = shownPanels(tree);
 """)
-    assert ready["buttons"] == ["К файлу"] and ready["shown"] == ["ep-tab-panel-plate"]
+    assert ready["buttons"] == ["Go to file"] and ready["shown"] == ["ep-tab-panel-plate"]
 
 
 @node
@@ -387,7 +387,7 @@ def test_a_photograph_work_is_downloaded_from_its_own_route_and_asks_for_no_path
     routes["/api/photo-works/28/export.lbrn2"] = PLATE_FILE
     out = run(tmp_path, routes, "plan-28", """
   const side = tree.querySelectorAll('aside').find((s) => has(s, 'ep-side'));
-  await byText(side, 'button', 'Скачать LightBurn').dispatch('click'); await tick();
+  await byText(side, 'button', 'Download LightBurn').dispatch('click'); await tick();
   out.requests = ctx.requests.map((r) => r.path).filter((p) => p.includes('lifecycle') || p.includes('export'));
   out.chains = tree.querySelectorAll('div').filter((d) => has(d, 'ep-chain')).length;
 """)

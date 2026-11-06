@@ -1,6 +1,6 @@
 """The path of a work's file and its readiness on the screens (feature ux-engraving-lifecycle-p0, REQ-001..003): the four steps with the
 current one marked in words, what can be done next, why a file cannot be made yet with a button to the place that fixes it, the one
-«Скачать LightBurn» action (one request at a time, a failure kept beside the button with a retry), the files made before, the basis a
+«Download LightBurn» action (one request at a time, a failure kept beside the button with a retry), the files made before, the basis a
 comparison stands on, and the way back to a work after an accepted result. Run in node over the small DOM of ui_dom.js with answers
 shaped as the server's lifecycle answer (the server side has its own tests: test_lifecycle.py, test_lifecycle_traced.py)."""
 import json
@@ -77,21 +77,21 @@ def test_the_chain_names_four_steps_marks_the_current_one_with_words_and_shape_a
   for (const b of wired.querySelectorAll('button')) await b.dispatch('click');
   out.seen = seen;
 """)
-    names = ["Подготовлено", "Файл получен", "Результат добавлен", "Проверено"]
-    states = ["(выполнено)" if i < ["prepared", "file", "result", "verified"].index(stage) else "(сейчас)" if i == ["prepared", "file", "result", "verified"].index(stage)
-              else "(впереди)" for i in range(4)]
+    names = ["Prepared", "File downloaded", "Result added", "Verified"]
+    states = ["(done)" if i < ["prepared", "file", "result", "verified"].index(stage) else "(current)" if i == ["prepared", "file", "result", "verified"].index(stage)
+              else "(upcoming)" for i in range(4)]
     assert [s[0] for s in out["steps"]] == names and [s[1] for s in out["steps"]] == states
     assert [s[2] for s in out["steps"]].count("step") == 1 and out["steps"][["prepared", "file", "result", "verified"].index(stage)][2] == "step"
-    assert out["label"] == "Путь файла работы"
+    assert out["label"] == "Work file lifecycle"
     # the action of the stage: results are added and checked on the photograph screens (links); the rest belongs to the screen that draws the chain
-    assert out["action"] == {"prepared": [], "file": [["Добавить результат", "#/ingest?plan=7"]], "result": [["Проверить и принять результат", "#/ingest?pair=4"]],
-                             "verified": [["Открыть разбор", "#/analysis/3"]]}[stage]
-    assert out["buttons"] == {"prepared": ["К файлу"], "file": [], "result": [], "verified": ["Сравнить с ожиданием"]}[stage]
+    assert out["action"] == {"prepared": [], "file": [["Add result", "#/ingest?plan=7"]], "result": [["Review and accept result", "#/ingest?pair=4"]],
+                             "verified": [["Open analysis", "#/analysis/3"]]}[stage]
+    assert out["buttons"] == {"prepared": ["Go to file"], "file": [], "result": [], "verified": ["Compare with expected"]}[stage]
     assert out["seen"] == {"prepared": ["download"], "file": [], "result": [], "verified": ["compare"]}[stage]
-    assert out["next"].startswith({"prepared": "Скачайте файл и откройте его в LightBurn.",
-                           "file": "Файл № 1 получен. После гравировки добавьте результат: файл и фотографию.",
-                           "result": "Результат добавлен, но не принят: проверьте измерения и примите их.",
-                           "verified": "Результат проверен: сравните его с ожиданием."}[stage])
+    assert out["next"].startswith({"prepared": "Download the file and open it in LightBurn.",
+                           "file": "File #1 downloaded. After engraving, add the result: the file and a photograph.",
+                           "result": "The result was added but not accepted. Review and accept the measurements.",
+                           "verified": "The result has been reviewed. Compare it with the expected result."}[stage])
 
 
 @node
@@ -107,9 +107,9 @@ def test_a_work_that_cannot_be_exported_yet_says_to_fix_it_and_an_edited_work_sa
   out.loose = LC.chain(data.loose).querySelector('.lc-next').textContent;
   out.none = LC.chain(null);
 """)
-    assert out["edited"].startswith("Работа изменена после файла № 2: прежний файл остаётся в истории, для этой версии нужен новый.")
-    assert out["blocked"] == "Файл пока нельзя создать: ниже сказано, что исправить." and out["fix"] == ["Что исправить"]
-    assert "Результатов без файла: 1" in out["loose"] and out["none"] is None            # a view not loaded yet draws nothing
+    assert out["edited"].startswith("The work changed after file #2. The earlier file remains in history; this version needs a new file.")
+    assert out["blocked"] == "The file cannot be created yet. See what to fix below." and out["fix"] == ["What to fix"]
+    assert "Results without a file: 1" in out["loose"] and out["none"] is None            # a view not loaded yet draws nothing
 
 
 @node
@@ -119,8 +119,8 @@ def test_a_file_exported_before_exports_were_recorded_is_named_as_such_not_as_nu
   out.next = LC.chain(data.lc).querySelector('.lc-next').textContent;
   out.files = LC.files(data.lc).textContent;
 """)
-    assert "(раньше, чем MarkView стал записывать выгрузки)" in out["next"] and "№ 0" not in out["next"] + out["files"]
-    assert "дата неизвестна" in out["files"] and "файл не хранится" in out["files"] and "прогноз вместе с файлом не сохранялся" in out["files"]
+    assert "(before MarkView recorded exports)" in out["next"] and "№ 0" not in out["next"] + out["files"]
+    assert "date unknown" in out["files"] and "file not retained" in out["files"] and "prediction not saved with file" in out["files"]
 
 
 # -- the readiness --------------------------------------------------------------------------------------------------------------------
@@ -144,15 +144,15 @@ def test_the_readiness_states_size_time_layers_and_checks_and_each_blocker_in_wo
   out.targets = seen;
   out.details = card.querySelectorAll('details').map((d) => d.textContent);
 """)
-    assert out["text"].startswith("Файл LightBurn: пока нельзя")
-    assert "150,0 × 143,0 мм" in out["text"].replace(".", ",") and "≈ 2 min 05 s (оценка неполная)" in out["text"] and "слоёв 31 из 29" in out["text"]
-    assert "цвета есть недостижимые" in out["text"] and "чистка C00 есть" in out["text"] and "маркеры включены" in out["text"]
-    assert out["rows"][0].startswith("Областей без достаточных данных: 2.") and "Нужно слоёв LightBurn: 31, доступно 29" in out["rows"][1]
-    assert out["rows"][2] == "Надпись 2 не выгравировать: the font 'Gone Sans' is not on this computer any more: choose another font. Откройте её и исправьте."
-    assert out["rows"][3] == "Фотозона 1 не гравируется: the width of the picture must be 1..1000 mm."          # the reason is the inscription's and the zone's own
-    assert out["rows"][4] == "Гравировать нечего: все области исключены."
-    assert out["buttons"] == ["Показать область", "Открыть вкладку «Цвета»"] and out["targets"] == [{"kind": "region", "id": "r4"}, {"kind": "tab", "id": "colours"}]
-    assert out["links"] == [["Цели экспериментов", "#/designer?device=1&lens=2"]]               # only for a blocker that is missing measurements
+    assert out["text"].startswith("LightBurn file: not ready")
+    assert "150,0 × 143,0 mm" in out["text"].replace(".", ",") and "≈ 2 min 05 s (incomplete estimate)" in out["text"] and "31 of 29 layers" in out["text"]
+    assert "colors some unreachable" in out["text"] and "C00 cleaning present" in out["text"] and "markers on" in out["text"]
+    assert out["rows"][0].startswith("Regions without sufficient data: 2.") and "LightBurn layers required: 31; available: 29" in out["rows"][1]
+    assert out["rows"][2] == "Inscription 2 cannot be engraved: the font 'Gone Sans' is not on this computer any more: choose another font. Open it and fix the issue."
+    assert out["rows"][3] == "Photo zone 1 cannot be engraved: the width of the picture must be 1..1000 mm."          # the reason is the inscription's and the zone's own
+    assert out["rows"][4] == "Nothing to engrave: all regions are excluded."
+    assert out["buttons"] == ["Show region", "Open Colors tab"] and out["targets"] == [{"kind": "region", "id": "r4"}, {"kind": "tab", "id": "colours"}]
+    assert out["links"] == [["Experiment goals", "#/designer?device=1&lens=2"]]               # only for a blocker that is missing measurements
     assert any("every region is excluded: there is nothing to engrave" in d for d in out["details"])        # the exact words of the check, on demand
 
 
@@ -166,8 +166,8 @@ def test_a_ready_work_says_so_and_a_blocker_without_a_target_has_no_button_and_a
   out.odd = card.querySelectorAll('li').map((li) => li.textContent);
   out.buttons = card.querySelectorAll('button').length;
 """)
-    assert out["ready"].startswith("Файл LightBurn: готов к выгрузке") and "Проверки:" in out["ready"]
-    assert out["odd"] == ["Файл пока нельзя создать. ", "План — черновик: завершите преобразование, и экспорт станет доступен. "] and out["buttons"] == 0
+    assert out["ready"].startswith("LightBurn file: ready to export") and "Checks:" in out["ready"]
+    assert out["odd"] == ["The file cannot be created yet. ", "The plan is a draft. Complete conversion to enable export. "] and out["buttons"] == 0
     assert not any("something_new" in text for text in out["odd"])
 
 
@@ -180,7 +180,7 @@ DOWNLOAD = {"/api/vector/7/export.lbrn2": {"status": 200, "text": "<xml/>", "typ
 def test_the_download_button_asks_the_server_once_for_a_double_click_then_runs_the_after_step_and_can_be_pressed_again(tmp_path):
     out = run(tmp_path, {"routes": DOWNLOAD}, """
   let done = 0;
-  const got = LC.downloadButton('/vector/7/export.lbrn2', 'vector.lbrn2', 'Скачать LightBurn', {onDone: () => { done += 1; }});
+  const got = LC.downloadButton('/vector/7/export.lbrn2', 'vector.lbrn2', 'Download LightBurn', {onDone: () => { done += 1; }});
   ctx.document.body.append(got.el);
   const first = got.button.dispatch('click'), second = got.button.dispatch('click');    // the second press comes while the first is still running
   out.busy = got.button.getAttribute('aria-busy');
@@ -200,7 +200,7 @@ def test_a_refused_download_keeps_its_reason_in_russian_beside_the_button_with_a
     routes = {"/api/vector/7/export.lbrn2": {"status": 422, "json": {"error": "every region is excluded: there is nothing to engrave", "kind": "invalid"}}}
     out = run(tmp_path, {"routes": routes}, """
   let done = 0;
-  const got = LC.downloadButton('/vector/7/export.lbrn2', 'vector.lbrn2', 'Скачать LightBurn', {onDone: () => { done += 1; }});
+  const got = LC.downloadButton('/vector/7/export.lbrn2', 'vector.lbrn2', 'Download LightBurn', {onDone: () => { done += 1; }});
   ctx.document.body.append(got.el);
   await got.button.dispatch('click'); await tick();
   out.failure = [got.failure.hidden, got.failure.textContent, got.failure.getAttribute('role'), got.failure.querySelectorAll('button').map((b) => b.textContent)];
@@ -209,8 +209,8 @@ def test_a_refused_download_keeps_its_reason_in_russian_beside_the_button_with_a
   await got.failure.querySelector('button').dispatch('click'); await tick();
   out.after = [got.failure.hidden, done];
 """)
-    assert out["failure"][0] is False and out["failure"][1].startswith("Файл не получен: every region is excluded: there is nothing to engrave")
-    assert out["failure"][2] == "alert" and out["failure"][3] == ["Повторить"]
+    assert out["failure"][0] is False and out["failure"][1].startswith("File not received: every region is excluded: there is nothing to engrave")
+    assert out["failure"][2] == "alert" and out["failure"][3] == ["Retry"]
     assert out["enabled"] and out["doneAfterFailure"] == 0 and any("every region is excluded" in t for t in out["toast"])
     assert out["after"] == [True, 1]
 
@@ -219,15 +219,15 @@ def test_a_refused_download_keeps_its_reason_in_russian_beside_the_button_with_a
 def test_a_download_that_cannot_reach_the_server_or_gets_an_unreadable_answer_says_so_in_russian(tmp_path):
     routes = {"/api/vector/7/export.lbrn2": {"status": 500, "text": "<html>boom</html>", "type": "text/html"}}
     out = run(tmp_path, {"routes": routes}, """
-  const got = LC.downloadButton('/vector/7/export.lbrn2', 'vector.lbrn2', 'Скачать LightBurn');
+  const got = LC.downloadButton('/vector/7/export.lbrn2', 'vector.lbrn2', 'Download LightBurn');
   await got.button.dispatch('click'); await tick();
   out.unreadable = got.failure.textContent;
   ctx.fetch = async () => { throw new TypeError('Failed to fetch'); };
   await got.button.dispatch('click'); await tick();
   out.offline = got.failure.textContent;
 """)
-    assert out["unreadable"].startswith("Файл не получен: Ошибка сервера (500). Файл не получен.")
-    assert out["offline"].startswith("Файл не получен: Нет связи с локальным сервисом")
+    assert out["unreadable"].startswith("File not received: Server error (500). The file was not received.")
+    assert out["offline"].startswith("File not received: Cannot reach the local service")
     assert "undefined" not in out["unreadable"] + out["offline"] and "fetch" not in out["offline"]
 
 
@@ -239,7 +239,7 @@ def test_the_export_card_is_the_one_place_for_the_action_the_readiness_and_the_f
     out = run(tmp_path, {"ready": ready, "blocked": blocked}, """
   const recipe = ctx.document.createElement('div'); recipe.textContent = 'ТАБЛИЦА СЛОЁВ';
   const card = LC.exportCard(data.ready, {path: '/vector/7/export.lbrn2', name: 'vector.lbrn2', recipe, recipeLabel: 'Полный рецепт и слои (3)'});
-  const button = byText(card, 'button', 'Скачать LightBurn');
+  const button = byText(card, 'button', 'Download LightBurn');
   out.main = [button.disabled, button.className];
   out.text = card.textContent;
   out.summaries = card.querySelectorAll('summary').map((s) => s.textContent);
@@ -249,17 +249,17 @@ def test_the_export_card_is_the_one_place_for_the_action_the_readiness_and_the_f
   const nochain = LC.exportCard(data.ready, {path: '/vector/7/export.lbrn2', name: 'v', withChain: false});
   out.nochain = nochain.querySelectorAll('ol').length;
   const stopped = LC.exportCard(data.blocked, {path: '/vector/7/export.lbrn2', name: 'v'});
-  out.stopped = [byText(stopped, 'button', 'Скачать LightBurn').disabled, stopped.textContent.includes('План — черновик')];
+  out.stopped = [byText(stopped, 'button', 'Download LightBurn').disabled, stopped.textContent.includes('The plan is a draft')];
   out.oldSummary = stopped.querySelectorAll('summary').map((s) => s.textContent);
-  await byText(card, 'button', 'Скачать LightBurn').dispatch('click'); await tick();
+  await byText(card, 'button', 'Download LightBurn').dispatch('click'); await tick();
   out.requests = ctx.requests.map((r) => r.path);
 """)
-    assert out["main"][0] is False and "primary" in out["main"][1].split() and "В лазер он не отправляется" in out["text"]
-    assert out["summaries"] == ["Полный рецепт и слои (3)", "Прежние файлы (2)"] and out["hasRecipe"]
+    assert out["main"][0] is False and "primary" in out["main"][1].split() and "Open and run it in LightBurn when ready" in out["text"]
+    assert out["summaries"] == ["Полный рецепт и слои (3)", "Previous files (2)"] and out["hasRecipe"]
     assert out["chain"] == 1 and out["nochain"] == 0                                         # the chain is drawn once, where the screen wants it
-    assert out["stopped"] == [True, True] and out["oldSummary"] == ["Прежние файлы"]                  # no files yet, no recipe given: the one fold
-    assert ["Скачать", False] in out["fileButtons"] and ["Скачать", True] not in out["fileButtons"]      # a file whose bytes are gone has no button
-    assert "файл не хранится" in out["text"] and out["requests"] == ["/api/vector/7/export.lbrn2"]
+    assert out["stopped"] == [True, True] and out["oldSummary"] == ["Previous files"]                  # no files yet, no recipe given: the one fold
+    assert ["Download", False] in out["fileButtons"] and ["Download", True] not in out["fileButtons"]      # a file whose bytes are gone has no button
+    assert "file not retained" in out["text"] and out["requests"] == ["/api/vector/7/export.lbrn2"]
 
 
 @node
@@ -276,13 +276,13 @@ def test_the_previous_files_list_each_file_with_its_own_stage_its_photographs_an
   out.requests = ctx.requests.map((r) => r.path);
   out.empty = LC.files({files: [], unlinked: []}).textContent;
 """)
-    assert "Файл № 1" in out["text"] and "Файл № 2" in out["text"] and "работа с тех пор изменена или выгружена снова" in out["text"]
-    assert "актуален для работы" in out["text"] and "прогноз сохранён вместе с файлом" in out["text"] and "привязан по времени" in out["text"]
-    assert out["pills"] == ["Проверено", "Файл получен"]
-    assert ["разбор", "#/analysis/3"] in out["links"] and ["проверить и принять", "#/ingest?pair=4"] in out["links"] and ["разбор", "#/analysis/9"] in out["links"]
-    assert "Результаты без файла" in out["text"] and "OLD.DNG" in out["text"] and "сфотографирован до первой записи о файле" in out["text"]
+    assert "File #1" in out["text"] and "File #2" in out["text"] and "work has since changed or been exported again" in out["text"]
+    assert "current for work" in out["text"] and "prediction saved with file" in out["text"] and "linked by time" in out["text"]
+    assert out["pills"] == ["Verified", "File downloaded"]
+    assert ["analysis", "#/analysis/3"] in out["links"] and ["review and accept", "#/ingest?pair=4"] in out["links"] and ["analysis", "#/analysis/9"] in out["links"]
+    assert "Results without a file" in out["text"] and "OLD.DNG" in out["text"] and "photographed before the first file record" in out["text"]
     assert out["requests"] == ["/api/vector/7/exports/1"]                                     # the first file's own address, with no /api twice
-    assert out["empty"] == "Файл ещё не создавали."
+    assert out["empty"] == "No file has been created yet."
 
 
 # -- the basis of a comparison --------------------------------------------------------------------------------------------------------
@@ -297,11 +297,11 @@ def test_the_basis_of_a_comparison_is_named_plainly_and_a_reconstruction_is_neve
   out.notes = data.b.map((b) => LC.basisNote(b));
 """)
     saved_note, tie_note, rebuilt_note, never_note, lost_note = out["notes"]
-    assert saved_note.startswith("Основание: прогноз, сохранённый вместе с файлом № 2 (выгружен 2026-10-20 10:00). Это то, что обещал сам файл.")
-    assert "№ 1, № 2 совпадают с гравировкой одинаково; выбран файл № 2, самый поздний из сделанных до фотографии" in tie_note
-    assert rebuilt_note.startswith("Основание: реконструкция.") and "прогноз не сохранялся" in rebuilt_note and "Это не исходное обещание файла." in rebuilt_note
-    assert "обещал сам файл" not in rebuilt_note and "ещё не выгружалась" in never_note and "Это не обещание файла." in never_note
-    assert lost_note.startswith("Основание: нет. Прогноз файла № 2 не сохранялся") and "сравнить не с чем" in lost_note
+    assert saved_note.startswith("Basis: prediction saved with file #2 (exported 2026-10-20 10:00). This is what the file itself predicted.")
+    assert "#1, #2 match the engraving equally; file #2 was chosen as the latest before the photograph" in tie_note
+    assert rebuilt_note.startswith("Basis: reconstruction.") and "No prediction was saved" in rebuilt_note and "This is not the file’s original prediction." in rebuilt_note
+    assert "file itself predicted" not in rebuilt_note and "has not been exported" in never_note and "This is not a file prediction." in never_note
+    assert lost_note.startswith("Basis: none. No prediction was saved for file #2") and "no comparison is available" in lost_note
 
 
 # -- the way back to a work -----------------------------------------------------------------------------------------------------------
@@ -329,12 +329,12 @@ def test_the_summary_of_an_accepted_result_tells_the_basis_how_it_came_out_how_t
   out.bare = LC.summary(data.cases[0]).querySelectorAll('button').length;
 """)
     text = out["cards"][0][0]
-    assert text.startswith("Результат принят: «Inna + Boris»") and "Основание: прогноз, сохранённый вместе с файлом № 1" in text
-    assert "Сопоставлено слоёв: 4 из 5, заметно отличаются (2), средняя ΔE 6" in text
-    assert "слоёв, цвет которых сдвинулся с момента файла, 2 (было 0); есть ближе по цвету замены: 1. Файл № 1 от этого не меняется." in text
-    assert out["cards"][0][1] == ["Сравнить с ожиданием", "Закрыть итог"] and out["cards"][1][1][0] == "Посмотреть замены цветов" and out["cards"][0][2] == "status"
-    assert "для этого результата не записано" in out["cards"][2][0] and "прогноз сравнивать не с чем" in out["cards"][3][0]
-    assert "Слои не сопоставлены с файлом." in out["cards"][4][0] and out["seen"] == ["compare", "closed"] and out["bare"] == 0
+    assert text.startswith("Result accepted: “Inna + Boris”") and "Basis: prediction saved with file #1" in text
+    assert "Matched layers: 4 of 5, noticeably different (2), mean ΔE 6" in text
+    assert "2 layer colors shifted since the file (was 0); closer color replacements available: 1. File #1 is unchanged." in text
+    assert out["cards"][0][1] == ["Compare with expected", "Close summary"] and out["cards"][1][1][0] == "View color replacements" and out["cards"][0][2] == "status"
+    assert "not recorded for this result" in out["cards"][2][0] and "prediction cannot be compared" in out["cards"][3][0]
+    assert "Layers were not matched to the file." in out["cards"][4][0] and out["seen"] == ["compare", "closed"] and out["bare"] == 0
 
 
 @node
@@ -350,8 +350,8 @@ def test_returning_to_a_work_goes_there_with_a_short_note_and_leaves_every_other
   out.stayed = ctx.__went.slice();
 """)
     assert out["back"] is True and out["went"] == ["/vector?plan=7&accepted=3"]
-    assert out["toast"] == ["Результат принят. Возвращаемся в работу «Inna + Boris»: есть заметные отличия"]
-    assert out["clean"] is True and out["toast2"] == ["Результат принят. Возвращаемся в работу «W»: заметных отличий нет"]
+    assert out["toast"] == ["Result accepted. Returning to “Inna + Boris”: noticeable differences found"]
+    assert out["clean"] is True and out["toast2"] == ["Result accepted. Returning to “W”: no noticeable differences"]
     assert out["photo"] is False and out["none"] is False and out["undef"] is False and out["stayed"] == []           # no summary: the screen stays as it was
 
 
@@ -385,8 +385,8 @@ def test_the_result_tab_lets_the_operator_choose_the_engraving_and_names_the_fil
   out.pictures = view.querySelectorAll('img').map((i) => i.getAttribute('src'));
 """)
     assert out["options"] == ["NEW.DNG · file #2 · 2026-10-22 10:00", "OLD.DNG · file #1 · 2026-10-21 10:00"]
-    assert "Основание: реконструкция." in out["first"] and "Это не исходное обещание файла." in out["first"] and "обещал сам файл" not in out["first"]
-    assert "Основание: прогноз, сохранённый вместе с файлом № 1" in out["second"] and "Основание: реконструкция" not in out["second"]
+    assert "Basis: reconstruction." in out["first"] and "This is not the file’s original prediction." in out["first"] and "file itself predicted" not in out["first"]
+    assert "Basis: prediction saved with file #1" in out["second"] and "Basis: reconstruction" not in out["second"]
     assert all("engraving=e1" in src for src in out["pictures"]) and len(out["pictures"]) == 2          # the pictures follow the chosen engraving, at one scale
 
 
@@ -400,7 +400,7 @@ def test_a_single_engraving_still_shows_which_file_it_is_compared_with_and_a_los
   out.lostPictures = gone.querySelectorAll('img').length;
 """)
     assert out["one"] == ["IMG_1.DNG · file #1 · 2026-10-21 10:00"]
-    assert "Основание: нет. Прогноз файла № 2 не сохранялся" in out["lost"] and "cannot be reconstructed, so no comparison is available" in out["lost"]
+    assert "Basis: none. No prediction was saved for file #2" in out["lost"] and "cannot be reconstructed, so no comparison is available" in out["lost"]
     assert out["lostPictures"] == 0                                                              # nothing is drawn as if it were the promise
 
 

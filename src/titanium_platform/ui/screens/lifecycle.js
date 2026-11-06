@@ -1,26 +1,21 @@
-/* Путь файла работы (feature ux-engraving-lifecycle-p0): «Подготовлено → Файл получен → Результат добавлен → Проверено», готовность файла
-   и одно действие «Скачать LightBurn» для любой работы и любого эксперимента; прежние файлы и полный рецепт — под раскрытием.
-   Всё берётся из ответа сервера (``lifecycle`` в ответе работы, плана, ``/plans/<id>/lifecycle``): экран ничего не выводит сам.
-   Файл скачивается на этот компьютер и никогда не уходит в лазер. Ошибки показываются по-русски рядом с кнопкой, повторное нажатие
-   во время скачивания игнорируется. Сводка принятого результата и ``returnToWork`` возвращают оператора в работу, к которой он относится. */
+/* File lifecycle, readiness, download, and accepted-result navigation. */
 'use strict';
 const Lifecycle = (() => {
   const {h, fill, btn, link, pill, num, duration} = App;           // toast, fail and go are read when called: this file loads before the router's
-  const STAGES = [['prepared', 'Подготовлено'], ['file', 'Файл получен'], ['result', 'Результат добавлен'], ['verified', 'Проверено']];
+  const STAGES = [['prepared', 'Prepared'], ['file', 'File downloaded'], ['result', 'Result added'], ['verified', 'Verified']];
   const STAGE_NAME = Object.fromEntries(STAGES);
-  const STATE_WORD = {done: 'выполнено', current: 'сейчас', todo: 'впереди'};
+  const STATE_WORD = {done: 'done', current: 'current', todo: 'upcoming'};
   const when = (iso) => (iso || '').replace('T', ' ').slice(0, 16);
-  const mm = (size) => (size ? `${num(size.width, 1)} × ${num(size.height, 1)} мм` : null);
+  const mm = (size) => (size ? `${num(size.width, 1)} × ${num(size.height, 1)} mm` : null);
 
-  /** Скачивает файл через fetch и отдаёт его браузеру как загрузку; ошибка сервера становится понятным русским сообщением, на адрес API
-      экран никогда не переходит. ``path`` без префикса /api. */
+  /** Fetch a file for browser download without navigating to the API URL. */
   async function download(path, fallbackName) {
     let res;
-    try { res = await fetch('/api' + path); } catch (_) { throw new Error('Нет связи с локальным сервисом. Запущено ли приложение?'); }
+    try { res = await fetch('/api' + path); } catch (_) { throw new Error('Cannot reach the local service. Is the application running?'); }
     if (!res.ok) {
       let raw = null;
       try { const d = await res.json(); raw = (d.detail || d).error; } catch (_) { raw = null; }
-      throw new Error(raw ? I18N.tr(raw) : `Ошибка сервера (${res.status}). Файл не получен.`);
+      throw new Error(raw ? I18N.tr(raw) : `Server error (${res.status}). The file was not received.`);
     }
     const name = decodeURIComponent((res.headers.get('content-disposition') || '').split("UTF-8''")[1] || fallbackName);
     const url = URL.createObjectURL(await res.blob());
@@ -28,8 +23,7 @@ const Lifecycle = (() => {
     document.body.append(a); a.click(); a.remove(); URL.revokeObjectURL(url);
   }
 
-  /** Кнопка скачивания: одно нажатие за раз (пока файл готовится, повторное нажатие ничего не делает), ошибка остаётся на экране рядом
-      с кнопкой и в уведомлении, кнопка снова нажимается. ``onDone`` вызывается после удачного скачивания. */
+  /** Download once at a time, retaining errors and allowing retry. */
   function downloadButton(path, name, label, {onDone = null, disabled = false, cls = '', note = null} = {}) {
     const failure = h('div', {class: 'alert bad small', role: 'alert', hidden: true});
     let busy = false;
@@ -54,7 +48,7 @@ const Lifecycle = (() => {
         if (onDone) await onDone();
       } catch (e) {
         App.fail(e);
-        fill(failure, `Файл не получен: ${e.message}`, ' ', btn('Повторить', save, 'btn-small'));
+        fill(failure, `File not received: ${e.message}`, ' ', btn('Retry', save, 'btn-small'));
         failure.hidden = false;
       } finally { busy = false; button.disabled = disabled; button.removeAttribute('aria-busy'); if (had) keepKeyboard(); }
     }
@@ -62,11 +56,7 @@ const Lifecycle = (() => {
   }
 
   // -- the chain ------------------------------------------------------------------------------------------------------------------------
-  /** Четыре шага пути файла; текущий отмечен ``aria-current="step"``, а состояние каждого сказано словом, не только цветом. Под ними —
-      что дальше и действие текущего этапа. ``lc`` — ответ сервера; без него (работа ещё не загружена) ничего не рисуется.
-      Результат добавляют и принимают на экране фотографий, поэтому эти два действия — переходы; остальные (к файлу, что исправить,
-      сравнить) относятся к месту, где стоит экран, и ``onAction(next)`` решает, куда он переводит; без него нужное действие — только
-      переход, а у «скачать» кнопка уже рядом. */
+  /** Show the four file stages and the next action. */
   function chain(lc, {id = 'lc-chain', onAction = null} = {}) {
     if (!lc) return null;
     const c = lc.chain;
@@ -74,119 +64,112 @@ const Lifecycle = (() => {
       h('span', {class: 'lc-mark', 'aria-hidden': 'true'}, s.state === 'done' ? '✓' : String(i + 1)), h('span', {class: 'lc-name'}, STAGE_NAME[s.id]),
       h('span', {class: 'lc-word'}, ` (${STATE_WORD[s.state]})`)));
     const hint = nextText(lc), act = action(lc, onAction);
-    return h('div', {class: 'lc', id}, h('ol', {class: 'lc-chain', 'aria-label': 'Путь файла работы'}, items),
+    return h('div', {class: 'lc', id}, h('ol', {class: 'lc-chain', 'aria-label': 'Work file lifecycle'}, items),
       hint ? h('p', {class: 'lc-next small'}, h('span', {class: 'lc-hint'}, hint), act ? [' ', act] : null) : act);
   }
 
-  const ACTION_LABEL = {download: 'К файлу', fix: 'Что исправить', compare: 'Сравнить с ожиданием'};
-  /** Действие текущего этапа: ссылка на добавление или проверку результата либо кнопка, которую оживляет экран. */
+  const ACTION_LABEL = {download: 'Go to file', fix: 'What to fix', compare: 'Compare with expected'};
+  /** Show the current stage action as a link or callback button. */
   function action(lc, onAction) {
     const a = lc.chain.next;
-    if (a.code === 'add_result') return link(`/ingest?plan=${lc.plan_id}`, 'Добавить результат');
-    if (a.code === 'check_result') return link(`/ingest?pair=${a.pair_id}`, 'Проверить и принять результат');
-    if (!onAction) return a.code === 'compare' ? link(`/analysis/${a.pair_id}`, 'Открыть разбор') : null;
+    if (a.code === 'add_result') return link(`/ingest?plan=${lc.plan_id}`, 'Add result');
+    if (a.code === 'check_result') return link(`/ingest?pair=${a.pair_id}`, 'Review and accept result');
+    if (!onAction) return a.code === 'compare' ? link(`/analysis/${a.pair_id}`, 'Open analysis') : null;
     return btn(ACTION_LABEL[a.code], () => onAction(a), 'btn-small');
   }
 
-  /** Что сделать дальше, по состоянию работы: словами и без слов-кодов. */
+  /** Describe the next action in plain language. */
   function nextText(lc) {
     const c = lc.chain, a = c.next;
-    const lead = c.edited_after != null ? `Работа изменена после файла ${fileLabel(c.edited_after)}: прежний файл остаётся в истории, для этой версии нужен новый. ` : '';
-    const loose = c.unlinked ? ` Результатов без файла: ${c.unlinked}: их сфотографировали раньше, чем появилась запись о файле.` : '';
-    if (a.code === 'download') return lead + 'Скачайте файл и откройте его в LightBurn.' + loose;
-    if (a.code === 'fix') return lead + 'Файл пока нельзя создать: ниже сказано, что исправить.' + loose;
-    if (a.code === 'add_result') return `Файл ${fileLabel(c.file)} получен. После гравировки добавьте результат: файл и фотографию.` + loose;
-    if (a.code === 'check_result') return 'Результат добавлен, но не принят: проверьте измерения и примите их.' + loose;
-    if (a.code === 'compare') return 'Результат проверен: сравните его с ожиданием.' + loose;
+    const lead = c.edited_after != null ? `The work changed after file ${fileLabel(c.edited_after)}. The earlier file remains in history; this version needs a new file. ` : '';
+    const loose = c.unlinked ? ` Results without a file: ${c.unlinked}; these were photographed before a file was recorded.` : '';
+    if (a.code === 'download') return lead + 'Download the file and open it in LightBurn.' + loose;
+    if (a.code === 'fix') return lead + 'The file cannot be created yet. See what to fix below.' + loose;
+    if (a.code === 'add_result') return `File ${fileLabel(c.file)} downloaded. After engraving, add the result: the file and a photograph.` + loose;
+    if (a.code === 'check_result') return 'The result was added but not accepted. Review and accept the measurements.' + loose;
+    if (a.code === 'compare') return 'The result has been reviewed. Compare it with the expected result.' + loose;
     return null;
   }
-  const fileLabel = (n) => (n ? `№ ${n}` : '(раньше, чем MarkView стал записывать выгрузки)');
+  const fileLabel = (n) => (n ? `#${n}` : '(before MarkView recorded exports)');
 
   // -- readiness ------------------------------------------------------------------------------------------------------------------------
-  /** Слова для одной причины, по которой файл пока нельзя создать. Причины приходят кодами и числами; прозы с сервера нет. */
+  /** Describe a server-provided reason why the file cannot be created. */
   function blockerText(b) {
     switch (b.code) {
-      case 'weak_regions': return `Областей без достаточных данных: ${b.count}. Рецепт не придумывается: удалите или исключите область, выберите настройки её группы или передайте её цвет планировщику.`;
-      case 'nothing_to_engrave': return 'Гравировать нечего: все области исключены.';
-      case 'too_many_layers': return `Нужно слоёв LightBurn: ${b.count}, доступно ${b.cap}. Объедините цвета или зоны.`;
-      case 'no_palette': return 'Для этого лазера, линзы и титана нет измеренного цвета, которым можно залить область. Измерьте цвета или выберите другую заготовку.';
-      case 'missing_colours': return `У областей (${b.count}) цвет титана больше не измерен на этом лазере, линзе и титане: выберите другой цвет.`;
-      case 'text': return `Надпись ${b.number} не выгравировать: ${I18N.tr(b.problem)}. Откройте её и исправьте.`;
-      case 'zone': return `Фотозона ${b.number} не гравируется: ${I18N.tr(b.problem)}.`;
-      case 'draft': return 'План — черновик: завершите преобразование, и экспорт станет доступен.';
-      case 'closed': return 'Эта плата заменена или отменена: откройте актуальную плату исследования.';
-      case 'no_layers': return 'Слоёв нет: экспорт недоступен.';
-      case 'restored': return 'Это запись выполненного задания, а не новое задание: файл не выгружается.';
-      default: return 'Файл пока нельзя создать.';
+      case 'weak_regions': return `Regions without sufficient data: ${b.count}. Remove or exclude the region, select its group settings, or send its color to the planner.`;
+      case 'nothing_to_engrave': return 'Nothing to engrave: all regions are excluded.';
+      case 'too_many_layers': return `LightBurn layers required: ${b.count}; available: ${b.cap}. Merge colors or zones.`;
+      case 'no_palette': return 'No measured color is available for this laser, lens, and titanium. Measure colors or select another blank.';
+      case 'missing_colours': return `The titanium color for ${b.count} regions is no longer measured for this laser, lens, and titanium. Select another color.`;
+      case 'text': return `Inscription ${b.number} cannot be engraved: ${I18N.tr(b.problem)}. Open it and fix the issue.`;
+      case 'zone': return `Photo zone ${b.number} cannot be engraved: ${I18N.tr(b.problem)}.`;
+      case 'draft': return 'The plan is a draft. Complete conversion to enable export.';
+      case 'closed': return 'This plate was replaced or canceled. Open the current research plate.';
+      case 'no_layers': return 'There are no layers to export.';
+      case 'restored': return 'This is a record of a completed task, so the file cannot be exported.';
+      default: return 'The file cannot be created yet.';
     }
   }
-  const TARGET_LABEL = {region: 'Показать область', tab: 'Открыть вкладку «Цвета»'};
+  const TARGET_LABEL = {region: 'Show region', tab: 'Open Colors tab'};
   const MISSING_DATA = ['no_palette', 'missing_colours', 'weak_regions'];
 
-  /** Готовность файла: размер, время, число слоёв и проверки (цвета, слои, чистка), затем причины, по которым файла пока нет, каждая
-      с кнопкой к месту исправления (``onTarget(blocker)`` решает экран: область в списке, вкладка «Цвета») и ссылкой к недостающим
-      измерениям (``designer``). */
+  /** Render file readiness and its related actions. */
   function readiness(lc, {onTarget = null, designer = null} = {}) {
     const r = lc.readiness;
-    const time = r.seconds == null ? 'время не оценить' : `≈ ${duration(r.seconds)}${r.time_complete ? '' : ' (оценка неполная)'}`;
-    const facts = [mm(r.size_mm), time, r.layers == null ? null : `слоёв ${r.layers} из ${r.layer_cap}`].filter(Boolean).join(' · ');
-    const checks = [`цвета ${r.checks.colours ? 'достижимы' : 'есть недостижимые'}`, `слоёв ${r.checks.layers.used} из ${r.checks.layers.cap}`,
-      r.kind === 'plain' ? null : `чистка C00 ${r.checks.cleanup ? 'есть' : 'нет'}`, `маркеры ${r.checks.markers ? 'включены' : 'выключены'}`].filter(Boolean).join(' · ');
+    const time = r.seconds == null ? 'time cannot be estimated' : `≈ ${duration(r.seconds)}${r.time_complete ? '' : ' (incomplete estimate)'}`;
+    const facts = [mm(r.size_mm), time, r.layers == null ? null : `${r.layers} of ${r.layer_cap} layers`].filter(Boolean).join(' · ');
+    const checks = [`colors ${r.checks.colours ? 'reachable' : 'some unreachable'}`, `layers ${r.checks.layers.used} of ${r.checks.layers.cap}`,
+      r.kind === 'plain' ? null : `C00 cleaning ${r.checks.cleanup ? 'present' : 'absent'}`, `markers ${r.checks.markers ? 'on' : 'off'}`].filter(Boolean).join(' · ');
     const rows = r.blockers.map((b) => h('li', {class: 'lc-blocker'}, h('span', {}, blockerText(b)), ' ',
       onTarget && b.target && TARGET_LABEL[b.target.kind] ? btn(TARGET_LABEL[b.target.kind], () => onTarget(b), 'btn-small') : null,
-      designer && MISSING_DATA.includes(b.code) ? [' ', link(designer, 'Цели экспериментов')] : null));
-    return h('div', {class: 'stack lc-ready'}, h('p', {}, h('strong', {}, 'Файл LightBurn: '), r.ready ? pill('готов к выгрузке', 'ok') : pill('пока нельзя', 'bad'), ' ', facts),
-      h('p', {class: 'muted small'}, 'Проверки: ' + checks), rows.length ? h('ul', {class: 'lc-blockers alert warn', role: 'status'}, rows) : null,
-      r.reason ? h('details', {class: 'small'}, h('summary', {}, 'Точная формулировка проверки'), h('p', {}, I18N.tr(r.reason))) : null);
+      designer && MISSING_DATA.includes(b.code) ? [' ', link(designer, 'Experiment goals')] : null));
+    return h('div', {class: 'stack lc-ready'}, h('p', {}, h('strong', {}, 'LightBurn file: '), r.ready ? pill('ready to export', 'ok') : pill('not ready', 'bad'), ' ', facts),
+      h('p', {class: 'muted small'}, 'Checks: ' + checks), rows.length ? h('ul', {class: 'lc-blockers alert warn', role: 'status'}, rows) : null,
+      r.reason ? h('details', {class: 'small'}, h('summary', {}, 'Exact check details'), h('p', {}, I18N.tr(r.reason))) : null);
   }
 
   // -- files ----------------------------------------------------------------------------------------------------------------------------
-  const PROMISE = {saved: 'прогноз сохранён вместе с файлом', none: 'прогноз вместе с файлом не сохранялся'};
+  const PROMISE = {saved: 'prediction saved with file', none: 'prediction not saved with file'};
 
-  /** Прежние файлы работы: номер, время, где в своём пути каждый и кто к нему привязан; «Скачать», пока сохранённый файл есть. Файл
-      без записи о дате (выгружен до записей) назван прямо. */
+  /** Render file readiness and its related actions. */
   function files(lc, {onDone = null} = {}) {
-    if (!lc.files.length) return h('p', {class: 'muted small'}, 'Файл ещё не создавали.');
+    if (!lc.files.length) return h('p', {class: 'muted small'}, 'No file has been created yet.');
     const rows = lc.files.map((f) => {
-      const results = f.results.map((r) => h('li', {}, r.photo_name, ' · ', r.status === 'Accepted' ? 'принят' : 'ждёт проверки', ' · ',
-        link(r.status === 'Accepted' ? `/analysis/${r.pair_id}` : `/ingest?pair=${r.pair_id}`, r.status === 'Accepted' ? 'разбор' : 'проверить и принять'),
-        r.linked_by === 'time' ? h('span', {class: 'muted'}, ' · привязан по времени') : null));
-      return h('li', {class: 'lc-file'}, h('div', {class: 'vw-line'}, h('span', {}, h('strong', {}, `Файл ${fileLabel(f.number)}`), f.name ? ` · ${f.name}` : '',
-        h('div', {class: 'muted small'}, [f.recorded ? when(f.at) : 'дата неизвестна', f.layers == null ? null : `слоёв ${f.layers}`, f.regions == null ? null : `областей ${f.regions}`,
-          f.seconds == null ? null : duration(f.seconds), PROMISE[f.promise], f.current ? 'актуален для работы' : 'работа с тех пор изменена или выгружена снова'].filter(Boolean).join(' · '))),
+      const results = f.results.map((r) => h('li', {}, r.photo_name, ' · ', r.status === 'Accepted' ? 'accepted' : 'awaiting review', ' · ',
+        link(r.status === 'Accepted' ? `/analysis/${r.pair_id}` : `/ingest?pair=${r.pair_id}`, r.status === 'Accepted' ? 'analysis' : 'review and accept'),
+        r.linked_by === 'time' ? h('span', {class: 'muted'}, ' · linked by time') : null));
+      return h('li', {class: 'lc-file'}, h('div', {class: 'vw-line'}, h('span', {}, h('strong', {}, `File ${fileLabel(f.number)}`), f.name ? ` · ${f.name}` : '',
+        h('div', {class: 'muted small'}, [f.recorded ? when(f.at) : 'date unknown', f.layers == null ? null : `${f.layers} layers`, f.regions == null ? null : `${f.regions} regions`,
+          f.seconds == null ? null : duration(f.seconds), PROMISE[f.promise], f.current ? 'current for work' : 'work has since changed or been exported again'].filter(Boolean).join(' · '))),
         h('span', {class: 'row'}, pill(STAGE_NAME[f.stage], f.stage === 'verified' ? 'ok' : ''),
-          f.download_url ? downloadButton(f.download_url.replace(/^\/api/, ''), f.name, 'Скачать', {cls: 'btn-small', disabled: !f.downloadable, onDone}).el
-            : h('span', {class: 'muted small'}, 'файл не хранится'))),
+          f.download_url ? downloadButton(f.download_url.replace(/^\/api/, ''), f.name, 'Download', {cls: 'btn-small', disabled: !f.downloadable, onDone}).el
+            : h('span', {class: 'muted small'}, 'file not retained'))),
         results.length ? h('ul', {class: 'lc-results small'}, results) : null);
     });
-    const loose = lc.unlinked.map((r) => h('li', {}, `${r.photo_name} · ${r.status === 'Accepted' ? 'принят' : 'ждёт проверки'} · сфотографирован до первой записи о файле `,
-      link(r.status === 'Accepted' ? `/analysis/${r.pair_id}` : `/ingest?pair=${r.pair_id}`, r.status === 'Accepted' ? 'разбор' : 'проверить и принять')));
+    const loose = lc.unlinked.map((r) => h('li', {}, `${r.photo_name} · ${r.status === 'Accepted' ? 'accepted' : 'awaiting review'} · photographed before the first file record `,
+      link(r.status === 'Accepted' ? `/analysis/${r.pair_id}` : `/ingest?pair=${r.pair_id}`, r.status === 'Accepted' ? 'analysis' : 'review and accept')));
     return h('div', {class: 'stack'}, h('ul', {class: 'lc-files'}, rows),
-      loose.length ? h('div', {}, h('h4', {}, 'Результаты без файла'), h('ul', {class: 'small'}, loose)) : null);
+      loose.length ? h('div', {}, h('h4', {}, 'Results without a file'), h('ul', {class: 'small'}, loose)) : null);
   }
 
-  /** Карточка файла LightBurn: готовность, «Скачать LightBurn», что файл не уходит в лазер; под раскрытием — полный рецепт (``recipe``,
-      узел экрана со слоями) и прежние файлы. ``path`` — адрес скачивания без /api, ``reload`` — обновить экран после скачивания. */
-  function exportCard(lc, {path, name, reload = null, recipe = null, recipeLabel = 'Полный рецепт и слои', onTarget = null, designer = null, heading = 'Файл LightBurn',
+  /** Render file readiness and its related actions. */
+  function exportCard(lc, {path, name, reload = null, recipe = null, recipeLabel = 'Full recipe and layers', onTarget = null, designer = null, heading = 'LightBurn file',
                          withChain = true} = {}) {
     const r = lc.readiness;
-    const got = downloadButton(path, name, 'Скачать LightBurn', {cls: 'primary', disabled: !r.ready, onDone: reload,
-      note: 'Файл создан, сохранён в работе и скачан на этот компьютер. Откройте его в LightBurn и проверьте слои'});
+    const got = downloadButton(path, name, 'Download LightBurn', {cls: 'primary', disabled: !r.ready, onDone: reload,
+      note: 'File created, saved in the work, and downloaded to this computer. Open it in LightBurn and check the layers'});
     return h('div', {class: 'stack lc-export'}, h('h4', {}, heading), withChain ? chain(lc) : null, readiness(lc, {onTarget, designer}),
       h('div', {class: 'row'}, got.el),
-      h('p', {class: 'muted small'}, 'Файл скачивается на этот компьютер. В лазер он не отправляется: его откроете и запустите вы сами.'),
+      h('p', {class: 'muted small'}, 'The file downloads to this computer. Open and run it in LightBurn when ready.'),
       recipe ? h('details', {class: 'vw-details'}, h('summary', {}, recipeLabel), recipe) : null,
-      h('details', {class: 'vw-details'}, h('summary', {}, `Прежние файлы${lc.files.length ? ` (${lc.files.length})` : ''}`), files(lc, {onDone: reload})));
+      h('details', {class: 'vw-details'}, h('summary', {}, `Previous files${lc.files.length ? ` (${lc.files.length})` : ''}`), files(lc, {onDone: reload})));
   }
 
   // -- the strip under a work's head ------------------------------------------------------------------------------------------------------------
-  /** Одна складка для полосы под шапкой работы: путь файла, насколько можно верить прогнозу и что сказано про превью. На широком экране
-      полоса раскрыта, а строка складки скрыта (как и было); на узком (до 600 px) полоса свёрнута, и в строке складки сказано, на каком шаге
-      работа и что говорят прогноз и превью, так что ничто не потеряно и всё в одно нажатие. ``chain``, ``forecast``, ``preview`` — три узла,
-      которые экран заполняет сам; ``sync()`` пересказывает их в строке после каждого заполнения. */
+  /** Collapse lifecycle, forecast, and preview details on narrow screens. */
   function strip({chain, forecast, preview}, {query = '(max-width:600px)'} = {}) {
     const line = h('span', {class: 'lc-strip-line small'});
-    const sum = h('summary', {class: 'lc-strip-sum'}, h('strong', {}, 'Путь файла и прогноз'), line);
+    const sum = h('summary', {class: 'lc-strip-sum'}, h('strong', {}, 'File lifecycle and prediction'), line);
     const box = h('details', {class: 'lc-strip'}, sum, chain, forecast, preview);
     const text = (root, selector) => { const e = root.querySelector(selector); return e ? e.textContent.trim() : ''; };
     const narrow = typeof matchMedia === 'function' ? matchMedia(query) : null;
@@ -195,8 +178,8 @@ const Lifecycle = (() => {
     if (narrow && narrow.addEventListener) narrow.addEventListener('change', fit);
     function sync() {
       const step = chain.querySelector('[aria-current]'), level = text(forecast, '.pill'), caution = preview.classList.contains('alert');
-      const parts = [step ? `сейчас: ${text(step, '.lc-name')}` : '', level ? `прогноз: ${level}` : '', caution ? 'у превью есть оговорка' : ''].filter(Boolean);
-      fill(line, parts.length ? parts.join(' · ') : 'нет данных о пути файла');
+      const parts = [step ? `current: ${text(step, '.lc-name')}` : '', level ? `prediction: ${level}` : '', caution ? 'preview has a caveat' : ''].filter(Boolean);
+      fill(line, parts.length ? parts.join(' · ') : 'no file lifecycle data');
       if (caution || forecast.querySelector('.alert')) sum.setAttribute('data-caution', 'true'); else sum.removeAttribute('data-caution');
     }
     sync();
@@ -204,40 +187,38 @@ const Lifecycle = (() => {
   }
 
   // -- the basis of a comparison ------------------------------------------------------------------------------------------------------------
-  /** С чем сравнивали гравировку, прямо и без смягчений. Реконструкцию никогда не выдают за исходное обещание файла. */
+  /** Describe the comparison basis without presenting reconstruction as the file’s original prediction. */
   function basisNote(basis) {
-    const n = basis.export_number, date = basis.exported_at ? ` (выгружен ${when(basis.exported_at)})` : '';
-    const tie = (basis.ambiguous || []).length ? ` Слои файлов ${[...basis.ambiguous, n].sort((a, b) => a - b).map((x) => '№ ' + x).join(', ')} совпадают с гравировкой одинаково; выбран файл № ${n}, самый поздний из сделанных до фотографии.` : '';
-    if (basis.kind === 'saved') return `Основание: прогноз, сохранённый вместе с файлом № ${n}${date}. Это то, что обещал сам файл.${tie}`;
-    if (basis.kind === 'reconstructed' && n) return `Основание: реконструкция. Вместе с файлом № ${n}${date} прогноз не сохранялся; цвета восстановлены по слоям работы, какими они записаны сейчас. Это не исходное обещание файла.`;
-    if (basis.kind === 'reconstructed') return 'Основание: реконструкция. Работа ещё не выгружалась, поэтому гравировка сравнена с цветами её слоёв, какие они сейчас. Это не обещание файла.';
-    return `Основание: нет. Прогноз файла${n ? ' № ' + n : ''} не сохранялся, а работу с тех пор перекрасили или разбили заново: сравнить не с чем. Ниже только цвета, которые измерила фотография.`;
+    const n = basis.export_number, date = basis.exported_at ? ` (exported ${when(basis.exported_at)})` : '';
+    const tie = (basis.ambiguous || []).length ? ` Layers in files ${[...basis.ambiguous, n].sort((a, b) => a - b).map((x) => '#' + x).join(', ')} match the engraving equally; file #${n} was chosen as the latest before the photograph.` : '';
+    if (basis.kind === 'saved') return `Basis: prediction saved with file #${n}${date}. This is what the file itself predicted.${tie}`;
+    if (basis.kind === 'reconstructed' && n) return `Basis: reconstruction. No prediction was saved with file #${n}${date}; colors were reconstructed from the work layers as currently recorded. This is not the file’s original prediction.`;
+    if (basis.kind === 'reconstructed') return 'Basis: reconstruction. The work has not been exported, so the engraving is compared with its current layer colors. This is not a file prediction.';
+    return `Basis: none. No prediction was saved for file${n ? ' #' + n : ''}, and the work was recolored or split since then, so no comparison is available. Only colors measured from the photo are shown below.`;
   }
 
   // -- the return to the work -------------------------------------------------------------------------------------------------------------
-  /** Сводка принятого результата для экрана работы: файл и основание, как вышло, что изменилось в текущем прогнозе работы и что дальше.
-      ``onNext(code)`` — кнопка действия (экран открывает вкладку сравнения). */
+  /** Summarize an accepted result and changes to the current prediction. */
   function summary(s, {onNext = null, onClose = null} = {}) {
     const res = s.result, p = s.prediction;
-    const line = res.matched == null ? 'Слои не сопоставлены с файлом.' : `Сопоставлено слоёв: ${res.matched} из ${res.promised}`
-      + (res.beyond_layers ? `, заметно отличаются (${res.beyond_layers})` : ', заметных отличий нет')
-      + (res.mean_delta_e == null ? '' : `, средняя ΔE ${num(res.mean_delta_e, 1)}`) + '.';
-    const move = !p.known ? 'Как изменился текущий прогноз работы, для этого результата не записано.'
-      : p.after == null ? 'У работы нет файла, от которого считать сдвиг цветов: прогноз сравнивать не с чем.'
-      : `Текущий прогноз работы: слоёв, цвет которых сдвинулся с момента файла, ${p.after.layers}`
-        + (p.before == null ? '' : ` (было ${p.before.layers})`) + (p.after.proposals ? `; есть ближе по цвету замены: ${p.after.proposals}` : '') + '. Файл № ' + (s.export_number ?? '—') + ' от этого не меняется.';
-    return h('section', {class: 'card stack lc-summary', role: 'status', 'aria-label': 'Итог принятого результата'}, h('h3', {}, `Результат принят: «${s.work}»`),
+    const line = res.matched == null ? 'Layers were not matched to the file.' : `Matched layers: ${res.matched} of ${res.promised}`
+      + (res.beyond_layers ? `, noticeably different (${res.beyond_layers})` : ', no noticeable differences')
+      + (res.mean_delta_e == null ? '' : `, mean ΔE ${num(res.mean_delta_e, 1)}`) + '.';
+    const move = !p.known ? 'Changes to the current work prediction were not recorded for this result.'
+      : p.after == null ? 'The work has no file against which to calculate color drift, so the prediction cannot be compared.'
+      : `Current work prediction: ${p.after.layers} layer colors shifted since the file`
+        + (p.before == null ? '' : ` (was ${p.before.layers})`) + (p.after.proposals ? `; closer color replacements available: ${p.after.proposals}` : '') + '. File #' + (s.export_number ?? '—') + ' is unchanged.';
+    return h('section', {class: 'card stack lc-summary', role: 'status', 'aria-label': 'Accepted result summary'}, h('h3', {}, `Result accepted: “${s.work}”`),
       h('p', {class: 'small'}, basisNote(s.basis)), h('p', {class: 'small'}, line), h('p', {class: 'small'}, move),
-      onNext || onClose ? h('div', {class: 'row'}, onNext ? btn(s.next === 'replace' ? 'Посмотреть замены цветов' : 'Сравнить с ожиданием', () => onNext(s.next), 'primary') : null,
-        onClose ? btn('Закрыть итог', onClose) : null) : null);
+      onNext || onClose ? h('div', {class: 'row'}, onNext ? btn(s.next === 'replace' ? 'View color replacements' : 'Compare with expected', () => onNext(s.next), 'primary') : null,
+        onClose ? btn('Close summary', onClose) : null) : null);
   }
 
-  /** После принятия результата — обратно в работу, к которой он относится, с короткой сводкой. ``concluded`` — ответ принятия
-      (``work_review``). Возвращает true, когда перешёл; false — результат не относится к векторной работе (экран остаётся прежним). */
+  /** Return to the associated vector work after accepting a result. */
   function returnToWork(concluded) {
     if (!concluded || !concluded.summary) return false;
     const s = concluded.summary;
-    App.toast(`Результат принят. Возвращаемся в работу «${s.work}»: ${concluded.review.summary.beyond_layers ? 'есть заметные отличия' : 'заметных отличий нет'}`, 'ok');
+    App.toast(`Result accepted. Returning to “${s.work}”: ${concluded.review.summary.beyond_layers ? 'noticeable differences found' : 'no noticeable differences'}`, 'ok');
     App.go(s.route);
     return true;
   }

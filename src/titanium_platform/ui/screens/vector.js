@@ -320,7 +320,7 @@
       const card = document.getElementById('vw-job-export');
       if (!card) return;
       if (card.scrollIntoView) card.scrollIntoView({block: 'start'});
-      const action = [...card.querySelectorAll('button')].find((b) => b.textContent === 'Скачать LightBurn');
+      const action = [...card.querySelectorAll('button')].find((b) => b.textContent === 'Download LightBurn');
       if (action && !action.disabled) action.focus();
     };
 
@@ -487,7 +487,7 @@
     if (accepted) {                                                   // back from accepting a result: what it did to this work (kept in the work, so it is told again)
       get(`/pairs/${accepted}/work-summary`).then((found) => {
         fill(summaryBox, Lifecycle.summary(found, {onNext: () => frame.select('review'), onClose: () => fill(summaryBox)}));
-      }).catch(() => fill(summaryBox, h('p', {class: 'muted small'}, 'Итог принятого результата не найден: возможно, фотография удалена.')));
+      }).catch(() => fill(summaryBox, h('p', {class: 'muted small'}, 'Accepted result summary not found; the photograph may have been deleted.')));
     }
     return frame.el;
   }

@@ -207,7 +207,7 @@
     const plate = photoWork ? h('div', {class: 'stack'}, h('h3', {}, 'Работа фотогравировки'),
       h('p', {}, h('strong', {}, exp.plate.name)), h('p', {class: 'muted small'}, exp.plate.identifier || ''),
       h('div', {class: 'row'}, link('/photo-engraving?work=' + exp.plate.plan_id, 'Открыть работу'),
-        Lifecycle.downloadButton(`/photo-works/${exp.plate.plan_id}/export.lbrn2`, 'photo-work.lbrn2', 'Скачать LightBurn', {cls: 'btn-small'}).el))
+        Lifecycle.downloadButton(`/photo-works/${exp.plate.plan_id}/export.lbrn2`, 'photo-work.lbrn2', 'Download LightBurn', {cls: 'btn-small'}).el))
       : exp.plate ? h('div', {class: 'stack'}, h('h3', {}, 'Плата'),
       h('p', {}, h('strong', {}, I18N.name(exp.plate.name))),
       h('p', {class: 'muted small'}, [exp.plate.test_name || I18N.name(exp.plate.mode), `${exp.plate.layers} слоёв`, exp.plate.band_count ? `${exp.plate.band_count} полос` : null,
@@ -222,11 +222,11 @@
         Object.keys(exp.plate.engraving_task.goals || {}).length ? ` · ${Tasks.goalsText(exp.plate.engraving_task.goals)}` : '') : null,
       lifecycle ? Lifecycle.readiness(lifecycle, {designer: null}) : null,
       h('div', {class: 'row'}, link('/plans/' + exp.plate.plan_id, 'Открыть и изменить плату'),
-        Lifecycle.downloadButton(`/plans/${exp.plate.plan_id}/export.lbrn2`, 'plate.lbrn2', 'Скачать LightBurn',
+        Lifecycle.downloadButton(`/plans/${exp.plate.plan_id}/export.lbrn2`, 'plate.lbrn2', 'Download LightBurn',
           {cls: 'btn-small', disabled: lifecycle ? !lifecycle.readiness.ready : false, onDone: reload}).el,
         exp.plate.research_session_id ? link(`/research/${exp.plate.research_session_id}`, 'Open research history')
           : link('/research', 'Open AI researcher')),
-      lifecycle ? h('details', {class: 'small'}, h('summary', {}, `Прежние файлы${lifecycle.files.length ? ` (${lifecycle.files.length})` : ''}`), Lifecycle.files(lifecycle, {onDone: reload})) : null) : null;
+      lifecycle ? h('details', {class: 'small'}, h('summary', {}, `Previous files${lifecycle.files.length ? ` (${lifecycle.files.length})` : ''}`), Lifecycle.files(lifecycle, {onDone: reload})) : null) : null;
     const work = pairs[pairs.length - 1];
     // REQ-030: an accepted grayscale photo engraving opens its own file in the preview at other Min and Max power
     const photoEngraving = pairs.slice().reverse().find((p) => p.status === 'Accepted' && (p.grayscale_image || p.tonal_image));

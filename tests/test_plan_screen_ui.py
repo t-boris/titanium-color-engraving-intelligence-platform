@@ -36,7 +36,7 @@ let tree;
   const card = tree.querySelectorAll('div').find((d) => (d.querySelector('h3') || {}).textContent === 'Layers and settings');
   const mains = () => card.querySelectorAll('.lst-main');
 %(body)s
-  const exportButton = tree.querySelectorAll('button').find((b) => b.textContent === 'Скачать LightBurn');
+  const exportButton = tree.querySelectorAll('button').find((b) => b.textContent === 'Download LightBurn');
   out.export = exportButton ? exportButton.disabled : null;                 // none when the plan is not exported (a plan restored from a file)
   console.log(JSON.stringify(out));
 })().catch((e) => { console.error(e.stack); process.exit(1); });
@@ -154,15 +154,15 @@ def test_the_plan_screen_offers_one_download_with_the_readiness_and_the_files_ma
     body = {**plan([zone(1, 3, "grayscale", {**SETTINGS, "min_power": 2.0, "power": 29.0})]),
             "lifecycle": lifecycle("file", files=[file_record(1)])}
     out = run(tmp_path, body, """
-  const button = tree.querySelectorAll('button').find((b) => b.textContent === 'Скачать LightBurn');
+  const button = tree.querySelectorAll('button').find((b) => b.textContent === 'Download LightBurn');
   out.card = button.parentNode.parentNode.parentNode.textContent;
   out.chain = tree.querySelectorAll('ol').length;
   out.folds = tree.querySelectorAll('summary').map((s) => s.textContent);
   await button.dispatch('click'); await tick();
   out.requests = ctx.requests.map((r) => r.path).filter((p) => p.includes('export')); out.saved = saved; out.renders = ctx.__renders.length;
 """, **{"/api/plans/22/export.lbrn2": {"status": 200, "text": "<xml/>", "type": "application/xml"}})
-    assert "Файл LightBurn: готов к выгрузке" in out["card"] and "В лазер он не отправляется" in out["card"] and out["chain"] == 1
-    assert "Прежние файлы (1)" in out["folds"]
+    assert "LightBurn file: ready to export" in out["card"] and "Open and run it in LightBurn when ready" in out["card"] and out["chain"] == 1
+    assert "Previous files (1)" in out["folds"]
     assert out["requests"] == ["/api/plans/22/export.lbrn2"] and out["saved"] == [["blob:x", "Inna_Boris.lbrn2"]] and out["renders"] == 1
     assert "Экспортировать в LightBurn" not in out["card"]
 
@@ -171,11 +171,11 @@ def test_the_plan_screen_offers_one_download_with_the_readiness_and_the_files_ma
 def test_a_plan_that_cannot_be_exported_says_what_is_missing_and_links_to_the_measurements_that_would_fill_it(tmp_path):
     blocked = lifecycle("prepared", ready=False, blockers=[{"code": "missing_colours", "count": 2}])
     out = run(tmp_path, {**plan([]), "lifecycle": blocked}, """
-  const lc = tree.querySelectorAll('div').find((d) => (d.className || '') === 'card' && d.textContent.includes('Файл LightBurn:'));
+  const lc = tree.querySelectorAll('div').find((d) => (d.className || '') === 'card' && d.textContent.includes('LightBurn file:'));
   out.text = lc.textContent; out.links = lc.querySelectorAll('a').map((a) => [a.textContent, a.getAttribute('href')]);
 """)
-    assert out["export"] is True and "Файл LightBurn: пока нельзя" in out["text"] and "цвет титана больше не измерен" in out["text"]
-    assert out["links"] == [["Цели экспериментов", "#/designer?device=1&lens=2"]]
+    assert out["export"] is True and "LightBurn file: not ready" in out["text"] and "titanium color for 2 regions is no longer measured" in out["text"]
+    assert out["links"] == [["Experiment goals", "#/designer?device=1&lens=2"]]
 
 
 @node
