@@ -224,7 +224,8 @@
       h('div', {class: 'row'}, link('/plans/' + exp.plate.plan_id, 'Открыть и изменить плату'),
         Lifecycle.downloadButton(`/plans/${exp.plate.plan_id}/export.lbrn2`, 'plate.lbrn2', 'Скачать LightBurn',
           {cls: 'btn-small', disabled: lifecycle ? !lifecycle.readiness.ready : false, onDone: reload}).el,
-        link('/research', 'Попросить AI-исследователя изменить плату')),
+        exp.plate.research_session_id ? link(`/research/${exp.plate.research_session_id}`, 'Open research history')
+          : link('/research', 'Open AI researcher')),
       lifecycle ? h('details', {class: 'small'}, h('summary', {}, `Прежние файлы${lifecycle.files.length ? ` (${lifecycle.files.length})` : ''}`), Lifecycle.files(lifecycle, {onDone: reload})) : null) : null;
     const work = pairs[pairs.length - 1];
     // REQ-030: an accepted grayscale photo engraving opens its own file in the preview at other Min and Max power

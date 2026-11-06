@@ -350,7 +350,10 @@ def test_research_delete_hides_thread_but_preserves_chat_and_experiment(tmp_path
         research._save_exchange(app.state.store, sid, "Что проверяем?", "Непрерывность линии.", [])
         assert [m["content"] for m in client.get(f"/api/research/sessions/{sid}").json()["messages"]] == [
             "Что проверяем?", "Непрерывность линии."]
+        experiment_url = f"/api/experiments/plan-{plate['plan_id']}"
+        assert client.get(experiment_url).json()["plate"]["research_session_id"] == sid
         assert client.delete(f"/api/research/sessions/{sid}").status_code == 204
+        assert client.get(experiment_url).json()["plate"]["research_session_id"] is None
         assert client.get("/api/research/sessions").json() == []
         assert client.get(f"/api/research/sessions/{sid}").status_code == 404
         assert app.state.store.one("SELECT COUNT(*) AS n FROM research_message WHERE session_id=?", (sid,))["n"] == 2

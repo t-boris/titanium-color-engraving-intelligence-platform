@@ -200,7 +200,7 @@ def test_the_experiment_screen_offers_check_selection_brightness_and_contours_an
 def test_the_experiment_list_shows_the_material_conclusions_beside_the_experiments():
     page = screen("experiments.js")
     assert "findings = await get(`/devices/${selectedDevice.id}/findings`)" in page
-    assert "finding.material_id === selectedMaterial?.id" in page
+    assert "f.material_id === selectedMaterial?.id" in page
     assert "panel('Выводы для материала', latest.size, insightCards," in page
     assert "link(`/analysis/${finding.pair_id}`, `Измерения · проверка №${finding.pair_id}`)" in page
 

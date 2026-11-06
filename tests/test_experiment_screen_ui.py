@@ -289,7 +289,16 @@ def test_a_plate_without_photos_shows_its_picture_slot_the_plate_and_its_actions
     assert "Imma + Boris" in out["plate"] and "Описание платы" in out["plate"] and "16 слоёв" in out["plate"] and "Задача:" in out["plate"]
     links = dict((text, href) for text, href in out["links"])
     assert links["Открыть и изменить плату"] == "#/plans/22" and "Скачать .lbrn2" not in links      # the file is a button now, one for every plan
-    assert links["Попросить AI-исследователя изменить плату"] == "#/research" and links["предложению планировщика № 3"].startswith("#/designer?device=1&lens=")
+    assert links["Open AI researcher"] == "#/research" and links["предложению планировщика № 3"].startswith("#/designer?device=1&lens=")
+
+
+@node
+def test_plate_links_to_its_own_research_history(tmp_path):
+    plate = {**PLATE, "plate": {**PLATE["plate"], "research_session_id": 42}}
+    out = run(tmp_path, routes_for(plate), "plan-22", """
+  out.links = tree.querySelectorAll('a').map((a) => [a.textContent, a.getAttribute('href')]);
+""")
+    assert ["Open research history", "#/research/42"] in out["links"]
 
 
 PLATE_FILE = {"status": 200, "text": "<xml/>", "type": "application/xml", "headers": {"content-disposition": "attachment; filename*=UTF-8''plate.lbrn2"}}
@@ -403,7 +412,7 @@ def test_a_photo_work_is_shown_as_the_work_opened_and_exported_on_its_own_screen
     assert "Inna Portrait" in out["side"] and "TCE-P-41F96DBB" in out["side"] and "слоёв" not in out["side"]
     links = dict(out["links"])
     assert links["Открыть работу"] == "#/photo-engraving?work=28" and "Скачать .lbrn2" not in links
-    assert "Открыть и изменить плату" not in links and "Попросить AI-исследователя изменить плату" not in links
+    assert "Открыть и изменить плату" not in links and "Open AI researcher" not in links
 
 
 @node

@@ -174,7 +174,9 @@ def get_experiment(store: Store, key: str) -> dict:
     plate = None
     if plan:
         meta = plan.get("experiment") or {}
-        plate = {"plan_id": plan["id"], "name": plan["name"], "mode": plan["mode"], "status": plan["status"],
+        session_id = plan.get("research_session_id")
+        session = store.one("SELECT id FROM research_session WHERE id=? AND status!='Deleted'", (session_id,)) if session_id else None
+        plate = {"research_session_id": session["id"] if session else None, "plan_id": plan["id"], "name": plan["name"], "mode": plan["mode"], "status": plan["status"],
                  "test_type": plan.get("test_type") or meta.get("test_type"), "test_name": meta.get("test_name"),
                  "description": meta.get("test_description"), "layers": len(plan.get("layers", [])),
                  "band_count": plan.get("band_count"), "identifier": plan.get("plan_identifier"), "created_at": plan["created_at"],
