@@ -161,9 +161,9 @@ def test_the_picked_colour_shows_its_signals_and_keeps_the_figures_in_a_closed_f
     assert once["signals"][0] == "one engraving, not repeated" and once["signals"][-1] == "1 engraving: 1 test"
     assert doubt["signals"][0] == "uncertain: engravings disagree" and doubt["signals"][1] == "reference chart corrected"
     for read in (three, once, doubt):
-        assert read["foldOpen"] is False and read["foldTitle"] == "Подробности: цвет Lab, уверенность, источники" and read["foldHasLab"]
-        assert "Уверенность" not in read["outsideText"] and "Откуда мы знаем" not in read["outsideText"]            # the figures are not on the first level
-        assert "Найти такой же среди всех" in read["buttons"]                                                          # the actions stay
+        assert read["foldOpen"] is False and read["foldTitle"] == "Details: Lab color, confidence, sources" and read["foldHasLab"]
+        assert "Confidence" not in read["outsideText"] and "How we know" not in read["outsideText"]            # the figures are not on the first level
+        assert "Find this color among all" in read["buttons"]                                                          # the actions stay
 
 
 @node
@@ -173,15 +173,15 @@ def test_a_found_recipe_shows_its_signals_with_the_figures_folded(tmp_path):
     out = cm.run(tmp_path, routes, """
   const [, middle, right] = tree.querySelector('.os-body').children;
   await middle.querySelectorAll('circle')[0].dispatch('click');
-  await byText(middle.querySelectorAll('div').find((d) => has(d, 'cm-detail')), 'button', 'Найти такой же среди всех').dispatch('click'); await tick(); await tick();
+  await byText(middle.querySelectorAll('div').find((d) => has(d, 'cm-detail')), 'button', 'Find this color among all').dispatch('click'); await tick(); await tick();
   const card = right.querySelectorAll('article')[0];
   const fold = card.querySelectorAll('details').find((d) => has(d, 'ev-more'));
   out.signals = card.querySelectorAll('.ev-signal').map((p) => p.textContent); out.open = fold.hasAttribute('open'); out.title = fold.querySelector('summary').textContent;
-  out.inFold = fold.textContent.includes('Уверенность: 0.50 (2 of 3 agree)'); out.outside = card.children.filter((c) => c !== fold).map((c) => c.textContent).join('|');
+  out.inFold = fold.textContent.includes('Confidence: 0.50 (2 of 3 agree)'); out.outside = card.children.filter((c) => c !== fold).map((c) => c.textContent).join('|');
 """)
     assert out["signals"] == ["verified by repetition", "reference chart corrected", "3 engravings: 2 tests, 1 work"]
-    assert out["open"] is False and out["title"] == "Подробности: уверенность, источники, повторяемость" and out["inFold"] is True
-    assert "Уверенность" not in out["outside"] and "ΔE 0.4" in out["outside"]
+    assert out["open"] is False and out["title"] == "Details: confidence, sources, repeatability" and out["inFold"] is True
+    assert "Confidence" not in out["outside"] and "ΔE 0.4" in out["outside"]
 
 
 def test_the_component_is_registered_before_the_screens_that_use_it_and_reads_only_the_shared_helpers():

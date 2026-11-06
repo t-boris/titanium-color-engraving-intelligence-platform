@@ -123,8 +123,8 @@ def test_the_findings_screen_separates_measured_conclusions_from_hypotheses_and_
     """REQ-022: each finding is labelled measured, exploratory anomaly or AI hypothesis; its history, evidence and the
     schedule are on the screen; a gap can be turned into a proposal."""
     findings = _screen("findings.js")
-    for text in ("'Измерено'", "'Исследовательская аномалия, не вывод'", "'Гипотеза AI, не измерение'", "'Пересчитать сейчас'",
-                 "'Предложить эксперимент'", "'История вывода по расчётам'", "'Сохранить расписание'", "'Неопределённость'", "'Образцы'"):
+    for text in ("'Measured'", "'Exploratory anomaly, not a conclusion'", "'AI hypothesis, not a measurement'", "'Recalculate now'",
+                 "'Propose experiment'", "'Finding history across runs'", "'Save schedule'", "'Uncertainty'", "'Samples'"):
         assert text in findings, text
     for route in ("/analysis/findings/${f.id}/history", "/analysis/findings/${f.id}/proposal", "put('/analysis/schedule'", "post('/analysis/runs')",
                   "'/analysis/' + id", "'/knowledge/' + e.knowledge_id", "'/research/' + e.session_id"):
