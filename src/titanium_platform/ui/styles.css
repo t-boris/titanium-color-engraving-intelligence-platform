@@ -1644,3 +1644,8 @@ body.theme-study-light {color-scheme:light;--bg:#f3f5f9;--surface:#fff;--surface
 .theme-study-light label.f input,.theme-study-light label.f select,.theme-study-light label.f textarea,.theme-study-light .f input,.theme-study-light .f select,.theme-study-light .f textarea {background:#fff;color:#172235;border-color:#8392a8}
 .theme-study-light summary {color:#34465f}
 .theme-study-light input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]) {background:#fff;color:#172235;border-color:#8392a8}
+
+/* Long work, set and equipment names can wrap without a hover-only tooltip. */
+.dashboard-panel-head>a,.dashboard-file,.vw-work-title h2,.vw-name-row h2,.lm-title h2,.lm-set-title h3,.ep-title h2,.ep-check-name {
+  max-width:100%;overflow:visible;text-overflow:clip;white-space:normal;overflow-wrap:anywhere
+}
