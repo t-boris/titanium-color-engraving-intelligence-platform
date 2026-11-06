@@ -23,7 +23,7 @@ def hardware(store):
 
 def test_session_plate_export_and_pending_guard(store):
     laser, lens, material = hardware(store)
-    session = research.create_session(store, laser["id"], material["id"], "line", "тонкая непрерывная линия")
+    session = research.create_session(store, laser["id"], material["id"], "line", "thin continuous line")
     assert session["lens_id"] == lens["id"]
     assert research.context(store, session["id"])["device"]["id"] == laser["id"]
     preview = research.preview_plate(store, session["id"], "material_matrix", {**JOB, 
@@ -47,7 +47,7 @@ def test_session_plate_export_and_pending_guard(store):
 
 def test_ai_can_replace_a_pending_plate_without_losing_history(store):
     laser, _, material = hardware(store)
-    session = research.create_session(store, laser["id"], material["id"], "text", "найти читаемые буквы")
+    session = research.create_session(store, laser["id"], material["id"], "text", "find legible letters")
     old = research.create_plate(store, session["id"], "text_readability", JOB)
     store.execute("UPDATE plan SET status='Exported' WHERE id=?", (old["plan_id"],))
     settings = {"power": 60, "frequency": 200, "speed": 3750, "pulse_width": 200,
@@ -71,7 +71,7 @@ def test_ai_can_replace_a_pending_plate_without_losing_history(store):
 
 def test_replacement_refuses_linked_photos_and_invalid_new_plate_without_discarding_old(store):
     laser, lens, material = hardware(store)
-    session = research.create_session(store, laser["id"], material["id"], "line", "найти непрерывную линию")
+    session = research.create_session(store, laser["id"], material["id"], "line", "find a continuous line")
     old = research.create_plate(store, session["id"], "line_resolution", JOB)
     with pytest.raises(ValueError):
         research.create_plate(store, session["id"], "unknown_test", JOB, replace_plan_id=old["plan_id"])
@@ -84,26 +84,26 @@ def test_replacement_refuses_linked_photos_and_invalid_new_plate_without_discard
     with pytest.raises(research.ResearchError, match="photo"):
         research.create_plate(store, session["id"], "material_matrix", JOB, replace_plan_id=old["plan_id"])
     with pytest.raises(research.ResearchError, match="photo"):
-        research.cancel_pending_plate(store, session["id"], old["plan_id"], "тест больше не нужен")
+        research.cancel_pending_plate(store, session["id"], old["plan_id"], "test is no longer needed")
     assert plans.get_plan(store, old["plan_id"])["status"] == "Ready to export"
 
 
 def test_ai_can_cancel_only_the_current_pending_plate(store):
     laser, _, material = hardware(store)
-    session = research.create_session(store, laser["id"], material["id"], "line", "найти непрерывную линию")
+    session = research.create_session(store, laser["id"], material["id"], "line", "find a continuous line")
     old = research.create_plate(store, session["id"], "line_resolution", JOB)
     cancelled = research.call_tool(store, session["id"], "cancel_pending_test",
-                                   {"plan_id": old["plan_id"], "reason": "оператор попросил другой эксперимент"})
+                                   {"plan_id": old["plan_id"], "reason": "operator requested another experiment"})
     assert cancelled["status"] == "Cancelled"
     with pytest.raises(research.ResearchError, match="not the current pending"):
-        research.cancel_pending_plate(store, session["id"], old["plan_id"], "повторная отмена")
+        research.cancel_pending_plate(store, session["id"], old["plan_id"], "repeated cancellation")
     assert research.create_plate(store, session["id"], "material_matrix", JOB)["plan_id"] != old["plan_id"]
 
 
 def test_evidence_and_insight_are_scoped_to_exact_hardware_and_accepted_photo(store):
     laser, lens, material = hardware(store)
     other = su.save_material(store, "Other stock", grade="Grade 5")
-    session = research.create_session(store, laser["id"], material["id"], "text", "читаемый текст 1 мм")
+    session = research.create_session(store, laser["id"], material["id"], "text", "legible text 1 mm")
     research.preview_plate(store, session["id"], "text_readability", JOB)
     accepted = []
     for stock in (material, other):
@@ -115,19 +115,19 @@ def test_evidence_and_insight_are_scoped_to_exact_hardware_and_accepted_photo(st
              "photo.dng", "/missing.dng", "{}", "{}", now(), now())).lastrowid)
     rows = research.evidence(store, session["id"])
     assert [r["id"] for r in rows] == [accepted[0]]
-    saved = research.save_insight(store, session["id"], "text", "Контраст букв предварительно заметен на снимке.",
+    saved = research.save_insight(store, session["id"], "text", "Letter contrast is provisionally visible in the photograph.",
                                   "candidate", [accepted[0]])
     assert saved["evidence_pair_ids"] == [accepted[0]]
     with pytest.raises(research.ResearchError, match="does not match"):
-        research.save_insight(store, session["id"], "text", "Другая заготовка дала чёткий текст.",
+        research.save_insight(store, session["id"], "text", "Another blank produced clear text.",
                               "candidate", [accepted[1]])
     with pytest.raises(research.ResearchError, match="operator confirms"):
-        research.save_insight(store, session["id"], "text", "Готовый режим для работы.", "confirmed", [accepted[0]])
+        research.save_insight(store, session["id"], "text", "Production-ready settings.", "confirmed", [accepted[0]])
 
 
 def test_ai_previews_a_test_and_creation_requires_a_separate_idempotent_action(store):
     laser, _, material = hardware(store)
-    session = research.create_session(store, laser["id"], material["id"], "line", "найти непрерывную линию")
+    session = research.create_session(store, laser["id"], material["id"], "line", "find a continuous line")
 
     class FakeResponses:
         def __init__(self):
@@ -142,9 +142,9 @@ def test_ai_previews_a_test_and_creation_requires_a_separate_idempotent_action(s
                 return SimpleNamespace(output=[SimpleNamespace(type="function_call", name="preview_test",
                     arguments=json.dumps({"test_type": "line_resolution", "settings": JOB}), call_id="call-1")], output_text="")
             assert any(item.get("type") == "function_call_output" for item in kwargs["input"] if isinstance(item, dict))
-            return SimpleNamespace(output=[], output_text="Предлагаю тест линий; подтвердите создание отдельно.")
+            return SimpleNamespace(output=[], output_text="I suggest a line test; confirm creation separately.")
 
-    result = research.answer(store, session["id"], "Создай тест разрешения линий", client=SimpleNamespace(responses=FakeResponses()))
+    result = research.answer(store, session["id"], "Create a line resolution test", client=SimpleNamespace(responses=FakeResponses()))
     proposal = result["tool_trace"][0]["result"]
     assert proposal["context_signature"] and proposal["summary"]["size_mm"] and proposal["time_estimate"] is None
     assert not result["session"]["plans"]
@@ -156,7 +156,7 @@ def test_ai_previews_a_test_and_creation_requires_a_separate_idempotent_action(s
 
 def test_ai_cannot_create_a_plate_by_calling_a_forbidden_tool(store):
     laser, _, material = hardware(store)
-    session = research.create_session(store, laser["id"], material["id"], "line", "найти непрерывную линию")
+    session = research.create_session(store, laser["id"], material["id"], "line", "find a continuous line")
 
     class FailingResponses:
         calls = 0
@@ -167,9 +167,9 @@ def test_ai_cannot_create_a_plate_by_calling_a_forbidden_tool(store):
                 return SimpleNamespace(output=[SimpleNamespace(type="function_call", name="create_test",
                     arguments=json.dumps({"test_type": "line_resolution", "settings": JOB}), call_id="call-1")], output_text="")
             assert not kwargs["input"][-1]["output"].startswith('{"ok": true')
-            return SimpleNamespace(output=[], output_text="Потребуется отдельное подтверждение.")
+            return SimpleNamespace(output=[], output_text="Separate confirmation is required.")
 
-    result = research.answer(store, session["id"], "Создай тест разрешения линий",
+    result = research.answer(store, session["id"], "Create a line resolution test",
                              client=SimpleNamespace(responses=FailingResponses()))
     assert not result["session"]["plans"]
     assert "separate operator action" in result["tool_trace"][0]["error"]
@@ -177,12 +177,12 @@ def test_ai_cannot_create_a_plate_by_calling_a_forbidden_tool(store):
 
 def test_proposal_cannot_be_created_after_its_context_changes(store):
     laser, _, material = hardware(store)
-    session = research.create_session(store, laser["id"], material["id"], "line", "найти непрерывную линию")
+    session = research.create_session(store, laser["id"], material["id"], "line", "find a continuous line")
     args = {"test_type": "line_resolution", "settings": JOB}
     preview = research.preview_plate(store, session["id"], **args)
-    research._save_exchange(store, session["id"], "Предложи тест", "Предложение", [{"tool": "preview_test", "arguments": args, "result": preview}])
+    research._save_exchange(store, session["id"], "Suggest a test", "Proposal", [{"tool": "preview_test", "arguments": args, "result": preview}])
     message = research.get_session(store, session["id"])["messages"][-1]
-    store.execute("UPDATE research_session SET target=? WHERE id=?", ("Другая цель", session["id"]))
+    store.execute("UPDATE research_session SET target=? WHERE id=?", ("Another goal", session["id"]))
     with pytest.raises(research.ResearchError, match="the research context has changed"):
         research.create_proposed_plate(store, session["id"], message["id"], 0)
     assert not research.get_session(store, session["id"])["plans"]
@@ -192,10 +192,10 @@ def test_concurrent_retries_of_the_same_proposal_create_only_one_plate(store):
     from concurrent.futures import ThreadPoolExecutor
 
     laser, _, material = hardware(store)
-    session = research.create_session(store, laser["id"], material["id"], "line", "найти непрерывную линию")
+    session = research.create_session(store, laser["id"], material["id"], "line", "find a continuous line")
     args = {"test_type": "line_resolution", "settings": JOB}
     preview = research.preview_plate(store, session["id"], **args)
-    research._save_exchange(store, session["id"], "Предложи тест", "Предложение", [{"tool": "preview_test", "arguments": args, "result": preview}])
+    research._save_exchange(store, session["id"], "Suggest a test", "Proposal", [{"tool": "preview_test", "arguments": args, "result": preview}])
     message = research.get_session(store, session["id"])["messages"][-1]
     with ThreadPoolExecutor(max_workers=2) as pool:
         made = list(pool.map(lambda _: research.create_proposed_plate(store, session["id"], message["id"], 0), range(2)))
@@ -206,10 +206,10 @@ def test_concurrent_retries_of_the_same_proposal_create_only_one_plate(store):
 
 def test_changed_marker_settings_require_a_fresh_preview(store):
     laser, _, material = hardware(store)
-    session = research.create_session(store, laser["id"], material["id"], "line", "найти непрерывную линию")
+    session = research.create_session(store, laser["id"], material["id"], "line", "find a continuous line")
     args = {"test_type": "line_resolution", "settings": JOB}
     preview = research.preview_plate(store, session["id"], **args)
-    research._save_exchange(store, session["id"], "Предложи тест", "Предложение", [{"tool": "preview_test", "arguments": args, "result": preview}])
+    research._save_exchange(store, session["id"], "Suggest a test", "Proposal", [{"tool": "preview_test", "arguments": args, "result": preview}])
     message_id = research.get_session(store, session["id"])["messages"][-1]["id"]
     plans.save_marker_layer_settings(store, 35, 60, 150, pulse_width=200, line_interval=0.01, passes=1)
     with pytest.raises(research.ResearchError, match="settings or size"):
@@ -219,12 +219,12 @@ def test_changed_marker_settings_require_a_fresh_preview(store):
 
 def test_pending_plate_is_replaced_only_by_the_separate_confirmed_action(store):
     laser, _, material = hardware(store)
-    session = research.create_session(store, laser["id"], material["id"], "line", "найти непрерывную линию")
+    session = research.create_session(store, laser["id"], material["id"], "line", "find a continuous line")
     old = research.create_plate(store, session["id"], "line_resolution", JOB)
     args = {"test_type": "line_resolution", "settings": JOB}
     preview = research.preview_plate(store, session["id"], **args)
     assert preview["pending_plan_id"] == old["plan_id"] and preview["pending_replaceable"]
-    research._save_exchange(store, session["id"], "Предложи замену", "Предложение", [{"tool": "preview_test", "arguments": args, "result": preview}])
+    research._save_exchange(store, session["id"], "Suggest a replacement", "Proposal", [{"tool": "preview_test", "arguments": args, "result": preview}])
     message_id = research.get_session(store, session["id"])["messages"][-1]["id"]
     with pytest.raises(research.ResearchError, match="separate review"):
         research.create_proposed_plate(store, session["id"], message_id, 0)
@@ -236,7 +236,7 @@ def test_pending_plate_is_replaced_only_by_the_separate_confirmed_action(store):
 
 def test_advisory_actions_cannot_write_even_if_the_model_requests_it(store):
     laser, _, material = hardware(store)
-    session = research.create_session(store, laser["id"], material["id"], "line", "найти непрерывную линию")
+    session = research.create_session(store, laser["id"], material["id"], "line", "find a continuous line")
 
     class Responses:
         calls = 0
@@ -246,10 +246,10 @@ def test_advisory_actions_cannot_write_even_if_the_model_requests_it(store):
             assert not {"create_test", "replace_pending_test", "cancel_pending_test", "run_photo_mapping", "save_research_insight"} & {t["name"] for t in kwargs["tools"]}
             if self.calls == 1:
                 return SimpleNamespace(output=[SimpleNamespace(type="function_call", name="save_research_insight",
-                    arguments=json.dumps({"purpose": "line", "claim": "Достаточно длинный вывод", "confidence": "hypothesis", "evidence_pair_ids": [1]}), call_id="x")], output_text="")
-            return SimpleNamespace(output=[], output_text="Это только объяснение.")
+                    arguments=json.dumps({"purpose": "line", "claim": "A sufficiently detailed finding", "confidence": "hypothesis", "evidence_pair_ids": [1]}), call_id="x")], output_text="")
+            return SimpleNamespace(output=[], output_text="This is only an explanation.")
 
-    result = research.answer(store, session["id"], "Объясни результат", client=SimpleNamespace(responses=Responses()), advisory=True)
+    result = research.answer(store, session["id"], "Explain the result", client=SimpleNamespace(responses=Responses()), advisory=True)
     assert result["tool_trace"][0].get("error") and not result["session"]["insights"] and not result["session"]["plans"]
 
 
@@ -258,10 +258,10 @@ def test_confirm_proposal_route_survives_retry_and_preserves_the_link(tmp_path):
     with TestClient(app) as client:
         store = app.state.store
         laser, _, material = hardware(store)
-        session = research.create_session(store, laser["id"], material["id"], "line", "найти непрерывную линию")
+        session = research.create_session(store, laser["id"], material["id"], "line", "find a continuous line")
         args = {"test_type": "line_resolution", "settings": JOB}
         preview = research.preview_plate(store, session["id"], **args)
-        research._save_exchange(store, session["id"], "Предложи тест", "Предложение", [{"tool": "preview_test", "arguments": args, "result": preview}])
+        research._save_exchange(store, session["id"], "Suggest a test", "Proposal", [{"tool": "preview_test", "arguments": args, "result": preview}])
         message_id = research.get_session(store, session["id"])["messages"][-1]["id"]
         path = f"/api/research/sessions/{session['id']}/proposals/{message_id}/0/create"
         first = client.post(path, json={})
@@ -273,7 +273,7 @@ def test_confirm_proposal_route_survives_retry_and_preserves_the_link(tmp_path):
 
 def test_ai_reports_invalid_tool_arguments_without_losing_the_chat(store):
     laser, _, material = hardware(store)
-    session = research.create_session(store, laser["id"], material["id"], "line", "найти непрерывную линию")
+    session = research.create_session(store, laser["id"], material["id"], "line", "find a continuous line")
 
     class BadArguments:
         calls = 0
@@ -284,16 +284,16 @@ def test_ai_reports_invalid_tool_arguments_without_losing_the_chat(store):
                 return SimpleNamespace(output=[SimpleNamespace(type="function_call", name="preview_test",
                     arguments="{bad json", call_id="call-1")], output_text="")
             assert kwargs["input"][-1]["type"] == "function_call_output"
-            return SimpleNamespace(output=[], output_text="Не удалось разобрать параметры; уточните тест.")
+            return SimpleNamespace(output=[], output_text="Could not parse the parameters; clarify the test.")
 
-    result = research.answer(store, session["id"], "Предложи тест", client=SimpleNamespace(responses=BadArguments()))
+    result = research.answer(store, session["id"], "Suggest a test", client=SimpleNamespace(responses=BadArguments()))
     assert result["tool_trace"][0]["error"]
     assert len(result["session"]["messages"]) == 2
 
 
 def test_session_lists_photos_uploaded_for_its_plate(store):
     laser, lens, material = hardware(store)
-    session = research.create_session(store, laser["id"], material["id"], "line", "найти непрерывную линию")
+    session = research.create_session(store, laser["id"], material["id"], "line", "find a continuous line")
     plan = research.create_plate(store, session["id"], "line_resolution", JOB)
     photo_id = store.execute(
         "INSERT INTO pair(status,device_id,lens_id,material_id,plan_id,engraving_id,lightburn_name,lightburn_path,"
@@ -307,7 +307,7 @@ def test_session_lists_photos_uploaded_for_its_plate(store):
 
 def test_depth_goal_does_not_export_a_surface_photo_test_as_depth_evidence(store):
     laser, _, material = hardware(store)
-    session = research.create_session(store, laser["id"], material["id"], "deep", "Найти глубину 0,2 мм")
+    session = research.create_session(store, laser["id"], material["id"], "deep", "Find a depth of 0.2 mm")
     assert research.next_test(store, session["id"])["status"] == "measurement_needed"
     with pytest.raises(research.ResearchError, match="physical measurement"):
         research.create_plate(store, session["id"], "material_matrix", JOB)
@@ -318,7 +318,7 @@ def test_research_routes_create_and_expose_session(tmp_path):
     with TestClient(app) as client:
         laser, _, material = hardware(app.state.store)
         response = client.post("/api/research/sessions", json={"device_id": laser["id"],
-            "material_id": material["id"], "goal": "line", "target": "тонкая непрерывная линия"})
+            "material_id": material["id"], "goal": "line", "target": "thin continuous line"})
         assert response.status_code == 201, response.text
         sid = response.json()["id"]
         assert client.get(f"/api/research/sessions/{sid}/context").json()["session"]["goal"] == "line"
@@ -334,7 +334,7 @@ def test_research_routes_create_and_expose_session(tmp_path):
         assert client.get(f"/api/plans/{made.json()['plan_id']}").json()["status"] == "Superseded"
         assert client.get(replaced.json()["download_url"]).status_code == 200
         cancelled = client.post(f"/api/research/sessions/{sid}/cancel-test", json={
-            "plan_id": replaced.json()["plan_id"], "reason": "следующий тест выбран отдельно"})
+            "plan_id": replaced.json()["plan_id"], "reason": "the next test was selected separately"})
         assert cancelled.status_code == 200, cancelled.text
         assert client.get(replaced.json()["download_url"]).status_code == 409
     app.state.store.close()
@@ -344,12 +344,12 @@ def test_research_delete_hides_thread_but_preserves_chat_and_experiment(tmp_path
     app = create_app(tmp_path / "data")
     with TestClient(app) as client:
         laser, _, material = hardware(app.state.store)
-        session = research.create_session(app.state.store, laser["id"], material["id"], "line", "видимая линия")
+        session = research.create_session(app.state.store, laser["id"], material["id"], "line", "visible line")
         sid = session["id"]
         plate = research.create_plate(app.state.store, sid, "line_resolution", JOB)
-        research._save_exchange(app.state.store, sid, "Что проверяем?", "Непрерывность линии.", [])
+        research._save_exchange(app.state.store, sid, "What are we testing?", "Line continuity.", [])
         assert [m["content"] for m in client.get(f"/api/research/sessions/{sid}").json()["messages"]] == [
-            "Что проверяем?", "Непрерывность линии."]
+            "What are we testing?", "Line continuity."]
         experiment_url = f"/api/experiments/plan-{plate['plan_id']}"
         assert client.get(experiment_url).json()["plate"]["research_session_id"] == sid
         assert client.delete(f"/api/research/sessions/{sid}").status_code == 204
@@ -364,27 +364,27 @@ def test_research_delete_hides_thread_but_preserves_chat_and_experiment(tmp_path
 
 def test_long_research_chat_pages_history_and_builds_durable_memory(store):
     laser, _, material = hardware(store)
-    session = research.create_session(store, laser["id"], material["id"], "text", "чёткая надпись")
+    session = research.create_session(store, laser["id"], material["id"], "text", "clear lettering")
     sid = session["id"]
 
     class Responses:
         def create(self, **kwargs):
             if "Update the working memory" in kwargs["instructions"]:
-                assert "первый вопрос" in kwargs["input"][0]["content"]
-                return SimpleNamespace(output=[], output_text="Цель: чёткая надпись. Следующий шаг: сравнить линии.")
-            if "третий вопрос" in str(kwargs["input"]):
-                assert "Цель: чёткая надпись" in kwargs["instructions"]
-            return SimpleNamespace(output=[], output_text="Нужен сравнимый тест.")
+                assert "first question" in kwargs["input"][0]["content"]
+                return SimpleNamespace(output=[], output_text="Goal: clear lettering. Next step: compare lines.")
+            if "third question" in str(kwargs["input"]):
+                assert "Goal: clear lettering" in kwargs["instructions"]
+            return SimpleNamespace(output=[], output_text="A comparable test is needed.")
 
     client = SimpleNamespace(responses=Responses())
-    for question in ("первый вопрос", "второй вопрос", "третий вопрос"):
+    for question in ("first question", "second question", "third question"):
         research.answer(store, sid, question, client=client)
     memory = store.one("SELECT summary,through_message_id FROM research_memory WHERE session_id=?", (sid,))
-    assert "Следующий шаг" in memory["summary"]
+    assert "Next step" in memory["summary"]
     assert memory["through_message_id"] == 4
     assert len(research.get_session(store, sid)["messages"]) == 6
     for index in range(50):
-        research._save_exchange(store, sid, f"вопрос {index}", f"ответ {index}", [])
+        research._save_exchange(store, sid, f"question {index}", f"answer {index}", [])
     recent = research.get_session(store, sid)
     assert len(recent["messages"]) == research.PAGE_MESSAGES
     assert recent["has_older_messages"] is True
@@ -396,7 +396,7 @@ def test_long_research_chat_pages_history_and_builds_durable_memory(store):
 
 def test_context_distinguishes_accepted_photo_from_pending_plate(store):
     laser, lens, material = hardware(store)
-    session = research.create_session(store, laser["id"], material["id"], "text", "чёткая надпись")
+    session = research.create_session(store, laser["id"], material["id"], "text", "clear lettering")
     plan = research.create_plate(store, session["id"], "text_readability", JOB)
     photo_id = store.execute(
         "INSERT INTO pair(status,device_id,lens_id,material_id,plan_id,engraving_id,lightburn_name,lightburn_path,"
@@ -425,8 +425,8 @@ def test_a_key_without_the_client_library_is_a_message_in_the_chat_and_in_the_ex
     app = create_app(tmp_path / "data")
     with TestClient(app, raise_server_exceptions=False) as client:
         laser, _, material = hardware(app.state.store)
-        sid = research.create_session(app.state.store, laser["id"], material["id"], "line", "видимая линия")["id"]
-        asked = client.post(f"/api/research/sessions/{sid}/messages", json={"message": "Что проверить дальше?"})
+        sid = research.create_session(app.state.store, laser["id"], material["id"], "line", "visible line")["id"]
+        asked = client.post(f"/api/research/sessions/{sid}/messages", json={"message": "What should be tested next?"})
         assert asked.status_code == 422 and asked.json()["error"].startswith("the AI could not be started on this computer")
         assert "openai" not in asked.json()["error"]
         assert client.get(f"/api/research/sessions/{sid}").json()["messages"] == []
