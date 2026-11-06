@@ -69,7 +69,7 @@ const button = (tree, text) => tree.querySelectorAll('button').find((b) => b.tex
 const shown = (tree) => { const img = tree.querySelectorAll('img').find((i) => (i.className || '').includes('pp-image')); return img ? img.getAttribute('src') : null; };
 const saves = () => requests.filter((r) => r.path.endsWith('/settings')).map((r) => r.body);
 const chosen = (tree) => tree.querySelectorAll('button.ge-scale').map((b) => b.getAttribute('aria-pressed') === 'true');
-const powers = (tree) => [labelled(tree, 'Min мощность, %% (белый)').value, labelled(tree, 'Max мощность, %% (чёрный)').value];
+const powers = (tree) => [labelled(tree, 'Min power, %% (white)').value, labelled(tree, 'Max power, %% (black)').value];
 const dialog = () => ctx.document.body.querySelector('.modal');
 (async () => {
   const out = {};
@@ -117,6 +117,54 @@ def run(tmp_path, body, query=None, scale_data=None, **zone):
     return json.loads(done.stdout)
 
 
+
+@node
+def test_photo_zone_comparison_advances_after_each_change(tmp_path):
+    out = run(tmp_path, """
+  const group = tree.querySelector('.ge-comparison');
+  const image = group.querySelector('img');
+  const max = labelled(tree, 'Max power, % (black)');
+  out.initial = group.hidden;
+  max.value = '20'; await max.dispatch('change'); await wait(300); await settle();
+  out.first = [group.hidden, image.getAttribute('src'), shown(tree)];
+  max.value = '18'; await max.dispatch('change'); await wait(300); await settle();
+  out.second = [image.getAttribute('src'), shown(tree)];
+""")
+    assert out["initial"]
+    assert out["first"] == [False, "/api/vector/9/photo/1/preview.png?v=0", "/api/vector/9/photo/1/preview.png?v=1"]
+    assert out["second"] == ["/api/vector/9/photo/1/preview.png?v=1", "/api/vector/9/photo/1/preview.png?v=2"]
+
+
+@node
+def test_power_slider_gesture_is_one_change_and_failed_save_keeps_previous_comparison(tmp_path):
+    out = run(tmp_path, """
+  const group = tree.querySelector('.ge-comparison');
+  const image = group.querySelector('img');
+  const max = input(tree, (i) => i.getAttribute('aria-label') === 'Max power, % (black)' && i.getAttribute('type') === 'range');
+  await max.dispatch('pointerdown');
+  max.value = '25'; await max.dispatch('input'); await wait(300);
+  max.value = '20'; await max.dispatch('input'); await wait(300);
+  out.during = saves().length;
+  await max.dispatch('pointerup'); await wait(300); await settle();
+  out.saved = [saves(), image.getAttribute('src'), shown(tree)];
+  refuse = 'not accepted';
+  max.value = '18'; await max.dispatch('input'); await wait(300); await settle();
+  out.failed = [image.getAttribute('src'), shown(tree)];
+""")
+    assert out["during"] == 0
+    assert out["saved"] == [[{"min_power": 12, "max_power": 20}], "/api/vector/9/photo/1/preview.png?v=0", "/api/vector/9/photo/1/preview.png?v=1"]
+    assert out["failed"] == ["/api/vector/9/photo/1/preview.png?v=0", "/api/vector/9/photo/1/preview.png?v=1"]
+
+
+@node
+def test_photo_zone_keeps_precise_power_controls_in_calibration_group(tmp_path):
+    out = run(tmp_path, """
+  const group = tree.querySelector('.ge-calibration');
+  out.group = [group.querySelector('summary').textContent, group.hasAttribute('open'), group.querySelectorAll('input').length];
+""")
+    assert out["group"][0] == "Power and dot calibration" and not out["group"][1] and out["group"][2] >= 4
+
+
 @node
 def test_a_zone_opens_on_the_scales_of_its_works_laser_lens_and_titanium_with_its_picture_beside_its_look(tmp_path):
     out = run(tmp_path, """
@@ -126,25 +174,25 @@ def test_a_zone_opens_on_the_scales_of_its_works_laser_lens_and_titanium_with_it
   const width = labelled(tree, 'Ширина на титане, мм');
   out.width = [width.value, !!width.disabled];
   out.widths = requests.filter((r) => r.path === '/api/grey-scales/scale').map((r) => new URLSearchParams(r.url.split('?')[1]).get('row_mm'));
-  out.layer = tree.textContent.includes('Файл LightBurn работы: слой C03 — изображение в режиме градаций серого после слоёв цвета: Min 12 %, Max 28 %');
+  out.layer = tree.textContent.includes('LightBurn file: layer C03 is a grayscale image after the color layers: Min 12 %, Max 28 %');
   out.missing = [!!button(tree, 'Проба на ширине работы'), tree.textContent.includes('Исходная цветная картинка'), tree.textContent.includes('чистка')];
   out.choices = tree.querySelectorAll('select').find((x) => x.getAttribute('aria-label') === 'Как подбирать серые').querySelectorAll('option').map((o) => o.textContent);
   out.tabs = tree.querySelectorAll('button').filter((t) => t.getAttribute('role') === 'tab').map((t) => t.textContent);
-  out.steps = [button(tree, 'Отменить').disabled, button(tree, 'Повторить').disabled];
+  out.steps = [button(tree, 'Undo').disabled, button(tree, 'Redo').disabled];
 """)
-    assert out["head"] == ["Фотозона 1", "работа «Портрет» · C03 · областей 2 · 24,5 × 18,2 мм", "#/vector?plan=9"]
+    assert out["head"] == ["Photo zone 1", "Work “Портрет” · C03 · Regions: 2 · 24,5 × 18,2 mm", "#/vector?plan=9"]
     assert out["scales"] == [{"device_id": "1", "material_id": "3", "lens_id": "2", "row_mm": "24.5"}]  # the zone's size, as well as its setup
     assert out["opened"] == {"chosen": [False, True], "powers": ["12", "28"], "shown": "/api/vector/9/photo/1/preview.png?v=0"}
     assert out["width"] == ["24.5", True] and out["widths"][0] == "24.5"                       # the zone's width is its regions', its scale read at it
     assert out["layer"] and out["missing"] == [False, False, False]                   # no ramp, no original picture, no cleaning of its own
     assert out["choices"] == ["Сохранить рисунок", "Ближайший цвет"]                            # «Раскраска по объектам» comes with its tab
-    assert out["tabs"] == ["Картинка", "Результаты", "Шкала", "Подтверждение", "Точки"] and out["steps"] == [True, True]
+    assert out["tabs"] == ["Image", "Results", "Scale", "Confirmation", "Points"] and out["steps"] == [True, True]
 
 
 @node
 def test_a_zone_chooses_its_greys_contours_powers_and_scale_and_each_change_is_saved_and_shown(tmp_path):
     out = run(tmp_path, """
-  const max = labelled(tree, 'Max мощность, % (чёрный)');
+  const max = labelled(tree, 'Max power, % (black)');
   max.value = '20'; await max.dispatch('change'); await wait(300); await settle();
   const colour = input(tree, (i) => i.getAttribute('type') === 'checkbox' && !i.getAttribute('aria-label'));
   colour.checked = true; await colour.dispatch('change'); await settle();
@@ -168,18 +216,18 @@ def test_a_zone_chooses_its_greys_contours_powers_and_scale_and_each_change_is_s
                             {"scale": mode(150)}]
     assert out["kept"] and out["said"] == [True, True] and out["shown"] == "/api/vector/9/photo/1/preview.png?v=4"
     assert out["scale"] == {"chosen": [True, False], "powers": ["1", "30"]}                  # another scale brings its measured span
-    assert out["refused"] == [True, ["Контуры — либо включены, либо выключены"]]                       # refused: the zone stays as it was
+    assert out["refused"] == [True, ["the contours must be on or off"]]                       # refused: the zone stays as it was
     assert out["failedPrediction"][0] == "/api/vector/9/photo/1/preview.png?v=5" and "не удалось" in out["failedPrediction"][1]
 
 
 @node
 def test_undo_and_redo_are_the_works_from_the_head_and_ctrl_z_and_a_step_that_takes_the_zone_away_returns_to_the_work(tmp_path):
     out = run(tmp_path, """
-  const max = labelled(tree, 'Max мощность, % (чёрный)');
+  const max = labelled(tree, 'Max power, % (black)');
   max.value = '25'; await max.dispatch('change'); await wait(300); await settle();
-  out.changed = [powers(tree), button(tree, 'Отменить').disabled];
-  await button(tree, 'Отменить').dispatch('click'); await settle();
-  out.undone = [powers(tree), button(tree, 'Отменить').disabled, button(tree, 'Повторить').disabled];
+  out.changed = [powers(tree), button(tree, 'Undo').disabled];
+  await button(tree, 'Undo').dispatch('click'); await settle();
+  out.undone = [powers(tree), button(tree, 'Undo').disabled, button(tree, 'Redo').disabled];
   await press({key: 'z', ctrlKey: true, shiftKey: true}); await settle();
   out.redone = powers(tree);
   await press({key: 'z', metaKey: true, target: tree.querySelectorAll('input')[0]}); await settle();
@@ -208,8 +256,8 @@ def test_the_kind_of_a_zone_is_chosen_from_its_picture_in_each_kind_and_a_dot_ki
   out.pictures = box.querySelectorAll('button.ge-kind').map((b) => b.querySelector('img').getAttribute('src'));
   await box.querySelectorAll('button.ge-kind').find((b) => b.querySelector('strong').textContent === 'Джарвис').dispatch('click'); await settle();
   out.kind = tree.querySelectorAll('button').find((b) => b.textContent.startsWith('Вид:')).textContent;
-  out.dot = labelled(tree, 'Мощность точек, %').value;
-  out.layer = tree.textContent.includes('Файл LightBurn работы: слой C03 — изображение в режиме «Джарвис»: мощность 12,5 %');
+  out.dot = labelled(tree, 'Dot power, %').value;
+  out.layer = tree.textContent.includes('LightBurn file: layer C03 is an image in Джарвис mode, at 12,5 % power');
   out.closeup = tree.querySelectorAll('img').some((i) => (i.getAttribute('src') || '').startsWith('/api/vector/9/photo/1/closeup.png'));
   out.saves = saves();
 """)
@@ -230,11 +278,11 @@ def test_a_dot_zone_opens_the_colour_map_for_its_dots_and_a_colour_from_the_map_
   await button(tree, 'Цвет с карты').dispatch('click'); await settle();
   out.went = [...ctx.__went];
   zone = {...zone, dot_recipe: RECIPE_JSON}; version++;
-  const max = labelled(tree, 'Мощность точек, %');
+  const max = labelled(tree, 'Dot power, %');
   max.value = '13'; await max.dispatch('change'); await wait(300); await settle();
-  out.mapped = [!!button(tree, 'Другой цвет'), !!button(tree, 'На шкалу'), !labelled(tree, 'Мощность точек, %'),
+  out.mapped = [!!button(tree, 'Другой цвет'), !!button(tree, 'На шкалу'), !labelled(tree, 'Dot power, %'),
                 tree.textContent.includes('с карты цветов: 20 % · 500 мм/с · 60 кГц · 300 нс · шаг 0,02 мм (1000 dpi)'),
-                tree.textContent.includes('Файл LightBurn работы: слой C03 — изображение в режиме «Джарвис»: мощность 13 % (Min = Max — каждая точка бьёт на ней), 500 мм/с')];
+                tree.textContent.includes('LightBurn file: layer C03 is an image in Джарвис mode, at 13 % power (Min = Max for every dot), 500 мм/с')];
   await button(tree, 'На шкалу').dispatch('click'); await wait(300); await settle();
   out.saves = saves();
 """.replace("RECIPE_JSON", json.dumps(RECIPE)), kind="jarvis", dot_power=12.5)
@@ -247,18 +295,18 @@ def test_a_dot_zone_opens_the_colour_map_for_its_dots_and_a_colour_from_the_map_
 def test_the_brightness_contrast_and_gamma_of_a_zone_are_saved_from_three_sliders_and_wait_while_its_greys_are_chosen_for_colours(tmp_path):
     out = run(tmp_path, """
   const slider = (name) => labelled(tree, name);
-  const B = 'Яркость картинки, %', C = 'Контраст картинки, %',
-        G = 'Гамма картинки';
-  out.start = [slider(B).value, slider(C).value, slider(G).value, button(tree, 'Как есть').disabled, !!slider(B).disabled];
+  const B = 'Image brightness, %', C = 'Image contrast, %',
+        G = 'Image gamma';
+  out.start = [slider(B).value, slider(C).value, slider(G).value, button(tree, 'Reset adjustments').disabled, !!slider(B).disabled];
   slider(B).value = '20'; await slider(B).dispatch('change');
   slider(G).value = '1.5'; await slider(G).dispatch('change'); await wait(350); await settle();
-  out.after = [slider(B).value, slider(G).value, button(tree, 'Как есть').disabled];
-  await button(tree, 'Как есть').dispatch('click'); await settle();
+  out.after = [slider(B).value, slider(G).value, button(tree, 'Reset adjustments').disabled];
+  await button(tree, 'Reset adjustments').dispatch('click'); await settle();
   out.reset = [slider(B).value, slider(G).value];
   const colour = input(tree, (i) => i.getAttribute('type') === 'checkbox' && !i.getAttribute('aria-label'));
   colour.checked = true; await colour.dispatch('change'); await settle();
   const note = tree.querySelectorAll('p').find((p) => (p.className || '').includes('ge-tone-note'));
-  out.off = [!!slider(B).disabled, !!slider(G).disabled, button(tree, 'Как есть').disabled, note.hidden];
+  out.off = [!!slider(B).disabled, !!slider(G).disabled, button(tree, 'Reset adjustments').disabled, note.hidden];
   out.saves = saves();
 """)
     assert out["start"] == ["0", "0", "1", True, False]
@@ -279,5 +327,5 @@ def test_a_zone_says_what_the_laboratory_knows_of_its_kind_and_a_step_lighter_sa
 """)
     assert "Что известно о виде «градации серого»" in out["says"] and "ещё не фотографировался" in out["says"]
     assert "Светлее: мощность 28 % → 25,5 % (по опыту процесса)" in out["says"]
-    assert out["refused"] == [["Мягче", "Настройки уже на пределе: ничего из известного не сдвинет гравировку дальше в эту сторону"]]
+    assert out["refused"] == [["Мягче", "the settings are already at their limits: nothing known moves the engraving further that way"]]
     assert out["saved"] == [{"min_power": 12.0, "max_power": 25.5}]

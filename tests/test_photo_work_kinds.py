@@ -9,7 +9,7 @@ import pytest
 
 import synth
 from test_grey_scales import app_world, picture_png  # noqa: F401  (the measured grey-ramp plate, four scales)
-from titanium_platform import color, ingest as ig, lightburn, photo_modes, photo_work, plans, prediction_store as ps
+from titanium_platform import color, ingest as ig, lightburn, photo_modes, photo_work, plans, prediction_store as ps, render_cache
 
 
 def create(client, **fields):
@@ -37,6 +37,24 @@ def rgb(hex_colour: str) -> np.ndarray:
 def curve_of(client, work):
     plan = photo_work._work(client.app.state.store, work["id"])
     return ps.curve_for(client.app.state.store, photo_work.mode_of(plan), plan["width_mm"])[0]
+
+
+def test_preview_versions_keep_the_previous_work_image(app_world):
+    client = app_world["client"]
+    first = create(client)
+    old_url = first["picture"]["preview"]
+    old = client.get(old_url)
+    second = settings(client, first, tone={"brightness": 30, "contrast": 0, "gamma": 1})
+    new = client.get(second["picture"]["preview"])
+    assert old.status_code == new.status_code == 200 and old.content != new.content
+    previous = client.get(old_url)
+    assert previous.content == old.content and previous.headers["etag"] == old.headers["etag"]
+    assert client.get(old_url, headers={"If-None-Match": old.headers["etag"]}).status_code == 304
+    assert client.get(old_url.split("?")[0] + "?v=0000000000000000").status_code == 404
+    old_key = old.headers["etag"].strip('"')
+    (render_cache.pair_dir(client.app.state.store, f"photo-work-{first['id']}") / f"{old_key}.png").unlink()
+    assert client.get(old_url).status_code == 404
+    assert client.get(second["picture"]["preview"]).content == new.content
 
 
 def test_every_kind_that_colours_titanium_is_offered_with_the_works_picture_in_it(app_world):

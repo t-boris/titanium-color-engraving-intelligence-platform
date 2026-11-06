@@ -126,7 +126,7 @@ const lines = (tree) => tree.querySelector('.ge-scale-list').querySelectorAll('.
 const chosen = (tree) => lines(tree).map((m) => m.textContent.includes('выбрана'));
 /** The scale on line ``i`` chosen: its line opens its card, the card is pressed. */
 const pickScale = async (tree, i) => { await lines(tree)[i].dispatch('click'); await settle(); await tree.querySelector('button.ge-scale').dispatch('click'); };
-const powers = (tree) => [labelled(tree, 'Min мощность, %% (белый)').value, labelled(tree, 'Max мощность, %% (чёрный)').value];
+const powers = (tree) => [labelled(tree, 'Min power, %% (white)').value, labelled(tree, 'Max power, %% (black)').value];
 const dialog = () => ctx.document.body.querySelector('.modal');
 const asks = () => requests.filter((r) => r.path.endsWith('/ai')).map((r) => r.body);
 const select = (tree, label) => tree.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === label);
@@ -298,7 +298,7 @@ def test_back_from_which_kind_returns_to_the_picture_as_it_was_and_leaving_the_s
   await press({key: 'Escape'}); await settle();
   out.escaped = {open: !!dialog(), deleted: deleted(), went: ctx.__went, saved: saves()};
 """, work={"id": 9})
-    assert out["back"] == {"title": "Новая работа · шаг 1 из 2: картинка", "name": "Мото", "width": "80", "file": "moto.jpg · 4 КБ",
+    assert out["back"] == {"title": "Новая работа · шаг 1 из 2: картинка", "name": "Мото", "width": "80", "file": "moto.jpg · 4 KB",
                            "deleted": ["/api/plans/9"], "went": []}
     assert out["again"] == {"title": "Новая работа · шаг 2 из 2: какая гравировка?", "posts": 2}
     assert out["escaped"] == {"open": False, "deleted": ["/api/plans/9", "/api/plans/9"], "went": [], "saved": []}
@@ -319,19 +319,34 @@ def test_a_work_on_another_plate_of_its_scales_titanium_opens_on_that_scale_whic
     assert out["chosen"] == [False, True] and out["named"] == [True, True] and out["card"] == [["true", True]]   # the chosen scale's card open
 
 
+
+@node
+def test_photo_work_keeps_precise_power_controls_in_calibration_group(tmp_path):
+    out = run(tmp_path, {"work": "7"}, """
+  const group = tree.querySelector('.ge-calibration');
+  out.group = [group.querySelector('summary').textContent, group.hasAttribute('open'), group.querySelectorAll('input').length];
+  out.toneOutside = tree.querySelector('.ge-tone').parentNode === tree.querySelector('.ge-work');
+  const gamma = tree.querySelector('.ge-gamma-calibration');
+  out.gamma = [gamma.querySelector('summary').textContent, gamma.hasAttribute('open'), gamma.querySelectorAll('input').length];
+""")
+    assert out["group"][0] == "Power and dot calibration" and not out["group"][1] and out["group"][2] >= 4
+    assert out["toneOutside"]
+    assert out["gamma"] == ["Gamma calibration", False, 2]
+
+
 @node
 def test_a_work_opens_on_its_scale_with_its_min_and_max_and_each_change_is_saved_and_its_prediction_shown(tmp_path):
     out = run(tmp_path, {"work": "7"}, """
   out.opened = {chosen: chosen(tree), powers: powers(tree), shown: shown(tree), width: labelled(tree, 'Ширина на титане, мм').value,
                 title: tree.querySelector('h2').textContent};
-  const max = labelled(tree, 'Max мощность, % (чёрный)');
+  const max = labelled(tree, 'Max power, % (black)');
   max.value = '20'; await max.dispatch('change'); await wait(300); await settle();
   const width = labelled(tree, 'Ширина на титане, мм');
   width.value = '100'; await width.dispatch('change'); await settle();
   const colour = input(tree, (i) => i.getAttribute('type') === 'checkbox');
   colour.checked = true; await colour.dispatch('change'); await settle();
   out.saves = saves(); out.shown = shown(tree); out.size = tree.textContent.includes('для 100 × 50 мм');
-  out.cleaning = [tree.textContent.includes('из них чистка ≈ 42 с'),
+  out.cleaning = [tree.textContent.includes('из них чистка ≈ 42 s'),
                   tree.textContent.includes('Файл LightBurn: C00 — чистка CLEAN-CROSSHATCH-P20-F48-V2000-PW200-I0.05 по прямоугольнику картинки, первой')];
   out.widths = requests.filter((r) => r.path === '/api/grey-scales/scale').map((r) => new URLSearchParams(r.url.split('?')[1]).get('row_mm'));
   out.between = tree.textContent.includes('100 мм: между измерениями 38,4 и 150 мм');
@@ -363,7 +378,7 @@ def test_a_work_opens_on_its_scale_with_its_min_and_max_and_each_change_is_saved
     assert out["refused"] == {"width": "0", "shown": True, "preview": "/api/photo-works/7/preview.png?v=3",
                               "predictionStatus": "Показан предыдущий прогноз; пересчитать не удалось. Проверьте ошибку и повторите попытку.",
                               "status": "Работа: Не сохранено: на экране не то, что хранится",
-                              "error": "Не удалось сохранить. Ширина картинки должна быть от 1 до 1000 мм"
+                              "error": "Не удалось сохранить. the width of the picture must be 1..1000 mm"
                               "Набрано, но не сохранено — Ширина, мм: 0 (сохранено: 100).Закрыть"}
 
 
@@ -395,7 +410,7 @@ def test_how_the_greys_are_chosen_and_the_contours_are_saved_in_the_work_and_sai
 def test_a_scale_response_is_discarded_as_soon_as_the_next_value_is_typed(tmp_path):
     out = run(tmp_path, {"work": "7"}, """
   let release; holdScale.push(new Promise((r) => { release = r; }));
-  const max = labelled(tree, 'Max мощность, % (чёрный)');
+  const max = labelled(tree, 'Max power, % (black)');
   max.value = '20'; await max.dispatch('change'); await wait(300); await settle();
   data.scale.notes = ['STALE_SCALE_RESPONSE'];
   max.value = '21'; await max.dispatch('input');
@@ -446,7 +461,7 @@ def test_a_work_whose_scale_is_not_measured_says_why_and_a_measured_scale_can_be
 """, work={"scale": {**mode(999)}, "problem": "no colour has been measured at this mode: there is nothing to predict from"})
     opened = out["opened"]
     assert opened["chosen"] == [False, False] and opened["sliders"] == 0 and opened["tone"]               # nothing to predict: no powers, no tone
-    assert "В этом режиме цвет ещё не измерялся" in opened["text"] and "Шкала этой работы не измерена: выберите шкалу слева." in opened["text"]
+    assert "no colour has been measured at this mode: there is nothing to predict from" in opened["text"] and "Шкала этой работы не измерена: выберите шкалу слева." in opened["text"]
     assert out["saves"] == [{"scale": mode(100)}] and out["chosen"] == [False, True] and out["powers"] == ["2", "25"]
     assert out["shown"] == "/api/photo-works/7/preview.png?v=1"
 
@@ -510,7 +525,7 @@ def test_the_ai_tab_shows_the_parts_and_a_rule_set_by_hand_is_saved_with_its_tar
 def test_asking_the_ai_sends_the_wish_shows_its_note_and_the_answer_is_undone_from_the_head(tmp_path):
     out = run(tmp_path, {"work": "7"}, """
   await button(tree, 'Попросить AI').dispatch('click'); await settle();
-  out.empty = {asks: asks().length, text: tree.textContent.includes('Заполните это поле')};            // the reason stands beside the box, nothing is sent
+  out.empty = {asks: asks().length, text: tree.textContent.includes('Complete this field')};            // the reason stands beside the box, nothing is sent
   const permission = input(tree, (i) => i.getAttribute('type') === 'checkbox' && i.parentNode.textContent.includes('уменьшенную картинку'));
   permission.checked = true; await permission.dispatch('change'); await settle();
   const wish = tree.querySelectorAll('textarea')[0];
@@ -545,7 +560,7 @@ def test_undo_and_redo_in_the_head_bring_the_work_back_with_its_min_and_max_and_
     out = run(tmp_path, {"work": "7"}, """
   ctx.document.body.append(tree);
   out.start = {undo: button(tree, 'Отменить').disabled, redo: button(tree, 'Повторить').disabled, powers: powers(tree)};
-  const max = labelled(tree, 'Max мощность, % (чёрный)');
+  const max = labelled(tree, 'Max power, % (black)');
   max.value = '25'; await max.dispatch('change'); await wait(300); await settle();
   out.changed = {saves: saves(), powers: powers(tree), undo: button(tree, 'Отменить').disabled};
   await button(tree, 'Отменить').dispatch('click'); await settle();
@@ -635,8 +650,8 @@ def test_the_kind_button_of_a_work_shows_its_picture_in_each_kind_and_a_dot_kind
   await tiles().find((b) => b.querySelector('strong').textContent === 'Джарвис').dispatch('click'); await settle();
   out.closed = !dialog();
   out.kind = tree.querySelectorAll('button').find((b) => b.textContent.startsWith('Вид:')).textContent;
-  out.minMax = !!labelled(tree, 'Min мощность, % (белый)');
-  out.dot = labelled(tree, 'Мощность точек, %').value;
+  out.minMax = !!labelled(tree, 'Min power, % (white)');
+  out.dot = labelled(tree, 'Dot power, %').value;
   out.byColour = input(tree, (i) => i.getAttribute('type') === 'checkbox' && !i.getAttribute('aria-label')).disabled;
   out.closeup = tree.querySelectorAll('img').some((i) => (i.getAttribute('src') || '').includes('/closeup.png'));
   out.says = ['Каждая точка бьёт на 12,5 %', 'Это оценка', 'в режиме «Джарвис»: мощность 12,5 % (Min = Max'].map((t) => tree.textContent.includes(t));
@@ -668,7 +683,7 @@ def test_the_colouring_tab_colours_an_object_with_a_click_on_the_scales_colours_
   const posts = (end) => requests.filter((r) => r.path.endsWith(end)).map((r) => r.body);
   out.listed = objects().map((li) => li.childNodes[0].textContent.trim());
   out.first = {current: row('Фон').getAttribute('aria-current'), auto: row('Губы').textContent.includes('авто'), swatches: tree.querySelectorAll('button.ge-swatch').length,
-               note: tree.textContent.includes('Глаз за очками или чем-то надетым: 1'), overlay: tree.querySelectorAll('img').some((i) => i.getAttribute('src') === '/api/photo-works/7/objects.png?v=1')};
+               note: tree.textContent.includes('1 eye is behind glasses or something else worn'), overlay: tree.querySelectorAll('img').some((i) => i.getAttribute('src') === '/api/photo-works/7/objects.png?v=1')};
   await row('Губы').dispatch('click'); await settle();
   out.selected = row('Губы').getAttribute('aria-current');
   await swatch('Цвет шкалы 12,15 %').dispatch('click'); await settle();
@@ -708,7 +723,7 @@ VIOLET = {"entry": "a1b2c3d4e5f6", "settings": {"power": 20, "speed": 500, "freq
 @node
 def test_a_dot_kind_takes_its_dots_colour_from_the_colour_map_and_goes_back_to_the_scale(tmp_path):
     out = run(tmp_path, {"work": "7"}, """
-  out.onScale = {map: !!button(tree, 'Цвет с карты'), slider: !!labelled(tree, 'Мощность точек, %'), mark: !!tree.querySelector('.ge-dotmark'),
+  out.onScale = {map: !!button(tree, 'Цвет с карты'), slider: !!labelled(tree, 'Dot power, %'), mark: !!tree.querySelector('.ge-dotmark'),
                  says: tree.textContent.includes('Любой другой измеренный цвет — «Цвет с карты»')};
   await button(tree, 'Цвет с карты').dispatch('click'); await settle();
   out.went = [...ctx.__went];
@@ -721,7 +736,7 @@ def test_a_dot_kind_takes_its_dots_colour_from_the_colour_map_and_goes_back_to_t
 def test_dots_with_a_colour_from_the_map_show_its_settings_and_go_back_to_the_scale_at_the_power_they_had(tmp_path):
     out = run(tmp_path, {"work": "7"}, """
   const text = () => tree.textContent;
-  out.mapped = {source: tree.querySelector('.ge-dotsource').textContent, slider: !!labelled(tree, 'Мощность точек, %'), mark: !!tree.querySelector('.ge-dotmark'),
+  out.mapped = {source: tree.querySelector('.ge-dotsource').textContent, slider: !!labelled(tree, 'Dot power, %'), mark: !!tree.querySelector('.ge-dotmark'),
                 ends: tree.querySelectorAll('.ge-ends').slice(-1)[0].textContent, title: tree.querySelector('.ge-settings').textContent,
                 says: ['оценка по карте цветов', 'на настройках цвета, выбранного на карте цветов', 'Цвет точки взят с карты цветов',
                        'мощность 20 % (Min = Max — каждая точка бьёт на ней), 500 мм/с · 60 кГц · 300 нс · шаг 0,02 мм (1000 dpi) · проходов 1 — настройки цвета с карты цветов',
@@ -729,7 +744,7 @@ def test_dots_with_a_colour_from_the_map_show_its_settings_and_go_back_to_the_sc
   await button(tree, 'Другой цвет').dispatch('click'); await settle();
   out.went = [...ctx.__went];
   await button(tree, 'На шкалу').dispatch('click'); await settle();
-  out.back = {saved: saves(), source: tree.querySelector('.ge-dotsource').textContent, slider: labelled(tree, 'Мощность точек, %').value,
+  out.back = {saved: saves(), source: tree.querySelector('.ge-dotsource').textContent, slider: labelled(tree, 'Dot power, %').value,
               mark: !!tree.querySelector('.ge-dotmark'), title: tree.querySelector('.ge-settings').textContent};
 """, work={"kind": "jarvis", "dot_power": 12.5, "dot_recipe": VIOLET})
     m = out["mapped"]
@@ -744,7 +759,7 @@ def test_dots_with_a_colour_from_the_map_show_its_settings_and_go_back_to_the_sc
 @node
 def test_the_brightness_contrast_and_gamma_of_a_photo_work_are_saved_and_said_in_its_details(tmp_path):
     out = run(tmp_path, {"work": "7"}, """
-  const B = 'Яркость картинки, %';
+  const B = 'Image brightness, %';
   const brightness = labelled(tree, B);
   const work = tree.querySelector('.ge-tone').parentNode; out.under = [work.className, work.children.indexOf(tree.querySelector('.ge-tone')) - work.children.indexOf(tree.querySelector('.ge-inputs'))];
   brightness.value = '-15'; await brightness.dispatch('change'); await wait(350); await settle();
@@ -759,10 +774,10 @@ def test_colour_matching_keeps_tone_controls_enabled_and_sharpness_is_saved_and_
     out = run(tmp_path, {"work": "7"}, """
   const panel = tree.querySelector('.ge-tone');
   out.enabled = panel.querySelectorAll('input').every((i) => !i.disabled);
-  out.note = panel.textContent.includes('Регулировки применяются после подбора серых');
-  const s = labelled(tree, 'Чёткость картинки');
+  out.note = panel.textContent.includes('Adjustments are applied after grayscale matching');
+  const s = labelled(tree, 'Image sharpness');
   s.value = '40'; await s.dispatch('change'); await wait(350); await settle();
-  await button(tree, 'Как есть').dispatch('click'); await settle();
+  await button(tree, 'Reset adjustments').dispatch('click'); await settle();
   out.saves = saves();
 """, work={"by_colour": True})
     assert out["enabled"] and out["note"]
@@ -795,23 +810,45 @@ def test_a_lightburn_marker_has_independent_colour_and_photo_assessments(tmp_pat
 
 
 @node
-def test_a_tone_slider_dragged_saves_once_when_it_pauses_as_it_is_puts_the_picture_back_and_the_forecast_follows(tmp_path):
-    """photo-zone-dots REQ-002 crit. 1: the sliders' own movement (their 'input' events) and «Как есть» on the photo work screen."""
+def test_comparison_advances_after_each_change_and_a_long_slider_drag_is_one_change(tmp_path):
     out = run(tmp_path, {"work": "7"}, """
-  const B = 'Яркость картинки, %', C = 'Контраст картинки, %',
-        G = 'Гамма картинки';
+  const group = tree.querySelector('.ge-comparison');
+  const image = group.querySelector('img');
+  const range = input(tree, (i) => i.getAttribute('aria-label') === 'Image brightness, %' && i.getAttribute('type') === 'range');
+  out.initial = group.hidden;
+  await range.dispatch('pointerdown');
+  range.value = '10'; await range.dispatch('input'); await wait(400); await settle();
+  out.during = saves().length;
+  range.value = '20'; await range.dispatch('input'); await wait(400); await settle();
+  out.still = saves().length;
+  await range.dispatch('pointerup'); await wait(350); await settle();
+  out.first = [saves().length, group.hidden, image.getAttribute('src'), shown(tree)];
+  range.value = '30'; await range.dispatch('input'); await wait(350); await settle();
+  out.second = [saves().length, image.getAttribute('src'), shown(tree)];
+""")
+    assert out["initial"] and out["during"] == out["still"] == 0
+    assert out["first"] == [1, False, "/api/photo-works/7/preview.png?v=0", "/api/photo-works/7/preview.png?v=1"]
+    assert out["second"] == [2, "/api/photo-works/7/preview.png?v=1", "/api/photo-works/7/preview.png?v=2"]
+
+
+@node
+def test_a_tone_slider_dragged_saves_once_when_it_pauses_as_it_is_puts_the_picture_back_and_the_forecast_follows(tmp_path):
+    """photo-zone-dots REQ-002 crit. 1: the sliders' own movement (their 'input' events) and «Reset adjustments» on the photo work screen."""
+    out = run(tmp_path, {"work": "7"}, """
+  const B = 'Image brightness, %', C = 'Image contrast, %',
+        G = 'Image gamma';
   const range = (label) => input(tree, (i) => i.getAttribute('aria-label') === label && i.getAttribute('type') === 'range');
   const both = () => [B, C, G].map((label) => [range(label).value, labelled(tree, label).value]);
   out.start = {sliders: [B, C, G].map((label) => [range(label).getAttribute('min'), range(label).getAttribute('max')]), values: both(),
-               reset: button(tree, 'Как есть').disabled, shown: shown(tree)};
+               reset: button(tree, 'Reset adjustments').disabled, shown: shown(tree)};
   for (const step of ['5', '10', '15', '20']) { range(B).value = step; await range(B).dispatch('input'); await wait(60); }
   out.dragging = {values: both(), saves: saves().length};
   await wait(350); await settle();
-  out.paused = {values: both(), saves: saves().length, reset: button(tree, 'Как есть').disabled, shown: shown(tree)};
+  out.paused = {values: both(), saves: saves().length, reset: button(tree, 'Reset adjustments').disabled, shown: shown(tree)};
   range(G).value = '1.5'; await range(G).dispatch('input'); await wait(350); await settle();
   out.gamma = {values: both(), shown: shown(tree)};
-  await button(tree, 'Как есть').dispatch('click'); await settle();
-  out.reset = {values: both(), reset: button(tree, 'Как есть').disabled, shown: shown(tree)};
+  await button(tree, 'Reset adjustments').dispatch('click'); await settle();
+  out.reset = {values: both(), reset: button(tree, 'Reset adjustments').disabled, shown: shown(tree)};
   out.saves = saves();
 """)
     assert out["start"] == {"sliders": [["-100", "100"], ["-100", "100"], ["0.2", "5"]], "values": [["0", "0"], ["0", "0"], ["1", "1"]],
@@ -870,7 +907,7 @@ def test_a_dot_width_outside_what_lightburn_takes_stays_in_the_box_with_the_reas
   out.right = {saved: saves().length - before, invalid: width().getAttribute('aria-invalid')};
 """, work={"kind": "jarvis", "dot_power": 12.5, "dot_width": None})
     assert out["wrong"]["saved"] == 0 and out["wrong"]["kept"] == "0.5" and out["wrong"]["invalid"] == "true"          # nothing is corrected, nothing is sent
-    assert "единица: мм" in out["wrong"]["words"] and "от 0,001 до 0,2" in out["wrong"]["words"] and "Допустимо: от 0,001 до 0,2 мм. Введено: 0,5" in out["wrong"]["words"]
+    assert "unit: mm" in out["wrong"]["words"] and "from 0.001 to 0.2" in out["wrong"]["words"] and "Allowed: from 0.001 to 0.2 mm. Entered: 0.5" in out["wrong"]["words"]
     assert out["right"]["saved"] == 1 and out["right"]["invalid"] is None
 
 
@@ -971,7 +1008,7 @@ def test_a_grayscale_work_past_its_scales_turn_is_told_so_offered_no_step_and_ta
 
 @node
 def test_many_grey_scales_are_one_line_each_best_first_by_pages_and_a_scale_opens_its_card_only_on_a_click(tmp_path):
-    """DEC-090: 22 measured scales show 20 lines in the server's order (the best first) and «Показать ещё 2»; only the chosen scale's card is
+    """DEC-090: 22 measured scales show 20 lines in the server's order (the best first) and «Show 2 more»; only the chosen scale's card is
     open; another line opens its card, the card chooses the scale; «Быстрее» puts the fastest scale first."""
     scales = [{**scale(100 + i, [1, 30 - i]), "time_s_per_cm2": 90 - i} for i in range(22)]
     out = run(tmp_path, {"scales": "1"}, """
@@ -982,12 +1019,12 @@ def test_many_grey_scales_are_one_line_each_best_first_by_pages_and_a_scale_open
   out.cards = tree.querySelectorAll('button.ge-scale').length; out.chosen = chosen(tree).indexOf(true);
   await pickScale(tree, 3); await settle();
   out.after = {chosen: chosen(tree).indexOf(true), cards: tree.querySelectorAll('button.ge-scale').map((b) => b.getAttribute('aria-pressed')), powers: powers(tree)};
-  const sort = list.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Порядок');
+  const sort = list.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Sort order');
   out.sorts = sort.querySelectorAll('option').map((o) => o.textContent);
   sort.value = 'fast'; await sort.dispatch('change'); await settle();
   out.fastest = lines(tree)[0].textContent;
 """, work={"id": 9}, scales=scales)
-    assert out["lines"] == 20 and out["count"] == "показано 20 из 22" and out["more"] == "Показать ещё 2"
+    assert out["lines"] == 20 and out["count"] == "showing 20 of 22" and out["more"] == "Show 2 more"
     assert "100 мм/с" in out["first"][0] and "выбрана" in out["first"][0] and "101 мм/с" in out["first"][1]
     assert out["cards"] == 1 and out["chosen"] == 0                                                 # the chosen scale's card, nothing else
     assert out["after"]["chosen"] == 3 and out["after"]["cards"] == ["true"]

@@ -207,11 +207,12 @@ const PhotoPanels = (() => {
         }}, mm(z.row_mm)))) : null;
     // the ends of the two powers are 0 to 100 % (prediction_store.check_power_range); the dots' power must lie inside the powers the scale was measured at,
     // at this width (photo_zones.change), which the scale says (``span``): its rule is read again whenever the scale says another span
-    const dotRule = {...Forms.QUANTITIES.photoPower, label: 'Мощность точек', min: span ? span[0] : 0, max: span ? span[1] : 100, source: 'photo_zones.change (the measured span)'};
+    const dotRule = {...Forms.QUANTITIES.photoPower, label: 'Dot power', min: span ? span[0] : 0, max: span ? span[1] : 100, source: 'photo_zones.change (the measured span)'};
     const slider = (label, short, start, moved = () => schedule(), rule = Forms.QUANTITIES.photoPower) => {
       const range = h('input', {type: 'range', min: rule.min, max: rule.max, step: 0.1, value: start, 'aria-label': label});
       const exact = h('input', {type: 'number', min: rule.min, max: rule.max, step: 'any', value: start, 'aria-label': label});
-      range.addEventListener('input', () => { exact.value = range.value; exact.removeAttribute('aria-invalid'); note.textContent = ''; moved(); });
+      bindSlider(range, () => { exact.value = range.value; exact.removeAttribute('aria-invalid'); note.textContent = ''; }, moved,
+        (active) => { if (active) { ++seq; clearTimeout(timer); } });
       if (rule === Forms.QUANTITIES.photoPower) exact.addEventListener('input', () => { ++seq; clearTimeout(timer); });
       // a value outside is kept in the box with the reason beside it and is not applied
       // (a wrong value goes on to the owner's save as well: its tracker then says «not saved» with what was typed, and the server gives its reason)
@@ -221,10 +222,10 @@ const PhotoPanels = (() => {
     };
     const measured = [Math.ceil(span[0] * 10 - 1e-9) / 10, Math.floor(span[1] * 10 + 1e-9) / 10];
     const [lo0, hi0] = dot ? measured : initial || measured;
-    const low = slider('Min мощность, % (белый)', 'Min, %', lo0);
-    const high = slider('Max мощность, % (чёрный)', 'Max, %', hi0);
+    const low = slider('Min power, % (white)', 'Min, %', lo0);
+    const high = slider('Max power, % (black)', 'Max, %', hi0);
     let levelsShown = null;
-    const dotPower = dot ? slider('Мощность точек, %', 'Точки, %', dot.power, () => { clearTimeout(timer); timer = setTimeout(() => pickDot(+dotPower.exact.value), 250); }, dotRule) : null;
+    const dotPower = dot ? slider('Dot power, %', 'Dots, %', dot.power, () => { clearTimeout(timer); timer = setTimeout(() => pickDot(+dotPower.exact.value), 250); }, dotRule) : null;
     const dotSource = dot && (dot.map || dot.recipe) ? dotSourceBox(dot, () => pickDot(dot.power)) : null;
     /** Мощность точек ``p``: метка на полосе сразу, работа узнаёт её (сервер проверит, что шкала там измерена). */
     function pickDot(p) {
@@ -253,7 +254,7 @@ const PhotoPanels = (() => {
         if (byOperator && changed) changed(lo, hi);                       // the owner's tracker is told what is on the screen; the scale is not asked for it
         return;                                                           // the reason stands beside the box that is wrong
       }
-      if (!(lo <= hi)) { error.textContent = 'Min мощность должна быть не выше Max.'; error.hidden = false; return; }
+      if (!(lo <= hi)) { error.textContent = 'Min power must not exceed Max.'; error.hidden = false; return; }
       if (byOperator && changed) changed(lo, hi);
       const mine = ++seq;
       try {
@@ -448,19 +449,31 @@ const PhotoPanels = (() => {
   }
 
   const TONE = {brightness: 0, contrast: 0, gamma: 1};          // the picture's greys as they are (photo_state.TONE)
-  const TONE_ABOUT = 'Яркость, контраст и гамма картинки — те же, что в LightBurn, но применяются здесь, к серым картинки до того, как они станут '
-    + 'мощностью или точками: прогноз и файл LightBurn получают одну и ту же картинку, а в самом LightBurn эти настройки остаются стандартными (0 / 0 / 1). '
-    + 'Яркость сдвигает все тона, контраст разводит светлое и тёмное, гамма меняет средние тона (меньше 1 — светлее, больше 1 — темнее), не трогая '
-    + 'белое и чёрное. В виде точками светлее — меньше точек, темнее — больше.';
-  const TONE_MATCHED = 'Регулировки применяются после подбора серых и попадают в файл LightBurn. Темнее серый — выше мощность. '
-    + 'Цвет и светлота титана меняются по измеренной шкале, поэтому повышение мощности не всегда затемняет металл.';
+  const TONE_ABOUT = 'Brightness, contrast and gamma are applied before the image becomes laser power or dots. The prediction and LightBurn file use the same image; '
+    + 'LightBurn retains its default adjustments (0 / 0 / 1). Brightness shifts all tones, contrast separates light and dark, and gamma changes the midtones. '
+    + 'Gamma below 1 lightens midtones; above 1 darkens them. In dot modes, lighter areas contain fewer dots.';
+  const TONE_MATCHED = 'Adjustments are applied after grayscale matching and included in the LightBurn file. Darker gray means higher power. '
+    + 'Titanium color and lightness follow the measured scale, so more power does not always darken the metal.';
 
-  /** Яркость, контраст и гамма картинки (0.27.0): три ползунка и «Как есть»; каждое изменение уходит через ``save({tone})`` после паузы.
-      Пока ползунок двигают или изменение в пути, ответ сервера их не сдвигает; потом они встают, как у работы. В градациях серого с
-      подбором серых под цвета они меняют результат подбора; пока прогноза нет (шкала не измерена), их не видно, как и
-      ползунков мощности. */
+  /** Image adjustment sliders save after a pause and retain their values while a change is in flight. */
+  // A drag or held adjustment key is one change, even when it lasts longer than the save debounce.
+  function bindSlider(range, update, commit, start = () => {}) {
+    let active = false, dirty = false;
+    const keys = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End']);
+    const begin = () => { if (!active) { active = true; dirty = false; start(true); } };
+    const finish = () => { if (!active) return; active = false; start(false); if (dirty) commit(); dirty = false; };
+    range.addEventListener('pointerdown', (ev) => { begin(); if (range.setPointerCapture && ev.pointerId != null) range.setPointerCapture(ev.pointerId); });
+    range.addEventListener('pointerup', finish);
+    range.addEventListener('pointercancel', finish);
+    range.addEventListener('keydown', (ev) => { if (keys.has(ev.key)) begin(); });
+    range.addEventListener('keyup', (ev) => { if (keys.has(ev.key)) finish(); });
+    range.addEventListener('blur', finish);
+    range.addEventListener('input', () => { update(); if (active) dirty = true; else commit(); });
+  }
+
   function toneSliders(save) {
     let timer = null, busy = 0, last = null;
+    let adjusting = false;
     const defaults = {...TONE, sharpness: 0};
     // the limits are the server's (photo_state.TONE_LIMITS and the sharpness check); the slider has the step, the box the exact value
     const QUANTITY = {brightness: 'toneBrightness', contrast: 'toneContrast', gamma: 'toneGamma', sharpness: 'sharpness'};
@@ -468,16 +481,17 @@ const PhotoPanels = (() => {
       const q = Forms.QUANTITIES[QUANTITY[key]];
       const range = h('input', {type: 'range', min: q.min, max: q.max, step, value: defaults[key], 'aria-label': label});
       const exact = h('input', {type: 'number', min: q.min, max: q.max, step: 'any', value: defaults[key], 'aria-label': label});
-      range.addEventListener('input', () => { exact.value = range.value; exact.removeAttribute('aria-invalid'); note.textContent = ''; later(); });
+      bindSlider(range, () => { exact.value = range.value; exact.removeAttribute('aria-invalid'); note.textContent = ''; }, later,
+        (active) => { adjusting = active; if (active) { clearTimeout(timer); timer = null; } });
       const note = Forms.watch(exact, QUANTITY[key], (v) => { range.value = v; later(); }, {wrong: () => later()});
       // the name is the name; the unit, the permitted values and what the number does are read after it
       return {key, range, exact, note, box: h('label', {class: 'ge-power', title: `${label}: ${about}`}, h('span', {class: 'small'}, short), range, exact,
         Forms.describe(range, q, {extra: about}), Forms.describe(exact, q, {extra: about}))};
     };
-    const all = [one('brightness', 'Яркость картинки, %', 'меньше нуля — темнее, больше — светлее', 'Яркость', 1),
-      one('contrast', 'Контраст картинки, %', 'больше нуля — светлое светлее и тёмное темнее', 'Контраст', 1),
-      one('gamma', 'Гамма картинки', 'меньше 1 — средние тона светлее, больше 1 — темнее', 'Гамма', 0.05),
-      one('sharpness', 'Чёткость картинки', 'усиление мелких деталей, 0 — без дополнительного усиления', 'Чёткость', 1)];
+    const all = [one('brightness', 'Image brightness, %', 'below zero darkens; above zero lightens', 'Brightness', 1),
+      one('contrast', 'Image contrast, %', 'above zero increases the difference between light and dark', 'Contrast', 1),
+      one('gamma', 'Image gamma', 'below 1 lightens midtones; above 1 darkens them', 'Gamma', 0.05),
+      one('sharpness', 'Image sharpness', 'enhances fine detail; 0 means no additional sharpening', 'Sharpness', 1)];
     const toneOf = (view) => ({...defaults, ...(view.tone || {}), sharpness: view.sharpness || 0});
     const set = (tone) => { for (const s of all) { s.range.value = String(tone[s.key]); s.exact.value = String(tone[s.key]); s.exact.removeAttribute('aria-invalid'); s.note.textContent = ''; } };
     async function send(values) {
@@ -495,16 +509,20 @@ const PhotoPanels = (() => {
         send(Object.fromEntries(all.map((s) => [s.key, +s.exact.value])));      // a wrong box is sent as typed: the owner's tracker keeps it and the server refuses it
       }, 300);
     }
-    const reset = btn('Как есть', () => { clearTimeout(timer); timer = null; set(defaults); send({...defaults}); }, 'btn-small');
-    reset.setAttribute('title', 'Яркость 0, контраст 0, гамма 1, чёткость 0: без ручных регулировок');
+    const reset = btn('Reset adjustments', () => { clearTimeout(timer); timer = null; set(defaults); send({...defaults}); }, 'btn-small');
+    reset.setAttribute('title', 'Brightness 0, contrast 0, gamma 1, sharpness 0: no manual adjustments');
     const note = h('p', {class: 'small muted ge-tone-note', hidden: true}, TONE_MATCHED);
-    const el = h('div', {class: 'ge-powers ge-tone', role: 'group', 'aria-label': 'Яркость, контраст и гамма картинки', title: TONE_ABOUT},
-      all.map((s) => [s.box, s.note]), h('div', {class: 'row'}, reset), note);
+    const gamma = all.find((s) => s.key === 'gamma');
+    const el = h('div', {class: 'ge-powers ge-tone', role: 'group', 'aria-label': 'Image adjustments', title: TONE_ABOUT},
+      all.filter((s) => s.key !== 'gamma').map((s) => [s.box, s.note]),
+      h('details', {class: 'ge-gamma-calibration'}, h('summary', {}, 'Gamma calibration'),
+        h('p', {class: 'small muted'}, 'Gamma adjusts midtones while leaving black and white unchanged.'), gamma.box, gamma.note),
+      h('div', {class: 'row'}, reset), note);
     function show(view) {
       last = view;
       el.hidden = !!view.problem;
       const tone = toneOf(view), matched = !dotted(view) && !!view.by_colour;
-      if (!timer && !busy) set(tone);
+      if (!timer && !busy && !adjusting) set(tone);
       reset.disabled = all.every((s) => tone[s.key] === defaults[s.key]);
       note.hidden = !matched;
     }
@@ -520,7 +538,29 @@ const PhotoPanels = (() => {
       прогнозом, ``cols`` — ширина каждой из двух половин в пикселях картинки. ``tone`` — яркость, контраст и гамма картинки (0.27.0),
       владелец ставит их под ``inputs``. ``advice`` — адрес владельца, у которого лаборатория говорит, что известно о виде
       (``PhotoQuality.advisor``: лучшие измеренные настройки, «Темнее», «Светлее», «Чётче», «Мягче» и предложенный опыт). */
+  function calibrationControls(powers, dotWidth = null) {
+    return h('details', {class: 'ge-calibration'}, h('summary', {}, 'Power and dot calibration'),
+      h('p', {class: 'small muted'}, 'Min and Max map image tones to laser power. Dot correction adjusts the modeled dot width; measured-range limits still apply.'),
+      powers, dotWidth);
+  }
+
   function workPicture(save, chooseKind, {ramp = null, variations = null, advice = null, original = null, width: widthFree = true, objects = true, layer = null, stage = null} = {}) {
+    const previousImage = h('img', {class: 'ge-previous-image', alt: 'Prediction immediately before the latest change'});
+    const comparisonError = h('p', {class: 'small alert warn', role: 'status', hidden: true}, 'The previous prediction is no longer available.');
+    const comparison = h('details', {class: 'ge-comparison', hidden: true},
+      h('summary', {}, 'Compare with previous change'),
+      h('p', {class: 'small muted'}, 'This prediction shows the settings immediately before the latest change.'), previousImage,
+      comparisonError);
+    previousImage.addEventListener('error', () => { comparisonError.hidden = false; previousImage.hidden = true; });
+    function compare(previous, next) {
+      const before = previous && previous.picture && previous.picture.preview;
+      const after = next && next.picture && next.picture.preview;
+      comparison.hidden = !(before && after);
+      if (!before || !after) { comparison.open = false; return; }
+      comparisonError.hidden = true;
+      previousImage.hidden = false;
+      previousImage.setAttribute('src', before);
+    }
     const kind = btn('Вид: градации серого', () => chooseKind(), 'btn-small');
     kind.setAttribute('title', 'Какая гравировка: градации серого или один из видов точками — с картинкой в каждом');
     const width = h('input', {type: 'number', min: '1', max: '1000', step: 'any', 'aria-label': 'Ширина на титане, мм', style: 'width:6em', disabled: !widthFree,
@@ -682,7 +722,7 @@ const PhotoPanels = (() => {
       h('label', {class: 'row', title: 'Серые подбираются под цвета картинки на этой шкале'}, byColour, h('span', {class: 'small'}, 'Подобрать серые под цвета')),
       choice,
       h('label', {class: 'row', title: 'Контуры: ' + CONTOURS_ABOUT}, contours, h('span', {class: 'small'}, 'Контуры')));
-    return {inputs, tone: tone.el, out, foot, details, show, waiting, failed};
+    return {inputs, tone: tone.el, out, foot, details, comparison, compare, show, waiting, failed};
   }
 
   const OBJECT_NAMES = {background: 'Фон', hair: 'Волосы', face_skin: 'Кожа лица', body_skin: 'Кожа тела', clothes: 'Одежда', other: 'Другое (очки…)',
@@ -975,5 +1015,5 @@ const PhotoPanels = (() => {
   }
 
   return {value, when, materialLabel, titaniumLabel, sameScale, settingsText, modeQuery, GRAYSCALE, dotted, fromMap, firedSettings, kindName, hexChip, mm, mmList,
-    sizeText, SIZE_ABOUT, scaleBar, scaleCard, newSlots, emptySlots, scaleDetail, workPicture, resultCards, exportedResults, colourTab, aiTab, kindTiles, kindChooser, KINDS_ABOUT};
+    sizeText, SIZE_ABOUT, scaleBar, scaleCard, newSlots, emptySlots, scaleDetail, calibrationControls, workPicture, resultCards, exportedResults, colourTab, aiTab, kindTiles, kindChooser, KINDS_ABOUT};
 })();

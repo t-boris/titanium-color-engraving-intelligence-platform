@@ -79,6 +79,28 @@ def picture_response(request: Request, picture: render_cache.Picture) -> Respons
     return Response(picture.png(), media_type="image/png", headers=headers)
 
 
+def versioned_picture_response(request: Request, picture: render_cache.Picture) -> Response:
+    """Serve the requested cached preview version, never a different current preview."""
+    version = request.query_params.get("v")
+    if not version or version == picture.key[:16]:
+        return picture_response(request, picture)
+    if len(version) != 16 or any(c not in "0123456789abcdef" for c in version):
+        return Response(status_code=404)
+    matches = list(render_cache.pair_dir(picture.store, picture.pair_id).glob(f"{version}*.png"))
+    if len(matches) != 1 or len(matches[0].stem) != 64:
+        return Response(status_code=404)
+    key = matches[0].stem
+    data = render_cache.read(picture.store, picture.pair_id, key)
+    if data is None:
+        return Response(status_code=404)
+    etag = f'"{key}"'
+    headers = {"ETag": etag, "Cache-Control": PICTURE_CACHE_CONTROL}
+    sent = [tag.strip() for tag in request.headers.get("if-none-match", "").split(",")]
+    if any(tag == "*" or tag.removeprefix("W/") == etag for tag in sent):
+        return Response(status_code=304, headers=headers)
+    return Response(data, media_type="image/png", headers=headers)
+
+
 def public_pair(pair: dict) -> dict:
     """A pair without server file paths."""
     return {k: v for k, v in pair.items() if k not in ("lightburn_path", "photo_path")}

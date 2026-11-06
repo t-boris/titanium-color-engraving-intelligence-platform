@@ -67,7 +67,7 @@ def test_a_zone_selected_card_matches_the_preview_colours_unknowns_and_updated_p
     changed = json.dumps(response(24.5, 12, 20))
     result = zone_screen(tmp_path, SNAPSHOT + """
   data.scale = %s;
-  const max = labelled(tree, 'Max мощность, %% (чёрный)');
+  const max = labelled(tree, 'Max power, %% (black)');
   max.value = '20'; await max.dispatch('change'); await wait(300); await settle();
   out.after = snapshot();
 """ % changed, scale_data=response(24.5))

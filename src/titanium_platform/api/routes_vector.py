@@ -8,7 +8,7 @@ import json
 from fastapi import APIRouter, File, Form, Request, Response, UploadFile
 
 from .. import lifecycle, segment, setup as su, vector_job, work_errors
-from .common import MAX_IMAGE_BYTES, content_disposition, form_flag, lens_param, picture_response, public_plan, read_upload, store_of, task_goals
+from .common import MAX_IMAGE_BYTES, content_disposition, form_flag, lens_param, picture_response, public_plan, read_upload, store_of, task_goals, versioned_picture_response
 
 router = APIRouter(prefix="/api")
 
@@ -224,7 +224,7 @@ def redo_vector_zone(plan_id: int, number: int, request: Request):
 @router.get("/vector/{plan_id}/photo/{number}/preview.png")
 def vector_zone_preview(plan_id: int, number: int, request: Request):
     """The zone's picture beside its predicted look, transparent outside the zone (see vector_job.zone_preview)."""
-    return picture_response(request, vector_job.zone_preview(store_of(request), plan_id, number))
+    return versioned_picture_response(request, vector_job.zone_preview(store_of(request), plan_id, number))
 
 
 @router.get("/vector/{plan_id}/photo/{number}/closeup.png")

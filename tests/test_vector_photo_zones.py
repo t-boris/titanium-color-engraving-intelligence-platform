@@ -510,6 +510,8 @@ def test_a_zone_opens_on_its_own_screen_with_its_picture_beside_its_look_and_its
     nearest = client.post(f"/api/vector/{job['id']}/photo/1/settings", json={"colour_choice": "nearest"}).json()
     assert nearest["colour_choice"] == "nearest" and nearest["picture"]["colour_match"]["choice"] == "nearest" and nearest["work"]["undo"] == 2
     assert nearest["picture"]["preview"] != shown["preview"]
+    assert np.array_equal(png(world, shown["preview"]), both)
+    assert not np.array_equal(png(world, nearest["picture"]["preview"]), both)
     dots = client.post(f"/api/vector/{job['id']}/photo/1/settings", json={"kind": "jarvis"}).json()
     assert dots["picture"]["dots"]["power"] == dots["dot_power"] and dots["picture"]["estimate"] and dots["picture"]["dots"]["struck_share"] > 0
     assert png(world, dots["picture"]["closeup"]).shape[0] > 0 and png(world, dots["picture"]["preview"]).shape[2] == 4

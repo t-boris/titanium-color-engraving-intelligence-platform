@@ -1585,3 +1585,4 @@ body.has-creation-bar .ops-panel {max-height:min(60vh,520px,calc(100vh - var(--c
    800 px, «Пробел рецептов…»: 0 × 316 px, invisible). The text asks for 10 em before the actions are put on a line of their own */
 .lst-row {flex-wrap:wrap}
 .lst-main {flex:1 1 10em}
+.ge-previous-image { width: 100%; height: auto; }

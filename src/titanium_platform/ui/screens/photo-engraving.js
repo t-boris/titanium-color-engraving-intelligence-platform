@@ -197,7 +197,7 @@
     // Every change of the work goes through ``doc`` (save-state.js, BUG-002, BUG-011): one after another in the order made, an answer is shown
     // only when it is the answer to the newest change, a change that failed stays in its control with the error beside the work.
     const doc = SaveState.create({label: 'Работа', confirmed: first, names: SAVED_NAMES,
-      send: async (request) => { const next = await post(request.path, request.body); view = next; return next; },
+      send: async (request) => { const previous = view; const next = await post(request.path, request.body); picture.compare(previous, next); view = next; return next; },
       apply: (next, info) => { if (info.reverted || info.edits.some((e) => e.meta.again)) shownKey = null; shown(); },
       reload: async () => { view = await get(base); doc.adopt(view); },
       onOrphanFailure: (lost) => { if (typeof Operations !== 'undefined') Operations.report({title: `Работа «${view.name}»: изменения не сохранены`, message: `${lost.message} ${lost.describe}`.trim(),
@@ -319,7 +319,7 @@
       h('div', {class: 'os-col'}, h('div', {class: 'os-col-head'}, h('h3', {}, `Шкала работы (измерено ${scales.length})`)),
         h('div', {class: 'os-scroll'}, scales.length ? list.el : h('p', {class: 'muted'}, 'Измеренных шкал нет: выгравируйте пластину «Шкалы серого» и добавьте её фотографию.'))),
       h('div', {class: 'os-col ge-centre'}, h('div', {class: 'os-col-head'}, h('h3', {}, 'Картинка на шкале'), slots.title),
-        h('div', {class: 'ge-work'}, picture.inputs, picture.tone, slots.powers, dotWidth.el, doc.view.el, slots.error, error, slots.bar, picture.out, picture.foot)),
+        h('div', {class: 'ge-work'}, picture.inputs, picture.tone, PhotoPanels.calibrationControls(slots.powers, dotWidth.el), doc.view.el, slots.error, error, slots.bar, picture.out, picture.comparison, picture.foot)),
       h('div', {class: 'os-col ge-right'}, tabs.list, h('div', {class: 'os-scroll'}, tabs.panels))));
   }
 

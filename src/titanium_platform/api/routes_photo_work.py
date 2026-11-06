@@ -11,7 +11,7 @@ import json
 from fastapi import APIRouter, File, Form, Request, Response, UploadFile
 
 from .. import photo_work, setup as su
-from .common import MAX_IMAGE_BYTES, content_disposition, picture_response, read_upload, store_of
+from .common import MAX_IMAGE_BYTES, content_disposition, picture_response, read_upload, store_of, versioned_picture_response
 
 router = APIRouter(prefix="/api")
 
@@ -116,7 +116,7 @@ def photo_work_variations(plan_id: int, request: Request):
 @router.get("/photo-works/{plan_id}/preview.png")
 def photo_work_preview(plan_id: int, request: Request):
     """The picture beside its predicted look on the titanium."""
-    return picture_response(request, photo_work.preview(store_of(request), plan_id))
+    return versioned_picture_response(request, photo_work.preview(store_of(request), plan_id))
 
 
 @router.get("/photo-works/{plan_id}/thumb.png")
