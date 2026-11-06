@@ -497,20 +497,20 @@ def test_an_accepted_photo_engraving_shows_what_was_predicted_before_it_beside_w
   out.summary = card.querySelectorAll('summary').map((x) => x.textContent);
   out.asked = ctx.requests.map((r) => r.path).filter((x) => x.includes('review'));
 """)
-    assert out["order"][:2] == ["Прогноз и результат", "Измеренные слои · 1"]                    # before the measured layers
+    assert out["order"][:2] == ["Prediction and result", "Измеренные слои · 1"]                    # before the measured layers
     assert out["asked"] == ["/api/pairs/111/prediction-review", "/api/prediction-reviews"]
-    assert "Прогноз по 1 гравировке, принятой раньше" in out["text"] and ["медиана 18,7 ΔE", "pill warn"] in out["pills"]
-    assert "Тонов сравнено: 16 · максимум 59,5 ΔE · в пределах 5 ΔE: 13 %. Вышло светлее прогноза на 17,1 L* (медианы по тонам)." in out["text"]
+    assert "Prediction based on 1 previously accepted engraving" in out["text"] and ["median 18.7 ΔE", "pill warn"] in out["pills"]
+    assert "Tones compared: 16 · maximum 59.5 ΔE · within 5 ΔE: 13 %. Result: lighter than predicted by 17.1 L* (medians across tones)." in out["text"]
     size, plate, cleaning, photo = out["causes"]
-    assert size == ["Ширина строк 150 мм — вне измеренных до неё (38,4; 100 мм): прогноз взят с ближайшей, 100 мм, без пересчёта. "
-                    "На другой ширине строки остывают иначе, и та же мощность даёт другие цвета.", "pr-warn"]
-    assert plate == ["Прогноз — по гравировкам на Small Plate (2 мм); эта — на Big Plate 150 (3 мм).", "pr-warn"]
-    assert cleaning == ["Эта гравировка — по чистке; прогноз — по гравировкам без чистки.", "pr-warn"]
-    assert photo[0] == ("Чистый титан на этом фото — IMG_3378.DNG: L* 91,2 (самый светлый тон). На фото прогноза — IMG_3377.DNG: L* 76,2 "
-                        "(самый светлый тон): это фото светлее на 15 L*. На той же пластине с той же чисткой — IMG_3376.DNG: L* 79,4 "
-                        "(свидетель чистки): это фото светлее на 11,8 L* — это свет снимка, а не металл.")
-    assert out["summary"] == ["Тона: прогноз и результат (2)"] and out["tones"][0].startswith("1,9 %") and "52,8 ΔE" in out["tones"][1]
-    assert "прогноз до них ошибался на 13,8 ΔE (медиана 47 тонов, гравировок 3); где ширина была измерена заранее — 10,2 ΔE." in out["text"]
+    assert size == ["Line width 150 mm is outside previously measured widths (38.4; 100 mm). The prediction uses the nearest width, 100 mm, without adjustment. "
+                    "Lines cool differently at another width, so the same power can produce different colors.", "pr-warn"]
+    assert plate == ["The prediction uses engravings on Small Plate (2 mm); this engraving is on Big Plate 150 (3 mm).", "pr-warn"]
+    assert cleaning == ["This engraving is cleaned; prediction engravings are not cleaned.", "pr-warn"]
+    assert photo[0] == ("Bare titanium in this photo: IMG_3378.DNG: L* 91.2 (lightest tone). Prediction photos: IMG_3377.DNG: L* 76.2 "
+                        "(lightest tone); this photo is lighter by 15 L*. On the same plate with the same cleaning: IMG_3376.DNG: L* 79.4 "
+                        "(cleaning witness); this photo is lighter by 11.8 L*, due to lighting rather than metal.")
+    assert out["summary"] == ["Tones: prediction and result (2)"] and out["tones"][0].startswith("1.9 %") and "52.8 ΔE" in out["tones"][1]
+    assert "prior predictions differed by 13.8 ΔE (median across 47 tones, 3 engravings); where width was measured beforehand: 10.2 ΔE." in out["text"]
 
 
 @node
@@ -526,8 +526,8 @@ def test_a_photograph_without_a_picture_layer_asks_for_no_review_and_a_first_one
   out.text = side.querySelectorAll('div').find((d) => has(d, 'pr-card')).textContent;
 """)
     assert out["matrixAsked"] == []
-    assert out["text"].count("до неё на этих настройках") == 1 and "GREY" not in out["text"]       # one line for every layer of one reason
-    assert "Прогноз: до неё на этих настройках ничего не было измерено — прогноза не было; теперь шкала этих настроек строится по ней." in out["text"]
+    assert out["text"].count("nothing with these settings had been measured") == 1 and "GREY" not in out["text"]       # one line for every layer of one reason
+    assert "Prediction: nothing with these settings had been measured before this engraving, so no prediction was available; it now contributes to the scale." in out["text"]
 
 
 @node
@@ -542,8 +542,8 @@ def test_a_prediction_from_the_same_plate_and_cleaning_puts_the_difference_on_th
   const card = tree.querySelectorAll('div').find((d) => has(d, 'pr-card'));
   out.photo = card.querySelectorAll('li').filter((li) => !has(li, 'pr-tone'))[3].textContent;
 """)
-    assert out["photo"] == ("Чистый титан на этом фото — IMG_3378.DNG: L* 91,2 (самый светлый тон). На фото прогноза — IMG_3296.DNG: L* 65,5 "
-                            "(самый светлый тон): это фото светлее на 9,2 L*. Пластина и чистка те же — это свет снимка, а не металл.")
+    assert out["photo"] == ("Bare titanium in this photo: IMG_3378.DNG: L* 91.2 (lightest tone). Prediction photos: IMG_3296.DNG: L* 65.5 "
+                            "(lightest tone); this photo is lighter by 9.2 L*. The plate and cleaning are the same, so the difference is photo lighting rather than metal.")
 
 # -- the frame -------------------------------------------------------------------------------------------------------------------------
 def test_the_experiment_page_takes_the_screen_with_the_photo_filling_its_column_and_only_a_long_panel_scrolling():

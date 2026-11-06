@@ -521,11 +521,11 @@ def test_the_prediction_review_names_its_basis_as_a_reconstruction_and_lists_the
   const card = PR.card(data.review, null);
   out.text = card.textContent;
   out.note = card.querySelectorAll('p').find((p) => p.getAttribute('role') === 'note').textContent;
-  out.largest = card.querySelectorAll('p').map((p) => p.textContent).find((t) => t.startsWith('Крупнейшие отличия'));
+  out.largest = card.querySelectorAll('p').map((p) => p.textContent).find((t) => t.startsWith('Largest differences'));
   out.empty = PR.card(data.none, null);
 """)
-    assert out["note"].startswith("Основание: реконструкция.") and "Это не обещание файла" in out["note"]
-    assert out["largest"] == "Крупнейшие отличия: 60 % — 6 ΔE; 50 % — 5 ΔE; 40 % — 4 ΔE." and out["empty"] is None
+    assert out["note"].startswith("Basis: reconstruction.") and "not a promise stored in the file" in out["note"]
+    assert out["largest"] == "Largest differences: 60 % — 6 ΔE; 50 % — 5 ΔE; 40 % — 4 ΔE." and out["empty"] is None
 
 
 # -- the stylesheet and the page ----------------------------------------------------------------------------------------------------
