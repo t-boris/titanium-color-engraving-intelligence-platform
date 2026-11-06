@@ -113,3 +113,15 @@ MarkView browser first-run light-study scenario on a new disposable 0.40.0 works
 ### Implementation · 2026-11-06
 
 After the operator removed delivery blocks, opened PR #35 and enabled the previously disabled CI workflow for the requested checks. Additional domain regression selection passed 16 tests covering stored picture through scale/width/undo, palettes, exported-file and measurement history, delayed preview responses and preview/export smoothness. Physical workshop-lighting/tablet comparison remains pending and the light theme remains research-only.
+
+### Codex · 2026-11-06
+
+Post-release CI run 42237134177: Linux Python 3.11 and 3.12 failed five tests each, despite the earlier local suite passing. Two nested pytest.approx assertions are incompatible with pytest 9.2, and one AI form test depends on local credentials; fixes reproduced locally with pytest 9.2. Two contour round-trip checks are under investigation in a matching Linux environment. Internal beta 0.40.0 remains released; do not treat CI as passed.
+
+### Codex · 2026-11-06
+
+The two Linux contour failures were reproduced in an amd64 Linux container. The 0.40.0 preview and LightBurn parser used different curve flattening resolutions, giving roughly 1.5–1.8% area difference on small regions. Increasing both sampling precisions made the existing 1% checks pass without relaxing them; broader geometry and cache regressions are running for patch 0.40.1.
+
+### Codex · 2026-11-06
+
+Patch validation: the Linux amd64 container passed 78 contour, LightBurn and grayscale tests with the original contour area tolerance; the three pytest 9.2 and AI-credential-dependent cases also passed locally. The drawing cache version is advanced for the more accurate contours. Full pytest and the 0.40.1 desktop build are in progress.

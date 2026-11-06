@@ -302,7 +302,9 @@ def test_a_picture_file_cleans_the_pictures_rectangle_first_and_engraves_the_pic
     (frame,), (picture,) = clean.regions, image.regions
     xs, ys = [p[0] for p in frame.polygon], [p[1] for p in frame.polygon]
     assert frame.kind == "rect" and (min(xs), max(xs), min(ys), max(ys)) == pytest.approx((0, 50, 0, 50 * 200 / 300), abs=1e-3)
-    assert [p for p in picture.polygon] == pytest.approx([p for p in frame.polygon], abs=1e-3)     # over the picture's rectangle
+    assert len(picture.polygon) == len(frame.polygon)
+    for actual, expected in zip(picture.polygon, frame.polygon):
+        assert actual == pytest.approx(expected, abs=1e-3)     # over the picture's rectangle
     mode = ps.Mode(device_id=1, lens_id=None, material_id=None, speed=150, frequency=60, pulse_width=300, line_interval=0.0169, passes=1)
     assert ps.picture_time(mode, 50, 50 * 200 / 300, CLEAN)["seconds"] == pytest.approx(et.of_project(project)["seconds"], rel=1e-6)
 

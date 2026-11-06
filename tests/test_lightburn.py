@@ -382,6 +382,8 @@ def test_a_file_lightburn_reflected_keeps_each_picture_and_hole_on_its_shape():
     picture, shape = project.layer(0).regions
     assert (picture.y, picture.height) == pytest.approx((10, 10))                      # y -> 20 - y over the work's 0..20
     corners = [lb._apply(picture.bitmap["matrix"], sx * 20, sy * 5) for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
-    assert sorted(corners) == pytest.approx(sorted(picture.polygon))                  # the picture lies on its reflected rectangle
+    assert len(corners) == len(picture.polygon)
+    for actual, expected in zip(sorted(corners), sorted(picture.polygon)):
+        assert actual == pytest.approx(expected)                  # the picture lies on its reflected rectangle
     (inside,) = shape.holes
     assert (min(y for _, y in inside), max(y for _, y in inside)) == pytest.approx((16, 18))
