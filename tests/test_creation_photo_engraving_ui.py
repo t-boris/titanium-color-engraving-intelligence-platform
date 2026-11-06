@@ -124,17 +124,17 @@ def test_an_opened_photo_work_writes_its_own_laser_lens_titanium_and_source_unde
 CHANGE = """
   await button(tree, 'Новая работа').dispatch('click'); await settle();
   const box = dialog();
-  const open = box.querySelectorAll('button').find((b) => b.textContent === 'Изменить…');
+  const open = box.querySelectorAll('button').find((b) => b.textContent === 'Change…');
   out.heading = box.querySelector('.work-context').textContent.slice(0, 40);
   await open.dispatch('click'); await settle();
   const nested = ctx.document.body.querySelectorAll('.modal')[1];
   out.nested = [nested.querySelector('h3').textContent, nested.textContent.includes('Источник измерений')];
-  const stock = nested.querySelectorAll('.matpick').find((x) => x.getAttribute('aria-label') === 'Титан');            // the titanium is the stock selector, no longer a drop-down
+  const stock = nested.querySelectorAll('.matpick').find((x) => x.getAttribute('aria-label') === 'Stock');            // the titanium is the stock selector, no longer a drop-down
   await button(stock, 'Choose…').dispatch('click'); await settle();                                              // its own dialog opens above this one
   const chooser = ctx.document.body.querySelectorAll('.modal')[2];
   await button(chooser.querySelectorAll('.lst-row').find((r) => r.textContent.includes('Sheet')), 'Choose').dispatch('click'); await settle();
-  out.warned = [nested.textContent.includes('Другая марка титана'), requests.filter((r) => r.path === '/api/creation/context' && r.method === 'PUT').length];
-  await nested.querySelectorAll('button').find((b) => b.textContent === 'Применить').dispatch('click'); await settle();
+  out.warned = [nested.textContent.includes('The titanium grade is different'), requests.filter((r) => r.path === '/api/creation/context' && r.method === 'PUT').length];
+  await nested.querySelectorAll('button').find((b) => b.textContent === 'Apply').dispatch('click'); await settle();
   out.put = requests.filter((r) => r.path === '/api/creation/context' && r.method === 'PUT').map((r) => r.body);
   out.shown = box.querySelector('.work-context').textContent;
   out.stillOpen = ctx.document.body.querySelectorAll('.modal').length;
@@ -153,8 +153,8 @@ def test_the_dialog_of_new_work_changes_the_shared_choice_by_the_creation_dialog
     scales = [scale(100, [2, 25])]
     scales[0]["mode"] = {**scales[0]["mode"], "material_id": 4}
     out = run(tmp_path, {}, CHANGE, scales=scales)
-    assert out["heading"].startswith("Работа делается на") and out["nested"] == ["Контекст новой работы", False]       # the source is chosen below in this dialog
-    assert out["warned"] == [True, 0]                                                                          # read before «Применить»: nothing is saved yet
+    assert out["heading"].startswith("Работа делается на") and out["nested"] == ["New work context", False]       # the source is chosen below in this dialog
+    assert out["warned"] == [True, 0]                                                                          # read before «Apply»: nothing is saved yet
     assert out["put"] == [{"device_id": 1, "lens_id": 2, "material_id": 4, "source": None}] and "Sheet" in out["shown"] and out["stillOpen"] == 1
     [sent] = out["posts"]
     assert json.loads(sent["scale"])["material_id"] == 4                                                       # the work is made on the new choice's own scale

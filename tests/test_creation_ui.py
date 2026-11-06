@@ -162,7 +162,7 @@ const keep = () => dialog().querySelectorAll('button').filter((b) => b.textConte
 const dialogButton = (text) => dialog().querySelectorAll('button').find((b) => b.textContent === text);
 /** Choose a stock record the way a person does: the selector's own dialog opens above the box, the row of the record is chosen there (the titanium is no longer a drop-down). */
 const chooseStock = async (box, name) => {
-  await button(labelled(box, 'Титан'), 'Choose…').dispatch('click'); await settle();
+  await button(labelled(box, 'Stock'), 'Choose…').dispatch('click'); await settle();
   const inner = body.querySelectorAll('.modal').pop();
   await button(inner.querySelectorAll('.lst-row').find((r) => r.textContent.includes(name)), 'Choose').dispatch('click');
   return settle();
@@ -203,7 +203,7 @@ def test_the_first_step_asks_for_picture_name_and_size_and_a_missing_picture_or_
 """)
     assert out["head"] == "Новая работа · шаг 1 из 3: Картинка и размер"
     assert out["steps"] == [["1. Картинка и размер", "step"], ["2. Что получится", None], ["3. Настройки и создание", None]]
-    for word in ("Лазер", "JPT 60", "F-Theta", "Plate", "Grade 5", "измерения этой мастерской"):
+    for word in ("Laser", "JPT 60", "F-Theta", "Plate", "Grade 5", "This workshop’s measurements"):
         assert word in out["context"]
     assert out["noPicture"] == "Выберите картинку (PNG, JPEG, TIFF)"                          # each wrong box says why beside itself and keeps what was typed
     assert out["noSize"] == ["Allowed: greater than 0 mm. Entered: 0", "0", "true"]
@@ -383,32 +383,32 @@ def test_the_change_dialog_shows_what_becomes_unavailable_before_the_person_conf
   S.impact = (c) => ({changed: true, now: {}, after: {}, warnings: [
     {code: 'fewer', result: 'colour', now: 9, after: 2}, {code: 'none_left', result: 'photo', now: 1, after: 0}, {code: 'titanium_differs'}, {code: 'lens_unknown'}]});
   const tree = await screen();
-  await button(tree, 'Изменить…').dispatch('click'); await settle();
+  await button(tree, 'Change…').dispatch('click'); await settle();
   const box = dialog();
   out.title = box.querySelector('h3').textContent;
   out.firstAsk = sent('POST', '/api/creation/context/impact').length;
-  const laser = labelled(box, 'Лазер'); laser.value = '2'; await laser.dispatch('change'); await settle();
+  const laser = labelled(box, 'Laser'); laser.value = '2'; await laser.dispatch('change'); await settle();
   await chooseStock(box, 'Sheet');
   out.warnings = box.querySelectorAll('li').map((li) => li.textContent);
   out.asked = sent('POST', '/api/creation/context/impact').pop().json;
   out.savedBefore = sent('PUT', '/api/creation/context').length;
   out.live = box.querySelectorAll('[aria-live]').length;
   out.stripBefore = tree.querySelector('.work-context').textContent.includes('JPT 60');
-  await button(box, 'Применить').dispatch('click'); await settle();
+  await button(box, 'Apply').dispatch('click'); await settle();
   out.put = sent('PUT', '/api/creation/context').map((r) => r.json);
   out.closed = dialog() === null;
   out.focus = ctx.document.activeElement && ctx.document.activeElement.textContent;
 """)
-    assert out["title"] == "Контекст новой работы"
-    assert out["warnings"] == ["Цветных областей: было 9, станет 2.".replace("Цветных областей", "Измеренных цветов заливки (цветные области)"),
-                               "Измеренных шкал серого (фотогравировка): было 1, у выбранной установки нет ни одной.",
-                               "Другая марка титана: рецепты и цвета, измеренные на прежней, к этой не относятся.",
-                               "Линза неизвестна: знания разных линз не смешиваются, измерения других линз сюда не попадут."]
+    assert out["title"] == "New work context"
+    assert out["warnings"] == ["Measured fill colors (color regions): 9 available before; 2 for the selected setup.",
+                               "Measured grey scales (photo engraving): 1 available before; none for the selected setup.",
+                               "The titanium grade is different. Recipes and colors measured on the previous grade do not apply to this one.",
+                               "The lens is unknown. Knowledge from different lenses is kept separate, so measurements from other lenses will not be included."]
     assert out["asked"]["device_id"] == 2 and out["asked"]["material_id"] == 4
     assert out["savedBefore"] == 0 and out["stripBefore"] is True                    # the warnings come first; nothing is saved by looking
     assert out["live"] >= 1
     assert out["put"] == [{"device_id": 2, "lens_id": None, "material_id": 4, "source": None}]
-    assert out["closed"] is True and out["focus"] == "Изменить…"                    # the keyboard returns to the button that opened the dialog
+    assert out["closed"] is True and out["focus"] == "Change…"                    # the keyboard returns to the button that opened the dialog
 
 
 @node
@@ -422,20 +422,20 @@ def test_cancelling_the_change_dialog_saves_nothing_and_a_late_answer_for_an_ear
     return reply(200, {changed: true, warnings: [{code: 'lens_unknown'}], now: {}, after: {}});
   });
   const tree = await screen();
-  await button(tree, 'Изменить…').dispatch('click'); await settle();
+  await button(tree, 'Change…').dispatch('click'); await settle();
   const box = dialog();
   await chooseStock(box, 'Sheet');                                                                // the slow answer is for this choice
   await chooseStock(box, 'Plate');                                                                // ... and this one is the newer
   release(); await settle();
   out.shown = box.querySelectorAll('li').map((li) => li.textContent);
-  await button(box, 'Отмена').dispatch('click'); await settle();
+  await button(box, 'Cancel').dispatch('click'); await settle();
   out.put = sent('PUT', '/api/creation/context').length;
   out.closed = dialog() === null;
   out.stripSame = tree.querySelector('.work-context').textContent.includes('Grade 5');
-  await button(tree, 'Изменить…').dispatch('click'); await button(tree, 'Изменить…').dispatch('click'); await settle();
+  await button(tree, 'Change…').dispatch('click'); await button(tree, 'Change…').dispatch('click'); await settle();
   out.dialogs = body.querySelectorAll('.modal').length;
 """)
-    assert out["shown"] == ["Линза неизвестна: знания разных линз не смешиваются, измерения других линз сюда не попадут."]
+    assert out["shown"] == ["The lens is unknown. Knowledge from different lenses is kept separate, so measurements from other lenses will not be included."]
     assert out["put"] == 0 and out["closed"] is True and out["stripSame"] is True
     assert out["dialogs"] == 1                                                      # a second click while the dialog is open opens no second one
 
@@ -445,9 +445,9 @@ def test_a_change_the_server_refuses_is_told_in_the_dialog_and_the_dialog_stays_
     out = run(tmp_path, """
   on('PUT /api/creation/context', () => refuse('the selected lens was not found; choose it again'));
   const tree = await screen();
-  await button(tree, 'Изменить…').dispatch('click'); await settle();
+  await button(tree, 'Change…').dispatch('click'); await settle();
   const box = dialog();
-  await button(box, 'Применить').dispatch('click'); await settle();
+  await button(box, 'Apply').dispatch('click'); await settle();
   out.open = dialog() !== null;
   out.toast = body.querySelector('.toasts') ? body.querySelector('.toasts').textContent : '';
   out.strip = tree.querySelector('.work-context').textContent.includes('JPT 60');
@@ -464,14 +464,14 @@ def test_a_context_that_lost_a_record_says_which_one_and_a_change_in_the_screen_
   await fillPicture(tree);
   await button(tree, 'Дальше →').dispatch('click'); await settle();
   const before = sent('GET', '/api/creation/readiness').length;
-  await button(tree, 'Изменить…').dispatch('click'); await settle();
-  await button(dialog(), 'Применить').dispatch('click'); await settle();
+  await button(tree, 'Change…').dispatch('click'); await settle();
+  await button(dialog(), 'Apply').dispatch('click'); await settle();
   out.reloaded = sent('GET', '/api/creation/readiness').length - before;
   out.focus = ctx.document.activeElement && ctx.document.activeElement.textContent;
 """)
-    assert "Прежний выбор больше не найден (линза); взят тот, что есть сейчас." in out["note"] and "неизвестна" in out["note"]
+    assert "The previous selection is no longer available (lens); the current selection is shown." in out["note"] and "Unknown" in out["note"]
     assert out["reloaded"] == 4                                                     # all four results are asked again for the new context
-    assert out["focus"] == "Изменить…"
+    assert out["focus"] == "Change…"
 
 
 @node
@@ -487,11 +487,11 @@ def test_an_opened_works_own_context_is_read_only_and_names_its_release_and_the_
   const workshop = ctx.WorkContext.own({device: {name: 'JPT'}, lens: null, material: null, source: null});
   out.plain = workshop.textContent;
 """)
-    for word in ("Mopa 30", "F-Theta", "Sheet", "Grade 2", "партия B7", "Север", "выпуск от 2026-10-20", "Записано в работе. Общий выбор для новых работ её не меняет."):
+    for word in ("Mopa 30", "F-Theta", "Sheet", "Grade 2", "batch B7", "Север", "выпуск от 2026-10-20", "Recorded with this work. The shared selection for new work does not change it."):
         assert word in out["text"]
     assert out["buttons"] == 0                                                      # nothing here can change the work's own context
     assert "JPT 60" in out["sharedText"] and "Mopa 30" not in out["sharedText"]
-    assert out["plain"].startswith("Параметры этой работы") and "ЛинзанеизвестнаТитанне выбранИзмеренияизмерения этой мастерской" in out["plain"]
+    assert out["plain"].startswith("This work’s settings") and "LensUnknownStockNot selectedMeasurementsThis workshop’s measurements" in out["plain"]
 
 
 # -- REQ-002: missing setup and measurements, the gate and the starter test ---------------------------------------------------------------------

@@ -60,7 +60,7 @@ STARTS = """
   await settle();
   const stock = tree.querySelectorAll('.matpick').find((s) => s.getAttribute('aria-label') === 'Титан');       // the titanium is the stock selector, no longer a drop-down
   await settle();
-  out.chosen = [labelled(tree, 'Лазер').value, labelled(tree, 'Линза').value, stock ? stock.value : null];
+  out.chosen = [labelled(tree, 'Laser').value, labelled(tree, 'Lens').value, stock ? stock.value : null];
 """
 
 
@@ -121,31 +121,31 @@ def test_the_classic_form_changes_the_shared_choice_by_the_same_dialog_with_the_
   await settle();
   const strip = tree.querySelector('.work-context');
   out.strip = strip.textContent;
-  out.first = [labelled(tree, 'Лазер').value, labelled(tree, 'Линза').value, labelled(tree, 'Титан').value];
-  const open = strip.querySelectorAll('button').find((b) => b.textContent === 'Изменить…');
+  out.first = [labelled(tree, 'Laser').value, labelled(tree, 'Lens').value, labelled(tree, 'Титан').value];
+  const open = strip.querySelectorAll('button').find((b) => b.textContent === 'Change…');
   await open.dispatch('click'); await settle();
   const dialog = ctx.document.body.querySelector('.modal');
   out.title = dialog.querySelector('h3').textContent;
   out.hasSource = dialog.textContent.includes('Источник измерений');
-  const laser = dialog.querySelectorAll('select').find((x) => x.getAttribute('aria-label') === 'Лазер');
+  const laser = dialog.querySelectorAll('select').find((x) => x.getAttribute('aria-label') === 'Laser');
   laser.value = '1'; await laser.dispatch('change'); await settle();
-  out.warned = [dialog.textContent.includes('Другая марка титана'), puts.length];
+  out.warned = [dialog.textContent.includes('The titanium grade is different'), puts.length];
   out.impactBody = JSON.parse(ctx.requests.filter((r) => r.path === '/api/creation/context/impact').pop().body);
-  const apply = dialog.querySelectorAll('button').find((b) => b.textContent === 'Применить');
+  const apply = dialog.querySelectorAll('button').find((b) => b.textContent === 'Apply');
   await apply.dispatch('click'); await settle();
   out.puts = puts;
   out.closed = ctx.document.body.querySelector('.modal') === null;
-  out.after = [labelled(tree, 'Лазер').value, labelled(tree, 'Линза').value, labelled(tree, 'Титан').value];
+  out.after = [labelled(tree, 'Laser').value, labelled(tree, 'Lens').value, labelled(tree, 'Титан').value];
   out.strip2 = tree.querySelector('.work-context').textContent;
   out.focus = ctx.document.activeElement && ctx.document.activeElement.textContent;
   out.palette = ctx.requests.filter((r) => r.path === '/api/vector-palette').length;
 """, shared=context(), routes={"/api/creation/context/impact": OK({"changed": True, "warnings": [{"code": "titanium_differs"}], "now": {}, "after": {}})})
     assert "Общий выбор мастерской" in out["strip"] and "Mopa 30" in out["strip"] and out["first"] == ["2", "3", "4"]
-    assert out["title"] == "Контекст новой работы" and out["hasSource"] is False                 # the form has its own source picker: the dialog leaves it out
-    assert out["warned"] == [True, 0]                                                            # the warning is read before «Применить», and nothing is saved yet
+    assert out["title"] == "New work context" and out["hasSource"] is False                 # the form has its own source picker: the dialog leaves it out
+    assert out["warned"] == [True, 0]                                                            # the warning is read before «Apply», and nothing is saved yet
     assert out["impactBody"] == {"device_id": 1, "lens_id": 2, "material_id": 4, "source": None}
     assert out["puts"] == [{"device_id": 1, "lens_id": 2, "material_id": 4, "source": None}] and out["closed"] is True
-    assert out["after"] == ["1", "2", "3"] and "JPT 60" in out["strip2"] and out["focus"] == "Изменить…"      # the form follows the saved choice; the keyboard returns to the button
+    assert out["after"] == ["1", "2", "3"] and "JPT 60" in out["strip2"] and out["focus"] == "Change…"      # the form follows the saved choice; the keyboard returns to the button
     assert out["palette"] >= 2                                                                    # and reads the colours of the new laser, lens and titanium
 
 
