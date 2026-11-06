@@ -508,13 +508,13 @@ def test_the_operating_point_form_refuses_wrong_numbers_beside_each_box_sends_no
   body.append(calc);
   const labelled = (text) => calc.querySelectorAll('label').find((l) => (l.querySelector('span') || {}).textContent === text);
   const box = (text) => labelled(text).firstControl();
-  const press = async () => { await button(calc, 'Рассчитать').dispatch('click'); await wait(); };
-  box('Мощность').value = '150'; box('Скорость').value = '-5'; box('Проходы слоя').value = '1.5';
+  const press = async () => { await button(calc, 'Calculate').dispatch('click'); await wait(); };
+  box('Power').value = '150'; box('Speed').value = '-5'; box('Layer passes').value = '1.5';
   await press();
-  out.wrong = [sent.length, labelled('Мощность').errorText(), labelled('Скорость').errorText(), labelled('Проходы слоя').errorText(), box('Мощность').value, box('Скорость').value];
-  box('Мощность').value = '30'; box('Скорость').value = '900'; box('Проходы слоя').value = '2';
+  out.wrong = [sent.length, labelled('Power').errorText(), labelled('Speed').errorText(), labelled('Layer passes').errorText(), box('Power').value, box('Speed').value];
+  box('Power').value = '30'; box('Speed').value = '900'; box('Layer passes').value = '2';
   await press();
-  out.right = [sent.length, sent[0], results.length, labelled('Мощность').errorText()];
+  out.right = [sent.length, sent[0], results.length, labelled('Power').errorText()];
 """, scripts=SCRIPTS + ["hardware.js", "screens/device-calc.js"])
     assert out["wrong"][0] == 0 and "Allowed" in out["wrong"][1] and "Entered: 150" in out["wrong"][1]
     assert "Entered: -5" in out["wrong"][2] and "whole number" in out["wrong"][3] and out["wrong"][4:] == ["150", "-5"]
