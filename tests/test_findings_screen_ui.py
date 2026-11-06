@@ -86,9 +86,9 @@ def test_the_findings_say_what_each_setting_does_to_a_photo_engraving_on_every_l
   out.buttons = section.querySelectorAll('button').filter((b) => !b.closest('.lst-bar')).map((b) => b.textContent);
 """)
     assert out["hidden"] is False and out["hash"] == "#/findings?tab=photo"
-    assert out["rows"] == ["JPT M7 · F-Theta · Grade 5 sheet · Grade 5измерено видов: 1 из 1есть предложениеДальше: Джарвис — измерено, но не подобрано"]   # one place: open at once
+    assert out["rows"] == ["JPT M7 · F-Theta · Grade 5 sheet · Grade 5измерено видов: 1 из 1есть предложениеДальше: Jarvis — измерено, но не подобрано"]   # one place: open at once
     jarvis, = out["cards"]
-    assert jarvis.startswith("Джарвисизмерено, но не подобрано")
+    assert jarvis.startswith("Jarvisизмерено, но не подобрано")
     assert "Лучшее: 30 %, 125 мм/с, 60 кГц, 200 нс, шаг 0,01 мм — автоматическая оценка 0,62 по фото №41" in jarvis
     assert "мощность вдвое больше: темнее на 6 L*, оценка −0,1 (по фото №41, №42)" in jarvis
     assert "мощность 30 % → 24 %" in jarvis and "Картинки для платы ещё нет" in jarvis
@@ -109,10 +109,10 @@ def test_a_kind_that_came_out_a_negative_on_a_titanium_is_counted_and_its_card_s
   out.rows = section.querySelectorAll('.lst-main').map((x) => x.textContent);
   out.cards = section.querySelectorAll('article').map((a) => a.textContent);
 """, routes={**ROUTES, "/api/analysis/photo-queue": {"status": 200, "json": queued([place])}})
-    assert out["rows"] == ["JPT M7 · F-Theta · Grade 5 sheet · Grade 5измерено видов: 1 из 2не получилось видов: 1есть предложениеДальше: Аткинсон — не получился"]
+    assert out["rows"] == ["JPT M7 · F-Theta · Grade 5 sheet · Grade 5измерено видов: 1 из 2не получилось видов: 1есть предложениеДальше: Atkinson — не получился"]
     card = out["cards"][1]
-    assert card.startswith("Аткинсонне получился")
-    assert ("«Аткинсон» на этом титане не получился: фото № 143, 15 % — точки не темнее титана (L* 74): картинки не видно или она вышла "
+    assert card.startswith("Atkinsonне получился")
+    assert ("«Atkinson» на этом титане не получился: фото № 143, 15 % — точки не темнее титана (L* 74): картинки не видно или она вышла "
             "негативом; фото № 120, 8 % — картинка едва видна: тёмное темнее светлого всего на 4 L*.") in card
     assert "Нужны точки темнее титана: по опыту процесса — больше мощность, меньше скорость или шаг строк." in card
 
@@ -581,7 +581,7 @@ def test_the_photo_queue_puts_what_came_out_a_negative_first_and_asks_nothing_of
   await section.querySelectorAll('.lst-act')[0].querySelectorAll('button')[0].dispatch('click');
   out.went = ctx.location.hash;
 """, routes={**ROUTES, "/api/analysis/photo-queue": {"status": 200, "json": queued([fine, broken])}})
-    assert out["rows"][0].startswith("Laser B · lens · Grade 2") and out["rows"][0].endswith("Дальше: Аткинсон — не получился")             # most urgent first
+    assert out["rows"][0].startswith("Laser B · lens · Grade 2") and out["rows"][0].endswith("Дальше: Atkinson — не получился")             # most urgent first
     assert out["rows"][1].startswith("Laser A · lens · Grade 5") and out["rows"][1].endswith("решений не требуется")
     assert out["steps"] == [[["Открыть фото № 143", True]], []]                                                                        # a settled place has no step
     assert out["went"] == "#/analysis/143"

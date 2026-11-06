@@ -80,7 +80,7 @@ def test_with_no_tolerance_saved_the_form_asks_for_it_first_and_saves_the_typed_
     assert "Для этого лазера с линзой допуск не сохранён — задайте его" in text and "5 — две гравировки одного рецепта ещё совпадают" in text
     assert "Запомнить для этого лазера с линзой" in text
     assert out["empty"][:2] == ["Задайте допуск ΔE: для этого лазера с линзой он не сохранён", []]          # said beside the box; nothing is sent
-    assert "«Допуск ΔE»" in out["empty"][3] and "осталось в форме" in out["empty"][3]
+    assert "“Допуск ΔE”" in out["empty"][3] and "remain in the form" in out["empty"][3]
     assert out["typed"] == "false"
     (put, rules, body), (post, path, items), remembered = out["created"]
     assert (put, rules, body) == ("PUT", "/api/rules", {"device_id": 1, "lens_id": 2, "delta_tolerance": 5})
@@ -115,7 +115,7 @@ FIELDS = """
   tree.querySelectorAll('input').find((i) => i.getAttribute('type') === 'file').files = [{name: 'Inna Portrait.jpg'}];
   await type('Название работы', 'Inna Portrait');
   await type('Допуск ΔE', '5');
-  out.names = ['Ширина работы', 'Сглаживание границ', 'Допуск ΔE', 'Название работы'].map((t) => [t, labelled(t).textContent.includes('обязательно'), box(t).getAttribute('aria-labelledby') !== null]);
+  out.names = ['Ширина работы', 'Сглаживание границ', 'Допуск ΔE', 'Название работы'].map((t) => [t, labelled(t).textContent.includes('required'), box(t).getAttribute('aria-labelledby') !== null]);
   // a wrong width, and a colour count outside the allowed 2..29: each says why beside its own box and keeps what was typed; nothing is sent
   await type('Ширина работы', '0');
   const strategy = box('Стратегия'); strategy.value = 'photo'; await strategy.dispatch('change'); await tick();
@@ -159,8 +159,8 @@ def test_each_box_of_the_start_form_is_named_says_why_it_is_wrong_beside_itself_
     out = run_fields(tmp_path)
     assert all(named for _, _, named in out["names"]) and [t for t, required, _ in out["names"] if not required] == ["Допуск ΔE"]   # required unless the rules hold the tolerance
     sent, width_error, width_kept, width_invalid, colours_error, colours_kept, colours_described = out["wrong"]
-    assert sent == 0 and "Введено: 0" in width_error and width_kept == "0" and width_invalid == "true"       # the width must be above 0 (conversion.raster)
-    assert "Допустимо" in colours_error and "29" in colours_error and "Введено: 40" in colours_error and colours_kept == "40" and colours_described
+    assert sent == 0 and "Entered: 0" in width_error and width_kept == "0" and width_invalid == "true"       # the width must be above 0 (conversion.raster)
+    assert "Allowed" in colours_error and "29" in colours_error and "Entered: 40" in colours_error and colours_kept == "40" and colours_described
     assert out["markers"][0] == 0 and "28" in out["markers"][1]                                              # the markers take one of the 30 layers
     assert out["grey"][0] == 0 and "255" in out["grey"][1] and out["grey"][2] == ""                          # the grey level is 0..255; the hidden colour box is not read
     count, kept = out["created"]
