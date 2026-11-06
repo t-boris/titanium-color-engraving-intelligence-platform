@@ -101,3 +101,7 @@ Verified the updated dialog traversal in development Electron 0.40.0 on a dispos
 ### Implementation · 2026-11-06
 
 After the shared dialog focus change, pytest -q -rs -n 12 completed with 3005 passed, 0 skipped; the additional test for skipping a non-rendered control was added after collection began and passed in the targeted dialog run (4 passed). Desktop Node tests passed 36/36 and the 0.40.0 wheel built. No release or CI result is implied.
+
+### Implementation · 2026-11-06
+
+The prior coarse-pointer sizing applied under main, but dialogs are body-level siblings: the stock chooser close button measured 34×34px in the simulated coarse-pointer check. Added 44px minimum sizing for dialog buttons and selects in both densities. MarkView desktop simulation using the actual coarse-pointer CSSOM rules measured close at 44×44, both selects at 44px height and representative Choose buttons at least 44px high. This is not a physical tablet usability assessment.

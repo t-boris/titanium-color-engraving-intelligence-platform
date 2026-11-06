@@ -1666,3 +1666,10 @@ body.theme-study-light {color-scheme:light;--bg:#f3f5f9;--surface:#fff;--surface
 .theme-study-light .modal {background:var(--surface);color:var(--text);border-color:var(--line)}
 .theme-study-light .modal>.row:first-child,.theme-study-light .modal>.row:last-child {border-color:var(--line)}
 .theme-study-light .modal>.row:first-child .btn {background:#eef2f8;color:#253858;border-color:#aab8cc}
+
+/* Dialogs sit outside main: keep their controls touch-sized in either density too. */
+@media (pointer:coarse) {
+  body .modal .btn {min-width:44px;min-height:44px}
+  body .modal>.row:first-child .btn {width:44px;min-height:44px}
+  body .modal select {height:auto;min-height:44px}
+}
