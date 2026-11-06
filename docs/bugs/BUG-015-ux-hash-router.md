@@ -2,7 +2,7 @@
 type: bug
 id: BUG-015
 title: "UX: «Перейти к содержимому» конфликтует с hash-router"
-status: open
+status: fixed
 severity: medium
 reporter: Boris Tsekinovsky
 created: 2026-11-05

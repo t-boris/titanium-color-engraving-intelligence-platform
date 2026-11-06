@@ -2,7 +2,7 @@
 type: feature
 id: ui-studio
 title: "UI Studio: Сделай какие-то более приятные, скажем так, менюшки, ну не менюшки, а…"
-status: implementing
+status: implemented
 owner: Boris Tsekinovsky
 created: 2026-11-06
 provenance: Recorded by MarkView UI Studio

@@ -2,7 +2,7 @@
 type: bug
 id: BUG-012
 title: "UX: поиск App.list пересоздаёт активное поле и теряет фокус"
-status: open
+status: fixed
 severity: medium
 reporter: Boris Tsekinovsky
 created: 2026-11-05

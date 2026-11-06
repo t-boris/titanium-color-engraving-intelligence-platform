@@ -2,7 +2,7 @@
 type: bug
 id: BUG-016
 title: "UX: выбор семейства шрифта недоступен с клавиатуры"
-status: open
+status: fixed
 severity: medium
 reporter: Boris Tsekinovsky
 created: 2026-11-05

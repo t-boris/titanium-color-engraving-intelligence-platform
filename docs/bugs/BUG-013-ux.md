@@ -2,7 +2,7 @@
 type: bug
 id: BUG-013
 title: "UX: повторный «Показать ещё» и поздний ответ могут смешать страницы списка"
-status: open
+status: fixed
 severity: medium
 reporter: Boris Tsekinovsky
 created: 2026-11-05
