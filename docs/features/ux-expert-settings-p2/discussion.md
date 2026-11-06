@@ -141,3 +141,7 @@ Two consecutive macOS CI runs timed out downloading the LAN CA although the TLS 
 ### Codex · 2026-11-06
 
 The 0.40.2 GitHub macOS run passed the previous CA-download point but timed out on the pairing page after restarting LAN. That page also repeated certificate/address discovery. Patch 0.40.3 uses the already loaded certificate on both routes. The new regression test fails against 0.40.2 and passes with the fix; all 14 LAN tests pass locally with CI-matching dependencies. GitHub confirmation remains pending.
+
+### Codex · 2026-11-06
+
+The 0.40.3 Linux/Python 3.11 CI run exposed a timing-dependent end-to-end test: it checked four real preview images after a fixed 200 ms. Injecting a 600 ms preview delay reproduced the failure; waiting for all four actual images with a bounded deadline fixed it, and the four creation-flow end-to-end tests passed. Application code and the released 0.40.3 package are unchanged.
