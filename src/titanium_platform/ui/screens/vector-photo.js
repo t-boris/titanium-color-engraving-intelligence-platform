@@ -14,6 +14,16 @@ const VectorPhoto = (() => {
   const stepText = (m) => `spacing ${value(m.line_interval, 4)} mm`;
   const area = (mm2) => (mm2 == null ? '—' : mm2 >= 100 ? `${num(mm2 / 100, 2)} cm²` : `${num(mm2, 1)} mm²`);
   const layerOf = (zone) => (zone.index == null ? '' : `C${String(zone.index).padStart(2, '0')}`);
+  /** Explain whether scale measurements apply to the zone's scan-line width. */
+  function scaleWidthNote(zone) {
+    const size = zone.size || {}, widths = (size.from_mm && size.from_mm.length ? size.from_mm : size.measured_mm) || [];
+    const listed = widths.length ? widths.map((width) => value(width)).join(', ') + ' mm' : null;
+    const row = value(size.row_mm ?? zone.width_mm);
+    if (size.how === 'measured' && listed) return `Zone width ${row} mm: scale measured at ${listed}.`;
+    if (size.how === 'between' && listed) return `Zone width ${row} mm: scale interpolated between measurements at ${listed}.`;
+    if (size.how === 'outside' && listed) return `Zone width ${row} mm: scale measured at ${listed}, not this width; colors may differ.`;
+    return `Measurement widths are unavailable; applicability at zone width ${row} mm is unverified.`;
+  }
   /** Summarize the zone for its heading and layer row. */
   const zoneSummary = (zone) => [layerOf(zone), kindName(zone.kind),
     !dotted(zone) ? `${value(zone.min_power)}–${value(zone.max_power)} %`
@@ -133,7 +143,8 @@ const VectorPhoto = (() => {
       if (list) list.addEventListener('toggle', () => (list.open ? opened.add(zone.number) : opened.delete(zone.number)));
       fill(scaleBox, chosen ? scaleButton(chosen, zone, true) : h('p', {class: 'alert warn small'}, `${settingsText(zone.scale)} · ${stepText(zone.scale)}: `
         + 'this scale is no longer measured; choose another'),
-      zone.span ? h('p', {class: 'small muted'}, `Measured at zone width ${value(zone.width_mm)} mm: ${value(zone.span[0])}–${value(zone.span[1])} %.`) : null,
+      zone.span ? h('p', {class: 'small ' + (zone.size && zone.size.how === 'measured' ? 'muted' : 'alert warn')},
+        `Measured scale power range: ${value(zone.span[0])}–${value(zone.span[1])} %. ${scaleWidthNote(zone)}`) : null,
       list);
     }
 
@@ -249,12 +260,12 @@ const VectorPhoto = (() => {
         return h('div', {class: 'stack'}, low.el, high.el);
       }
       const scale = zone.scale || {};
-      const measured = zone.span ? `Measured power range: ${value(zone.span[0])}–${value(zone.span[1])}%.` : 'This scale is not measured.';
+      const measured = zone.span ? `Measured power range: ${value(zone.span[0])}–${value(zone.span[1])}%. ${scaleWidthNote(zone)}` : 'This scale is not measured.';
       return h('div', {class: 'stack vp-inspector'}, h('h4', {}, `Photo zone ${zone.number}`),
         h('p', {class: 'small'}, `Size: ${value(zone.box.width)} × ${value(zone.box.height)} mm · Regions: ${zone.regions.length}`),
         h('label', {class: 'f'}, h('span', {}, 'Engraving kind'), kind),
         h('p', {class: 'small'}, `Scale: ${value(scale.speed, 0)} mm/s · ${value(scale.frequency, 0)} kHz · ${value(scale.line_interval, 4)} mm spacing`),
-        h('p', {class: 'small muted'}, measured),
+        h('p', {class: 'small ' + (zone.size && zone.size.how === 'measured' ? 'muted' : 'alert warn')}, measured),
         zone.problem ? h('p', {class: 'alert bad small'}, I18N.tr(zone.problem)) : null,
         adjustment('brightness', 'Image brightness, %', 'toneBrightness', 1),
         adjustment('contrast', 'Image contrast, %', 'toneContrast', 1),

@@ -648,6 +648,27 @@ def zone_routes(zoned=True) -> dict:
     return out
 
 
+
+@node
+@pytest.mark.parametrize("size, expected", [
+    ({"row_mm": 20, "how": "measured", "from_mm": [20]}, "Zone width 20 mm: scale measured at 20 mm."),
+    ({"row_mm": 20, "how": "between", "from_mm": [10, 30]}, "Zone width 20 mm: scale interpolated between measurements at 10, 30 mm."),
+    ({"row_mm": 20, "how": "outside", "from_mm": [38.4], "measured_mm": [38.4]}, "Zone width 20 mm: scale measured at 38.4 mm, not this width; colors may differ."),
+    (None, "Measurement widths are unavailable; applicability at zone width 20 mm is unverified."),
+])
+def test_photo_zone_scale_discloses_measurement_width(tmp_path, size, expected):
+    data = zone_routes()
+    data["/api/vector/7"]["json"]["zones"] = [{**ZONE, "size": size}]
+    out = run_editor(tmp_path, data, """
+  await byText(tree, 'button', 'Photo').dispatch('click');
+  await wait(5);
+  out.card = section('Photo zones').textContent;
+  await path('r3').dispatch('click'); await tick();
+  out.inspector = tree.querySelector('.vw-ed-inspector').textContent;
+""")
+    assert expected in out["card"] and expected in out["inspector"]
+    assert "Measured at zone width" not in out["card"]
+
 @node
 def test_selected_photo_zone_has_basic_settings_in_the_inspector_without_resetting_the_canvas(tmp_path):
     out = run_editor(tmp_path, zone_routes(), """
@@ -826,7 +847,7 @@ def test_a_photo_zone_shows_its_picture_and_its_kind_scale_and_powers_change_it(
                            "C01 C01 P10-F30-V500-I0.02regions 2 · 2.00 cm² · 1 min 40 s", "C02 Photo zone 1: Grayscaleregions 2 · 2.00 cm² · 1 min 40 s"]
     assert "Color layers: 1, photo zones: 1 of 29" in out["text"] and "1 and photo zones 1 of 29 available" in out["text"]
     assert out["tip"].startswith("Region r3 · source color #2 · photo zone 1: C02 · Grayscale · 2–29 %")
-    assert "20 × 10 mm · 2.00 cm² · regions 2" in out["card"] and "Measured at zone width 20 mm: 1.9–29.1 %." in out["card"]
+    assert "20 × 10 mm · 2.00 cm² · regions 2" in out["card"] and "Measured scale power range: 1.9–29.1 %." in out["card"] and "applicability at zone width 20 mm is unverified" in out["card"]
     assert "grays matched to colors: drawing preserved. Adjust grays and contours under “Open”." in out["card"]   # a zone made before 0.23
     assert out["tiles"] == [["Grayscale", "true"], ["Jarvis ≈", "false"]]
     assert out["picked"] == ["1000 mm/s · 60 kHz · 350 nsspacing 0.0212 mm · 1.9–29.1 %", "true"]
