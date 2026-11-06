@@ -525,7 +525,7 @@ const tick = () => new Promise((r) => setTimeout(r, 0));
   const out = {}, changes = [];
   const c = ctx.Corners.create('/api/pairs/1/photo.png', %(initial)s, (v) => changes.push(v));
   ctx.document.body.append(c.el);
-  const input = (n, axis) => c.el.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === `Угол ${n}: ${axis === 'x' ? 'слева' : 'сверху'}, %%`);
+  const input = (n, axis) => c.el.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === `Corner ${n}: ${axis === 'x' ? 'from left' : 'from top'}, %%`);
   const values = () => [1, 2, 3, 4].map((n) => [input(n, 'x').value, input(n, 'y').value, input(n, 'x').disabled]);
   const note = () => { const p = c.el.querySelectorAll('p').find((q) => q.getAttribute('aria-live') === 'polite' && q.getAttribute('role') === 'status'); return [p.textContent, p.getAttribute('class')]; };
   const status = () => c.el.querySelectorAll('p').find((q) => q.getAttribute('aria-live') === 'polite' && q.getAttribute('role') !== 'status').textContent;
@@ -567,19 +567,19 @@ def test_the_four_corners_are_placed_checked_and_moved_by_numbers_in_order(tmp_p
   out.moved = [c.get()[0], dots()[0].style.left];
   dots()[1].focus(); await dots()[1].dispatch('keydown', {key: 'ArrowRight'});            // an arrow key on a point is seen in its numbers
   out.arrow = [values()[1], c.get()[1]];
-  await c.el.querySelectorAll('button').find((b) => b.textContent === 'Сбросить углы').dispatch('click');
+  await c.el.querySelectorAll('button').find((b) => b.textContent === 'Reset corners').dispatch('click');
   out.reset = [values(), c.get()];
 """)
     assert [v[:2] for v in out["start"][0]] == [["", ""]] * 4 and [v[2] for v in out["start"][0]] == [False, True, True, True]
-    assert out["start"][1].startswith("Поставьте угол 1 из 4")
-    assert out["half"][0] == ["10", "", False] and "оба числа" in out["half"][1][0] and out["half"][2] == 0
-    assert out["first"][0] == [False, False, True, True] and "10 % слева, 20 % сверху" in out["first"][1] and out["first"][2] == 1
-    assert out["first"][3:5] == ["10%", "20%"] and out["first"][5].startswith("Поставьте угол 2 из 4")
+    assert out["start"][1].startswith("Place corner 1 of 4")
+    assert out["half"][0] == ["10", "", False] and "both coordinates" in out["half"][1][0] and out["half"][2] == 0
+    assert out["first"][0] == [False, False, True, True] and "10 % from left, 20 % from top" in out["first"][1] and out["first"][2] == 1
+    assert out["first"][3:5] == ["10%", "20%"] and out["first"][5].startswith("Place corner 2 of 4")
     assert [v[:2] for v in out["all"][0]] == [["10", "20"], ["90", "20.5"], ["90", "80"], ["10", "80"]]
-    assert out["all"][1] == "Четыре угла поставлены. Можно применить выравнивание."
+    assert out["all"][1] == "Four corners are placed. Alignment can be applied."
     assert out["all"][2] == [[0.1, 0.2], [0.9, 0.205], [0.9, 0.8], [0.1, 0.8]]
-    assert out["beyond"][0][:2] == ["10", "80"] and "от 0 до 100 %" in out["beyond"][1][0] and "bad" in out["beyond"][1][1] and out["beyond"][2] == [0.1, 0.8]
-    assert out["cleared"][0][:2] == ["10", "80"] and "нужны оба числа" in out["cleared"][1] and out["cleared"][2] == [0.1, 0.8]
+    assert out["beyond"][0][:2] == ["10", "80"] and "from 0 to 100%" in out["beyond"][1][0] and "bad" in out["beyond"][1][1] and out["beyond"][2] == [0.1, 0.8]
+    assert out["cleared"][0][:2] == ["10", "80"] and "both coordinates are required" in out["cleared"][1] and out["cleared"][2] == [0.1, 0.8]
     assert out["moved"] == [[0.125, 0.2], "12.5%"]
     assert out["arrow"][0][:2] == ["91", "20.5"] and out["arrow"][1][0] == pytest.approx(0.91)
     assert [v[:2] for v in out["reset"][0]] == [["", ""]] * 4 and out["reset"][1] is None
@@ -595,7 +595,7 @@ def test_corners_already_on_the_photograph_fill_the_fields_and_a_move_in_the_fie
 """)
     assert [v[:2] for v in out["fields"]] == [["10", "10"], ["90", "10"], ["90", "90"], ["10", "90"]] and not any(v[2] for v in out["fields"])
     assert out["after"][0][:2] == ["95", "90"] and out["after"][1] == [0.95, 0.9] and out["after"][2] == "95%"
-    assert "Угол 3" in out["label"] and "95 %" in out["label"]                               # the point says where it is
+    assert "Corner 3" in out["label"] and "95 %" in out["label"]                               # the point says where it is
 
 
 # -- REQ-001 c2: the colour map, a circle at a time ------------------------------------------------------------------------------------

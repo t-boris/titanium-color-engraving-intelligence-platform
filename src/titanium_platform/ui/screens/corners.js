@@ -1,11 +1,8 @@
-/* Ручное выравнивание: четыре угла работы на фотографии (DEC-010, REQ-013).
-   Углы хранятся долями размера снимка (0..1), порядок: верхний левый, верхний правый, нижний правый, нижний левый.
-   Точку можно поставить щелчком, перетащить мышью или пальцем, сдвинуть стрелками на 1 % или задать числами (ux-accessible-layout-p0):
-   у каждого угла два поля, процент ширины и высоты снимка; ставятся по порядку, как щелчками. */
+/* Manual photo alignment: four corners stored as image fractions. Points support click, drag, arrow keys and numeric entry (DEC-010, REQ-013). */
 'use strict';
 const Corners = (() => {
   const {h, btn} = App;
-  const NAMES = ['верхний левый', 'верхний правый', 'нижний правый', 'нижний левый'];
+  const NAMES = ['top left', 'top right', 'bottom right', 'bottom left'];
 
   /** ``options.names``: four other names for the points, when their order is not the photograph's (the corners of a detail of the file). */
   function create(src, initial, onChange, instruction, options = {}) {
@@ -15,24 +12,24 @@ const Corners = (() => {
     const touched = new Set();
     let lifted = true;
     const imageUrl = () => `${src}${src.includes('?') ? '&' : '?'}visibility=${lifted ? 'lifted' : 'normal'}`;
-    const img = h('img', {src: imageUrl(), alt: 'Фотография работы: щёлкните, чтобы поставить угол', draggable: 'false'});
-    const brightness = btn('Обычная яркость', () => {
+    const img = h('img', {src: imageUrl(), alt: 'Work photograph: click to place a corner', draggable: 'false'});
+    const brightness = btn('Normal brightness', () => {
       lifted = !lifted; img.src = imageUrl();
-      brightness.textContent = lifted ? 'Обычная яркость' : 'Повысить яркость';
+      brightness.textContent = lifted ? 'Normal brightness' : 'Increase brightness';
     });
     const wrap = h('div', {class: 'photo'}, img);
     const status = h('p', {class: 'muted small', 'aria-live': 'polite'});
-    const chooser = h('div', {class: 'row corner-chooser', role: 'group', 'aria-label': 'Выберите угол для следующего щелчка по фото'},
+    const chooser = h('div', {class: 'row corner-chooser', role: 'group', 'aria-label': 'Choose the corner for the next photo click'},
       names.map((name, i) => btn(`${i + 1}. ${name}`, () => { selected = i; draw(); })));
     // the corners by numbers: a person who cannot aim at the picture still places, moves and checks every corner
     const nums = names.map((name, i) => ['x', 'y'].map((axis) => h('input', {type: 'number', min: '0', max: '100', step: '0.1', class: 'corner-num',
-      'aria-label': `Угол ${i + 1}: ${axis === 'x' ? 'слева' : 'сверху'}, %`})));
-    const numRules = nums.map((pair) => pair.map((input) => Forms.describe(input, 'cornerShare')));        // «единица: %, допустимо: от 0 до 100»
+      'aria-label': `Corner ${i + 1}: ${axis === 'x' ? 'from left' : 'from top'}, %`})));
+    const numRules = nums.map((pair) => pair.map((input) => Forms.describe(input, 'cornerShare')));        // unit: %, allowed: 0 to 100
     const numNote = h('p', {class: 'small', role: 'status', 'aria-live': 'polite'});
-    const numbers = h('div', {class: 'corner-nums', role: 'group', 'aria-label': 'Углы числами, в процентах ширины и высоты снимка'},
-      names.map((name, i) => h('div', {class: 'corner-num-row', role: 'group', 'aria-label': `Угол ${i + 1}: ${name}`},
+    const numbers = h('div', {class: 'corner-nums', role: 'group', 'aria-label': 'Corner coordinates as percentages of image width and height'},
+      names.map((name, i) => h('div', {class: 'corner-num-row', role: 'group', 'aria-label': `Corner ${i + 1}: ${name}`},
         h('strong', {class: 'corner-num-name'}, `${i + 1}. ${name}`),
-        h('label', {class: 'f'}, h('span', {}, 'слева, %'), nums[i][0], numRules[i][0]), h('label', {class: 'f'}, h('span', {}, 'сверху, %'), nums[i][1], numRules[i][1]))));
+        h('label', {class: 'f'}, h('span', {}, 'from left, %'), nums[i][0], numRules[i][0]), h('label', {class: 'f'}, h('span', {}, 'from top, %'), nums[i][1], numRules[i][1]))));
     const pct = (v) => String(Math.round(v * 1000) / 10);
     function syncNumbers() {
       nums.forEach(([x, y], i) => {
@@ -46,16 +43,16 @@ const Corners = (() => {
       const incomplete = !Number.isFinite(x) || !Number.isFinite(y);
       if (incomplete && i >= pts.length) {                              // a corner not placed yet: the other number is still to come
         numNote.setAttribute('class', 'small');
-        numNote.textContent = `Угол ${i + 1}: укажите оба числа — слева и сверху`;
+        numNote.textContent = `Corner ${i + 1}: enter both coordinates, from left and top`;
         return;
       }
-      const bad = incomplete ? `Угол ${i + 1}: нужны оба числа — слева и сверху`
-        : x < 0 || x > 100 || y < 0 || y > 100 ? `Угол ${i + 1}: числа — от 0 до 100 %` : null;
+      const bad = incomplete ? `Corner ${i + 1}: both coordinates are required`
+        : x < 0 || x > 100 || y < 0 || y > 100 ? `Corner ${i + 1}: values must be from 0 to 100%` : null;
       numNote.setAttribute('class', bad ? 'small alert bad' : 'small');
       if (bad) { numNote.textContent = bad; syncNumbers(); return; }       // the corner stays where it was, the fields say so
       if (i === pts.length) pts.push([x / 100, y / 100]); else pts[i] = [x / 100, y / 100];
       selected = i; touched.add(i);
-      numNote.textContent = `Угол ${i + 1} (${names[i]}): ${pct(x / 100)} % слева, ${pct(y / 100)} % сверху`;
+      numNote.textContent = `Corner ${i + 1} (${names[i]}): ${pct(x / 100)} % from left, ${pct(y / 100)} % from top`;
       draw(); update(false);
     }
     nums.forEach((pair, i) => pair.forEach((input) => input.addEventListener('change', () => placeByNumbers(i))));
@@ -71,7 +68,7 @@ const Corners = (() => {
       [...chooser.children].forEach((button, i) => button.setAttribute('aria-pressed', String(i === selected)));
       pts.forEach((p, i) => {
         const dot = h('button', {type: 'button', class: `dot corner-${i + 1}`, style: `left:${p[0] * 100}%;top:${p[1] * 100}%${i === selected ? ';outline:3px solid #fff' : ''}`,
-          'aria-label': `Угол ${i + 1}: ${names[i]}, ${(p[0] * 100).toFixed(0)} %, ${(p[1] * 100).toFixed(0)} %. Стрелки сдвигают на 1 %`});
+          'aria-label': `Corner ${i + 1}: ${names[i]}, ${(p[0] * 100).toFixed(0)} %, ${(p[1] * 100).toFixed(0)} %. Arrow keys move it by 1%`});
         dot.append(h('span', {class: 'dot-label', 'aria-hidden': 'true'}, String(i + 1)));
         dot.addEventListener('pointerdown', (ev) => {
           selected = i; ev.preventDefault(); dot.setPointerCapture(ev.pointerId);
@@ -89,10 +86,10 @@ const Corners = (() => {
         });
         wrap.append(dot);
       });
-      status.textContent = pts.length < 4 ? `Поставьте угол ${pts.length + 1} из 4: ${names[pts.length]}.`
-        : options.requireAllMoved && touched.size < 4 ? `Передвиньте все четыре угла на границы работы: уточнено ${touched.size} из 4.`
-          : options.requireAnyMoved && touched.size === 0 ? 'Передвиньте хотя бы один неверный угол работы.'
-          : 'Четыре угла поставлены. Можно применить выравнивание.';
+      status.textContent = pts.length < 4 ? `Place corner ${pts.length + 1} of 4: ${names[pts.length]}.`
+        : options.requireAllMoved && touched.size < 4 ? `Move all four corners to the work boundaries: ${touched.size} of 4 adjusted.`
+          : options.requireAnyMoved && touched.size === 0 ? 'Move at least one incorrect corner.'
+          : 'Four corners are placed. Alignment can be applied.';
       syncNumbers();
     }
     function update(redraw) {
@@ -100,10 +97,10 @@ const Corners = (() => {
       pts.forEach((p, i) => { if (dots[i]) { dots[i].style.left = p[0] * 100 + '%'; dots[i].style.top = p[1] * 100 + '%'; } });
       syncNumbers();
       if (redraw) draw();
-      status.textContent = pts.length < 4 ? `Поставьте угол ${pts.length + 1} из 4: ${names[pts.length]}.`
-        : options.requireAllMoved && touched.size < 4 ? `Передвиньте все четыре угла на границы работы: уточнено ${touched.size} из 4.`
-          : options.requireAnyMoved && touched.size === 0 ? 'Передвиньте хотя бы один неверный угол работы.'
-          : 'Четыре угла поставлены. Можно применить выравнивание.';
+      status.textContent = pts.length < 4 ? `Place corner ${pts.length + 1} of 4: ${names[pts.length]}.`
+        : options.requireAllMoved && touched.size < 4 ? `Move all four corners to the work boundaries: ${touched.size} of 4 adjusted.`
+          : options.requireAnyMoved && touched.size === 0 ? 'Move at least one incorrect corner.'
+          : 'Four corners are placed. Alignment can be applied.';
       onChange(pts.length === 4 && (!options.requireAllMoved || touched.size === 4) &&
         (!options.requireAnyMoved || touched.size > 0) ? pts.map((p) => [p[0], p[1]]) : null);
     }
@@ -112,10 +109,10 @@ const Corners = (() => {
       else { pts[selected % 4] = fraction(ev); touched.add(selected % 4); }
       draw(); update(false);
     });
-    const reset = btn('Сбросить углы', () => { pts = []; touched.clear(); selected = 0; draw(); onChange(null); });
+    const reset = btn('Reset corners', () => { pts = []; touched.clear(); selected = 0; draw(); onChange(null); });
     draw();
     return {el: h('div', {class: 'stack'}, wrap,
-      h('p', {class: 'muted small'}, instruction || 'Отмечайте углы по часовой стрелке: верхний левый → верхний правый → нижний правый → нижний левый. Цифры сдвинуты внутрь кадра; маленькая точка показывает точную позицию.'),
+      h('p', {class: 'muted small'}, instruction || 'Mark corners clockwise: top left → top right → bottom right → bottom left. Numbers are offset inward; the small dot shows the exact position.'),
       chooser, status, numbers, numNote, h('div', {class: 'row'}, brightness, reset)), get: () => (pts.length === 4 ? pts.map((p) => [p[0], p[1]]) : null)};
   }
   return {create};
