@@ -162,12 +162,14 @@ def test_a_zone_chooses_its_greys_contours_powers_and_scale_and_each_change_is_s
   refuse = 'the contours must be on or off';
   contours.checked = false; await contours.dispatch('change'); await settle();
   out.refused = [contours.checked, tree.querySelectorAll('p.alert').filter((p) => !p.hidden).map((p) => p.textContent)];
+  out.failedPrediction = [shown(tree), tree.querySelector('.ge-prediction-status').textContent];
 """)
     assert out["saves"] == [{"min_power": 12, "max_power": 20}, {"by_colour": True}, {"colour_choice": "nearest"}, {"contours": True},
                             {"scale": mode(150)}]
     assert out["kept"] and out["said"] == [True, True] and out["shown"] == "/api/vector/9/photo/1/preview.png?v=4"
     assert out["scale"] == {"chosen": [True, False], "powers": ["1", "30"]}                  # another scale brings its measured span
     assert out["refused"] == [True, ["Контуры — либо включены, либо выключены"]]                       # refused: the zone stays as it was
+    assert out["failedPrediction"][0] == "/api/vector/9/photo/1/preview.png?v=5" and "не удалось" in out["failedPrediction"][1]
 
 
 @node

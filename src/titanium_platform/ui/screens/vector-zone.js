@@ -117,7 +117,7 @@
         view = next;
         if (mine === seq) { if (again) shownKey = null; shown(); }
         return null;
-      }, (e) => { if (mine === seq) { error.textContent = e.message; error.hidden = false; shown(); } return e; });
+      }, (e) => { if (mine === seq) { error.textContent = e.message; error.hidden = false; shown(); picture.failed(); } return e; });
       return queue;
     }
     function save(changes) { return send(`${base}/settings`, changes); }

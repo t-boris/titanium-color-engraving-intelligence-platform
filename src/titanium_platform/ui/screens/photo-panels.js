@@ -212,6 +212,7 @@ const PhotoPanels = (() => {
       const range = h('input', {type: 'range', min: rule.min, max: rule.max, step: 0.1, value: start, 'aria-label': label});
       const exact = h('input', {type: 'number', min: rule.min, max: rule.max, step: 'any', value: start, 'aria-label': label});
       range.addEventListener('input', () => { exact.value = range.value; exact.removeAttribute('aria-invalid'); note.textContent = ''; moved(); });
+      if (rule === Forms.QUANTITIES.photoPower) exact.addEventListener('input', () => { ++seq; clearTimeout(timer); });
       // a value outside is kept in the box with the reason beside it and is not applied
       // (a wrong value goes on to the owner's save as well: its tracker then says «not saved» with what was typed, and the server gives its reason)
       const note = Forms.watch(exact, rule, (v) => { range.value = v; moved(); }, {wrong: () => moved()});
@@ -281,7 +282,7 @@ const PhotoPanels = (() => {
         if (loaded) loaded(d);
       } catch (e) { if (!stopped && mine === seq) { error.textContent = e.message; error.hidden = false; } }
     }
-    function schedule() { clearTimeout(timer); timer = setTimeout(() => load(true), 250); }
+    function schedule() { ++seq; clearTimeout(timer); timer = setTimeout(() => load(true), 250); }
     load(false);
     return {stop() { stopped = true; clearTimeout(timer); }};
   }
@@ -535,7 +536,16 @@ const PhotoPanels = (() => {
     byColour.addEventListener('change', () => save({by_colour: byColour.checked}));
     choice.addEventListener('change', () => save({colour_choice: choice.value}));
     contours.addEventListener('change', () => save({contours: contours.checked}));
-    const waiting = () => fill(out, h('p', {class: 'muted ge-placeholder'}, 'Считаем прогноз…'));
+    const predictionStatus = h('p', {class: 'small ge-prediction-status', role: 'status', 'aria-live': 'polite'});
+    function showPredictionStatus(message) {
+      predictionStatus.textContent = message;
+      if (predictionStatus.parentNode !== out) out.prepend(predictionStatus);
+    }
+    const waiting = () => showPredictionStatus(out.querySelector('.pp-image')
+      ? 'Показан предыдущий прогноз. Считаем прогноз заново…' : 'Считаем прогноз…');
+    const failed = () => showPredictionStatus(out.querySelector('.pp-image')
+      ? 'Показан предыдущий прогноз; пересчитать не удалось. Проверьте ошибку и повторите попытку.'
+      : 'Не удалось рассчитать прогноз. Проверьте ошибку и повторите попытку.');
     const tone = toneSliders(save);
     const advisor = advice ? PhotoQuality.advisor(advice, (changes) => save(changes)) : null;
     /** Что сказать о тоне картинки в подробностях: только когда он её меняет. */
@@ -672,7 +682,7 @@ const PhotoPanels = (() => {
       h('label', {class: 'row', title: 'Серые подбираются под цвета картинки на этой шкале'}, byColour, h('span', {class: 'small'}, 'Подобрать серые под цвета')),
       choice,
       h('label', {class: 'row', title: 'Контуры: ' + CONTOURS_ABOUT}, contours, h('span', {class: 'small'}, 'Контуры')));
-    return {inputs, tone: tone.el, out, foot, details, show, waiting};
+    return {inputs, tone: tone.el, out, foot, details, show, waiting, failed};
   }
 
   const OBJECT_NAMES = {background: 'Фон', hair: 'Волосы', face_skin: 'Кожа лица', body_skin: 'Кожа тела', clothes: 'Одежда', other: 'Другое (очки…)',

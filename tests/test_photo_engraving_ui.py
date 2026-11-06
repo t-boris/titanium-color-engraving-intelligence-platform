@@ -23,7 +23,7 @@ const docKeys = [];
 ctx.document.addEventListener = (type, fn) => { if (type === 'keydown') docKeys.push(fn); };
 const press = (extra) => Promise.all(docKeys.map((fn) => fn({type: 'keydown', target: ctx.document.body, preventDefault() {}, ...extra})));
 load(ctx, %(ui)s, [...%(tables)s, ...%(scripts)s, {code: %(glue)s}, 'screens/vector-workspace.js', 'screens/lettering.js', 'screens/vector-editor.js', 'screens/vector-colours.js', 'screens/evidence-summary.js', 'screens/lifecycle.js', 'screens/photo-panels.js', 'screens/photo-kind-step.js', 'screens/dot-pick.js', 'screens/lab-source.js', 'screens/photo-engraving.js']);
-const requests = [], hold = [], past = [], future = [];
+const requests = [], hold = [], holdScale = [], past = [], future = [];
 let work = data.work, version = 0;
 const remember = () => { past.push({...work}); future.length = 0; };
 const restore = (from, to, error) => {
@@ -58,7 +58,7 @@ ctx.fetch = async (url, opts = {}) => {
   }
   if (path === '/api/devices') return answer([{id: 1, lens: {id: 2}}]);
   if (path === '/api/materials') return answer([]);
-  if (path === '/api/grey-scales/scale') return answer(data.scale);
+  if (path === '/api/grey-scales/scale') { if (holdScale.length) await holdScale.shift(); return answer(data.scale); }
   if (path === '/api/photo-works' && method === 'GET') return answer(data.works);
   if (path === '/api/photo-works' && method === 'POST') return answer({id: 9}, 201);
   if (path === `/api/photo-works/${work.id}`) return answer(view());
@@ -345,13 +345,15 @@ def test_a_work_opens_on_its_scale_with_its_min_and_max_and_each_change_is_saved
   out.tries.posted = requests.filter((r) => r.path.endsWith('/variations')).map((r) => r.method); out.tries.went = ctx.__went.slice(-1);
   width.value = '0'; await width.dispatch('change'); await settle();
   const refusal = tree.querySelector('.save-error');
-  out.refused = {width: width.value, shown: !refusal.hidden, error: refusal.textContent, status: tree.querySelector('.save-line').textContent, preview: shown(tree)};
+  out.refused = {width: width.value, shown: !refusal.hidden, error: refusal.textContent, status: tree.querySelector('.save-line').textContent, preview: shown(tree),
+    predictionStatus: tree.querySelector('.ge-prediction-status').textContent};
 """)
     opened = out["opened"]
     assert opened["chosen"] == [False, True] and opened["powers"] == ["12", "28"] and opened["width"] == "60" and opened["title"] == "Портрет"
     assert opened["shown"] == "/api/photo-works/7/preview.png?v=0"
     assert out["saves"] == [{"min_power": 12, "max_power": 20}, {"width_mm": 100}, {"by_colour": True}]
     assert out["shown"] == "/api/photo-works/7/preview.png?v=3" and out["size"]
+    assert "предыдущий прогноз" in out["refused"]["predictionStatus"] and "не удалось" in out["refused"]["predictionStatus"]
     assert out["cleaning"] == [True, True]                                                    # the file cleans first, and its time says so
     assert out["widths"][0] == "60" and out["widths"][-1] == "100" and out["between"]          # the scale and its colours at the work's width
     assert out["ramp"] == {"main": True, "says": True, "posted": ["POST"], "went": ["/experiment/plan-31"]}   # a ramp of the width not measured yet
@@ -359,6 +361,7 @@ def test_a_work_opens_on_its_scale_with_its_min_and_max_and_each_change_is_saved
     # refused (ux-save-feedback-p0): the work stays as the server has it (the preview is the stored one), the typed 0 stays in its box, and the error
     # stays beside the work with what was typed and what is stored, until it is corrected or closed
     assert out["refused"] == {"width": "0", "shown": True, "preview": "/api/photo-works/7/preview.png?v=3",
+                              "predictionStatus": "Показан предыдущий прогноз; пересчитать не удалось. Проверьте ошибку и повторите попытку.",
                               "status": "Работа: Не сохранено: на экране не то, что хранится",
                               "error": "Не удалось сохранить. Ширина картинки должна быть от 1 до 1000 мм"
                               "Набрано, но не сохранено — Ширина, мм: 0 (сохранено: 100).Закрыть"}
@@ -389,6 +392,23 @@ def test_how_the_greys_are_chosen_and_the_contours_are_saved_in_the_work_and_sai
 
 
 @node
+def test_a_scale_response_is_discarded_as_soon_as_the_next_value_is_typed(tmp_path):
+    out = run(tmp_path, {"work": "7"}, """
+  let release; holdScale.push(new Promise((r) => { release = r; }));
+  const max = labelled(tree, 'Max мощность, % (чёрный)');
+  max.value = '20'; await max.dispatch('change'); await wait(300); await settle();
+  data.scale.notes = ['STALE_SCALE_RESPONSE'];
+  max.value = '21'; await max.dispatch('input');
+  release(); await settle();
+  out.staleShown = tree.textContent.includes('STALE_SCALE_RESPONSE');
+  data.scale.notes = ['CURRENT_SCALE_RESPONSE'];
+  await max.dispatch('change'); await wait(300); await settle();
+  out.currentShown = tree.textContent.includes('CURRENT_SCALE_RESPONSE');
+""")
+    assert out == {"staleShown": False, "currentShown": True}
+
+
+@node
 def test_another_scale_is_saved_in_the_work_the_picture_stays_and_min_and_max_become_the_new_scales_span(tmp_path):
     out = run(tmp_path, {"work": "7"}, """
   await pickScale(tree, 0); await settle(); await wait(300); await settle();
@@ -406,11 +426,13 @@ def test_changes_are_sent_one_after_another_in_their_order_and_the_last_one_is_s
   const width = labelled(tree, 'Ширина на титане, мм');
   width.value = '80'; width.dispatch('change'); await settle();             // not awaited: the first answer is held
   width.value = '90'; width.dispatch('change'); await settle();
-  out.before = {sent: saves().length, waiting: tree.textContent.includes('Считаем прогноз')};
+  out.before = {sent: saves().length, waiting: tree.textContent.includes('Считаем прогноз'), image: shown(tree),
+    status: tree.querySelector('.ge-prediction-status').textContent};
   release(); await settle();
   out.after = {sent: saves(), shown: shown(tree), width: width.value};
 """)
-    assert out["before"] == {"sent": 1, "waiting": True}                       # the second waits for the first
+    assert out["before"]["sent"] == 1 and out["before"]["waiting"] and out["before"]["image"] == "/api/photo-works/7/preview.png?v=0"
+    assert "предыдущий прогноз" in out["before"]["status"]                    # the second waits for the first
     assert out["after"] == {"sent": [{"width_mm": 80}, {"width_mm": 90}], "shown": "/api/photo-works/7/preview.png?v=2", "width": "90"}
 
 

@@ -215,6 +215,10 @@
       pick: (title, lab, entryId, onPick) => VectorColours.pickFrom(() => get(`${base}/palette`), title, lab, entryId, onPick)});
     const picture = workPicture(save, () => kindChooser(base, view.kind || GRAYSCALE, (kind) => save({kind})),
       {ramp: `${base}/width-ramp`, variations: `${base}/variations`, advice: base, original: `/api${base}/picture`, stage: (el, cols) => lettering.attach(el, cols, PREVIEW_GAP)});
+    doc.onChange((state) => {
+      if (state.status === 'calculating' || state.status === 'saving') picture.waiting();
+      else if (state.status === 'failed') picture.failed();
+    });
     const head = workHead(view, step);
     // feature electron, REQ-085: a work pinned to a laboratory release shows its source under the head; a confirmed step brings the work anew
     const banner = LabSource.banner(base, 'photo', (next) => { view = next; doc.adopt(next); shownKey = null; shown(); });
