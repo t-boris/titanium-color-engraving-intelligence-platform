@@ -72,6 +72,8 @@ ROUTES = {
                                                        "task": {"kind": "text"}, "pending_plan_id": None,
                                                        "support": {"pair_id": 7, "observation_ids": [11, 12], "engravings": 2, "photographs": 3, "missing_context": []}}},
     "/api/application-guide/next-plate": {"status": 201, "json": {"plan_id": 9, "name": "Plate 9"}},
+    "/api/application-guide/preview": {"status": 200, "json": {"revision": "preview-1", "summary": {"size_mm": {"width": 44, "height": 35},
+        "test_features": 9, "work_field": {"checked": True}}, "time": {"seconds": 120, "complete": True}}},
     "/api/tasks": {"status": 200, "json": [{"key": "line", "goals": [], "metrics": []}, {"key": "text", "goals": [], "metrics": []}]},
 }
 
@@ -105,11 +107,11 @@ def test_catalogue_remains_usable_while_each_secondary_panel_loads_and_retries(t
   out.rowsWhileWaiting = titles(P(tree, '.ex-list', '.os-scroll'));
   out.requests = Object.keys(waiting).sort();
   await complete('/api/application-guide'); await tick(); await tick();
-  out.taskReady = !!byText(tree, 'button', 'Создать следующий тест');
-  out.findingsStillLoading = tree.querySelectorAll('.ex-find')[0].textContent.includes('Загрузка');
+  out.taskReady = !!byText(tree, 'button', 'Create next test');
+  out.findingsStillLoading = tree.querySelectorAll('.ex-find')[0].textContent.includes('Loading');
   failRequest('/api/devices/1/findings'); await tick(); await tick();
   out.failure = tree.querySelectorAll('.ex-find')[0].textContent;
-  const retry = byText(tree.querySelectorAll('.ex-find')[0], 'button', 'Повторить').dispatch('click');
+  const retry = byText(tree.querySelectorAll('.ex-find')[0], 'button', 'Retry').dispatch('click');
   await complete('/api/devices/1/findings'); await retry; await tick(); await tick();
   out.findings = tree.querySelectorAll('.ex-find')[0].textContent;
   const details = tree.querySelectorAll('.ex-find')[0].querySelector('details'); details.open = true;
@@ -120,8 +122,8 @@ def test_catalogue_remains_usable_while_each_secondary_panel_loads_and_retries(t
     assert len(out["rowsWhileWaiting"]) == 3
     assert out["requests"] == ["/api/application-guide", "/api/devices/1/findings", "/api/photo-knowledge"]
     assert out["taskReady"] and out["findingsStillLoading"]
-    assert "Повторить" in out["failure"] and "Тонкие линии" in out["findings"]
-    assert "Видов фотогравировки нет" in out["photo"] and out["detailsKept"]
+    assert "Retry" in out["failure"] and "Тонкие линии" in out["findings"]
+    assert "No photo engraving types" in out["photo"] and out["detailsKept"]
 
 
 @node
@@ -138,13 +140,13 @@ def test_the_screen_is_one_frame_with_the_list_on_the_left_and_the_task_over_the
   out.listParts = kids(list); out.listHead = list.querySelector('.os-col-head').textContent; out.pills = P(list, '.os-col-head').querySelectorAll('.pill').map((p) => p.textContent);
   const scroll = q(list, '.os-scroll');
   out.toolbar = [q(scroll, '.lst-search') != null, chips(scroll), labelled(scroll, 'Состояние эксперимента') != null,
-    selectOf(scroll, 'Задача').options.map((o) => o.textContent), selectOf(scroll, 'Порядок').options.map((o) => [o.value, o.textContent]), q(scroll, '.lst-count').textContent];
+    selectOf(scroll, 'Задача').options.map((o) => o.textContent), selectOf(scroll, 'Sort order').options.map((o) => [o.value, o.textContent]), q(scroll, '.lst-count').textContent];
   out.rowsInScroll = scroll.querySelectorAll('.lst-row').length; out.rowsInList = list.querySelectorAll('.lst-row').length; out.cards = list.querySelectorAll('article').length;
   out.cardTitles = titles(scroll);
   out.open = scroll.querySelectorAll('.lst-act').map((a) => [a.textContent, a.querySelector('a').getAttribute('href')]);
   const task = q(tree, '.ex-task');
   out.task = {head: P(task, '.os-col-head', 'h3').textContent, labels: task.querySelectorAll('label').map((l) => l.querySelector('span').textContent),
-    next: byText(task, 'button', 'Создать следующий тест') != null, details: task.querySelectorAll('details').map((d) => d.textContent),
+    next: byText(task, 'button', 'Create next test') != null, details: task.querySelectorAll('details').map((d) => d.textContent),
     inScroll: q(task, '.os-scroll').querySelectorAll('select, .matpick').length, result: q(task, '.dashboard-task-result').textContent, foot: q(task, '.dashboard-task-foot').textContent};
   const find = q(tree, '.ex-find');
   out.find = {head: q(find, '.os-col-head').textContent, cards: q(find, '.os-scroll').querySelectorAll('article').map((a) => a.textContent),
@@ -153,24 +155,24 @@ def test_the_screen_is_one_frame_with_the_list_on_the_left_and_the_task_over_the
 """)
     classes = out["root"].split()
     assert "os" in classes and "ex" in classes and "workspace" not in classes                 # the side menu stays
-    assert out["top"] == ["os-head ex-head", "os-body ex-body"] and out["title"] == "Эксперименты"
-    assert out["actions"] == [["AI-исследователь", "#/research", False], ["Карта цветов", "#/colors", False], ["Создать плату", None, True], ["Добавить работу и фото", "#/ingest", False]]
+    assert out["top"] == ["os-head ex-head", "os-body ex-body"] and out["title"] == "Experiments"
+    assert out["actions"] == [["AI researcher", "#/research", False], ["Color map", "#/colors", False], ["Advanced plate options", None, False], ["Add work and photo", "#/ingest", False]]
     assert out["columns"] == ["os-col ex-list", "ex-right"] and out["right"] == ["os-col ex-task", "os-col ex-find", "os-col ex-find"]
-    assert out["listParts"] == ["os-col-head", "os-scroll"] and out["listHead"].startswith("Эксперименты") and out["pills"] == ["3", "1 к проверке"]
+    assert out["listParts"] == ["os-col-head", "os-scroll"] and out["listHead"].startswith("Experiments") and out["pills"] == ["3", "1 to review"]
     search, states, state_group, tasks, orders, count = out["toolbar"]                                  # the shared list's search, filters and order, in the list column
-    assert search and state_group and states == ["Все · 3", "Нужна проверка · 1", "Ждут фото · 1", "Приняты · 1"]
-    assert tasks == ["все задачи · 3", "Надписи · 3"] and count == "показано 3 из 3"
+    assert search and state_group and states == ["All · 3", "Нужна проверка · 1", "Ждут фото · 1", "Приняты · 1"]
+    assert tasks == ["все задачи · 3", "Lettering · 3"] and count == "showing 3 of 3"
     assert orders == [["recent", "Сначала недавние"], ["review", "Сначала к проверке"], ["title", "По названию"]]
     assert out["rowsInScroll"] == out["rowsInList"] == 3 and out["cards"] == 0                           # one line each; the cards open under a line
     assert out["cardTitles"] == ["Плата текста", "Тест Q-Pulse", "Шаг строк"]                             # the most recently active first, as the server sends
     assert out["open"] == [["Открыть", "#/experiment/plan-3"], ["Открыть", "#/experiment/eng-a"], ["Открыть", "#/experiment/eng-b"]]
-    assert out["task"]["head"] == "Рабочая задача" and out["task"]["labels"][:2] == ["Что хотим сделать", "На каком материале"] and out["task"]["inScroll"] >= 2
+    assert out["task"]["head"] == "Work goal" and out["task"]["labels"][:2] == ["Goal", "Material"] and out["task"]["inScroll"] >= 2
     assert out["task"]["next"] is True and "Laser A" not in out["task"]["result"] and "Разборчивые буквы выбранного размера" in out["task"]["result"]
-    assert out["task"]["details"] == [out["task"]["details"][0]] and out["task"]["details"][0].startswith("Основание вывода и параметры")
-    assert "основание — проверка №7, наблюдения №11, №12" in out["task"]["details"][0] and "30%" in out["task"]["details"][0].replace(" ", "")   # the long lines are folded
+    assert out["task"]["details"] == [out["task"]["details"][0]] and out["task"]["details"][0].startswith("Finding evidence and settings")
+    assert "evidence: review #7, observations #11, #12" in out["task"]["details"][0] and "30%" in out["task"]["details"][0].replace(" ", "")   # the long lines are folded
     assert "основание" not in out["task"]["result"].split("Основание вывода")[0] and "text readability" not in out["task"]["foot"]
-    assert out["task"]["foot"].startswith("Плата: надписи 3 × 3, три размера")
-    assert out["find"]["head"].startswith("Выводы для материала") and len(out["find"]["cards"]) == 2 and out["find"]["link"] == "#/devices/1"
+    assert out["task"]["foot"].startswith("Plate: lettering 3 × 3, three sizes")
+    assert out["find"]["head"].startswith("Material findings") and len(out["find"]["cards"]) == 2 and out["find"]["link"] == "#/devices/1"
     assert out["footerInside"] is False
 
 
@@ -186,17 +188,17 @@ def test_the_filters_sit_in_the_list_column_narrow_it_in_place_and_remember_thei
   search.value = ''; await search.dispatch('input'); await tick();
   await chip(scroll, 'Нужна проверка').dispatch('click'); await tick();
   out.state = titles(scroll);
-  await chip(scroll, 'Все').dispatch('click'); await tick();
+  await chip(scroll, 'All').dispatch('click'); await tick();
   out.tasks = selectOf(scroll, 'Задача').options.map((o) => [o.value, o.textContent]);
   const task = selectOf(scroll, 'Задача'); task.value = 'text'; await task.dispatch('change'); await tick();
   out.task = titles(scroll);
-  const order = selectOf(scroll, 'Порядок'); order.value = 'title'; await order.dispatch('change'); await tick();
+  const order = selectOf(scroll, 'Sort order'); order.value = 'title'; await order.dispatch('change'); await tick();
   out.ordered = titles(scroll);
   out.kept = JSON.parse(ctx.__store['list:experiments']); out.renders = ctx.__renders.length;
 """, routes=routes)
-    assert out["searched"] == ["Тест Q-Pulse"] and out["chipsSearched"] == ["Все · 1", "Приняты · 1"]      # the search reads the title; the counts follow it
+    assert out["searched"] == ["Тест Q-Pulse"] and out["chipsSearched"] == ["All · 1", "Приняты · 1"]      # the search reads the title; the counts follow it
     assert out["state"] == ["Шаг строк"]
-    assert out["tasks"] == [["", "все задачи · 3"], ["text", "Надписи · 2"], ["line", "Линии · 1"], ["fill", "Заливка · 1"]]    # only the tasks the experiments have
+    assert out["tasks"] == [["", "все задачи · 3"], ["text", "Lettering · 2"], ["line", "Lines · 1"], ["fill", "Fill · 1"]]    # only the tasks the experiments have
     assert out["task"] == ["Плата текста", "Тест Q-Pulse"] and out["ordered"] == ["Плата текста", "Тест Q-Pulse"]
     assert out["kept"] == {"sort": "title", "filters": {"status": "", "task": "text"}, "search": "", "shown": 20}
     assert out["renders"] == 0                                                                                 # a choice narrows the list, the screen stays
@@ -210,11 +212,11 @@ def test_a_remembered_filter_narrows_the_list_and_an_empty_result_says_so_inside
     nothing = run(tmp_path, "const s = P(tree, '.ex-list', '.os-scroll'); out.rows = s.querySelectorAll('.lst-row').length; out.text = s.querySelector('.lst-empty').textContent;"
                             "out.pills = P(tree, '.ex-list', '.os-col-head').querySelectorAll('.pill').map((p) => p.textContent);"
                             "out.page = kids(tree);", store={"list:experiments": json.dumps({"search": "нет такого"})})
-    assert nothing["rows"] == 0 and nothing["text"] == "Ничего не найдено: измените поиск, состояние или лазер." and nothing["pills"] == ["3", "1 к проверке"]
+    assert nothing["rows"] == 0 and nothing["text"] == "No results: change the search, status or laser." and nothing["pills"] == ["3", "1 to review"]
     assert nothing["page"] == ["os-head ex-head", "os-body ex-body"]                                       # the frame stays whole
     none = run(tmp_path, "out.text = P(tree, '.ex-list', '.os-scroll').querySelector('.lst-empty').textContent;",
                routes={**ROUTES, "/api/experiments": {"status": 200, "json": []}})
-    assert none["text"] == "Экспериментов пока нет. Создайте плату или добавьте работу и фото."
+    assert none["text"] == "No experiments yet. Create a plate or add a work and photo."
 
 
 @node
@@ -230,8 +232,8 @@ def test_a_long_list_shows_one_page_of_twenty_lines_and_the_rest_on_request(tmp_
   await scroll.querySelectorAll('.lst-main')[0].dispatch('click'); await tick();
   out.card = [scroll.querySelectorAll('article').length, topLink(scroll.querySelector('article')), scroll.querySelector('article').querySelector('img').getAttribute('src')];
 """, routes={**ROUTES, "/api/experiments": {"status": 200, "json": many[::-1]}})
-    assert len(out["first"]) == 20 and out["first"][:2] == ["Плата 25", "Плата 24"] and out["count"] == "показано 20 из 25"
-    assert out["more"] == "Показать ещё 5" and out["all"] == 25 and out["after"] is None
+    assert len(out["first"]) == 20 and out["first"][:2] == ["Плата 25", "Плата 24"] and out["count"] == "showing 20 of 25"
+    assert out["more"] == "Show 5 more" and out["all"] == 25 and out["after"] is None
     assert out["card"] == [1, "Плата 25", "/api/pairs/7/photo.png?visibility=lifted&size=480"]           # the card opens under its line, built then
 
 
@@ -242,20 +244,85 @@ def test_the_experiments_of_one_laser_show_its_pill_and_the_way_back_in_the_filt
   out.first = filters.children[0].textContent; out.link = filters.querySelectorAll('a').map((a) => [a.textContent, a.getAttribute('href')]);
   out.pills = P(tree, '.ex-list', '.os-col-head').querySelectorAll('.pill').map((p) => p.textContent);
 """, query={"device": "1"})
-    assert out["first"] == "Лазер: Laser AВсе лазеры" and out["link"] == [["Все лазеры", "#/experiments"]] and out["pills"] == ["3 из 3", "1 к проверке"]
+    assert out["first"] == "Laser: Laser AAll lasers" and out["link"] == [["All lasers", "#/experiments"]] and out["pills"] == ["3 of 3", "1 to review"]
 
 
 # -- behaviour that must not change -----------------------------------------------------------------------------------------------------
 @node
+def test_next_test_preview_does_not_block_the_catalog_and_must_finish_before_creation(tmp_path):
+    setup = """
+  const original = ctx.fetch;
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  ctx.fetch = async (url, opts) => { if (String(url).split('?')[0] === '/api/application-guide/preview') await gate; return original(url, opts); };
+"""
+    out = run(tmp_path, """
+  const task = tree.querySelector('.ex-task');
+  const create = byText(task, 'button', 'Create next test');
+  out.before = [create.disabled, task.textContent.includes('Calculating plate size and time'), titles(P(tree, '.ex-list', '.os-scroll')).length];
+  await create.dispatch('click'); await tick();
+  out.beforePosts = ctx.requests.filter((r) => r.path === '/api/application-guide/next-plate').length;
+  release(); await tick(); await tick();
+  out.after = [create.disabled, task.textContent.includes('44 × 35 mm'), task.textContent.includes('Estimated engraving time: 2 min 00 s')];
+""", setup=setup)
+    assert out["before"] == [True, True, 3] and out["beforePosts"] == 0
+    assert out["after"] == [False, True, True]
+
+
+@node
+def test_pulse_preview_ignores_an_older_response_after_a_new_selection(tmp_path):
+    routes = {**ROUTES, "/api/devices": {"status": 200, "json": [{**ROUTES["/api/devices"]["json"][0],
+        "passport": {"pulse_steps": [{"pulse_width_ns": 100}, {"pulse_width_ns": 250}]}}]},
+        "/api/application-guide": {**ROUTES["/api/application-guide"], "json": {**ROUTES["/api/application-guide"]["json"],
+            "plate": {**ROUTES["/api/application-guide"]["json"]["plate"], "settings": {"pulse_width": None}}}}}
+    setup = """
+  const original = ctx.fetch, pending = {};
+  ctx.fetch = (url, opts) => String(url).split('?')[0] === '/api/application-guide/preview'
+    ? new Promise((resolve) => { pending[new URLSearchParams(String(url).split('?')[1]).get('pulse_width')] = resolve; }) : original(url, opts);
+  const answer = (width, revision) => ({ok: true, status: 200, headers: {get: () => 'application/json'},
+    json: async () => ({revision, summary: {size_mm: {width, height: 35}, test_features: 9, work_field: {checked: true}}, time: {seconds: 120, complete: true}})});
+"""
+    out = run(tmp_path, """
+  const task = tree.querySelector('.ex-task');
+  const pulse = task.querySelectorAll('select').find((s) => s.options.some((o) => o.textContent === '250 ns'));
+  out.initial = [byText(task, 'button', 'Create next test').disabled, task.textContent.includes('Select a pulse width')];
+  pulse.value = '100'; pulse.dispatch('change'); await tick();
+  pulse.value = '250'; pulse.dispatch('change'); await tick();
+  pending['250'](answer(50, 'newest')); await tick(); await tick();
+  pending['100'](answer(20, 'old')); await tick(); await tick();
+  out.display = [task.textContent.includes('50 × 35 mm'), task.textContent.includes('20 × 35 mm')];
+  await byText(task, 'button', 'Create next test').dispatch('click'); await tick();
+  out.body = JSON.parse(ctx.requests.find((r) => r.path === '/api/application-guide/next-plate').body);
+""", routes=routes, setup=setup)
+    assert out["initial"] == [True, True] and out["display"] == [True, False]
+    assert out["body"]["pulse_width"] == 250 and out["body"]["preview_revision"] == "newest"
+
+
+@node
+def test_failed_plate_preview_offers_retry_without_hiding_the_experiment_list(tmp_path):
+    routes = {**ROUTES, "/api/application-guide/preview": {"status": 503, "json": {"error": "preview service unavailable"}}}
+    out = run(tmp_path, """
+  const task = tree.querySelector('.ex-task');
+  out.failed = [byText(task, 'button', 'Create next test').disabled, task.textContent.includes('preview service unavailable'),
+    titles(P(tree, '.ex-list', '.os-scroll')).length];
+  data.routes['/api/application-guide/preview'] = {status: 200, json: {revision: 'fresh', summary: {size_mm: {width: 44, height: 35},
+    test_features: 9, work_field: {checked: true}}, time: {seconds: 120, complete: true}}};
+  await byText(task, 'button', 'Retry plate preview').dispatch('click'); await tick();
+  out.retry = [byText(task, 'button', 'Create next test').disabled, task.textContent.includes('44 × 35 mm')];
+""", routes=routes)
+    assert out["failed"] == [True, True, 3] and out["retry"] == [False, True]
+
+
+@node
 def test_the_next_test_button_still_creates_the_plate_for_the_goal_material_and_laser_and_opens_it(tmp_path):
     out = run(tmp_path, """
-  const button = byText(tree.querySelector('.ex-task'), 'button', 'Создать следующий тест');
+  const button = byText(tree.querySelector('.ex-task'), 'button', 'Create next test');
   await button.dispatch('click'); await tick();
   const post = ctx.requests.find((r) => r.method === 'POST');
   out.path = post.path; out.body = JSON.parse(post.body); out.hash = ctx.location.hash;
 """)
     assert out["path"] == "/api/application-guide/next-plate" and out["hash"] == "#/experiment/plan-9"
-    assert out["body"] == {"device_id": 1, "material_id": 1, "goal": "text", "pulse_width": None}
+    assert out["body"] == {"device_id": 1, "material_id": 1, "goal": "text", "pulse_width": None, "preview_revision": "preview-1"}
 
 
 @node
@@ -267,7 +334,7 @@ def test_the_task_pickers_remember_their_choice_and_reload(tmp_path):
   out.goal = ctx.__store['experiment-dashboard-goal']; out.renders = ctx.__renders.length;
   out.guideUrls = ctx.requests.filter((r) => r.path === '/api/application-guide').map((r) => r.url);
 """)
-    assert out["labels"] == ["Цель исследования", "Материал и заготовка"] and out["goal"] == "line" and out["renders"] == 1
+    assert out["labels"] == ["Research goal", "Material and stock"] and out["goal"] == "line" and out["renders"] == 1
     assert out["guideUrls"] == ["/api/application-guide?device_id=1&material_id=1&goal=text"]
 
 
@@ -276,9 +343,9 @@ def test_without_a_laser_the_screen_offers_to_add_one_and_does_not_offer_a_plate
     routes = {**ROUTES, "/api/devices": {"status": 200, "json": []}}
     out = run(tmp_path, """
   out.root = tree.className; out.text = tree.textContent;
-  out.plate = byText(tree, 'button', 'Создать плату').disabled; out.link = byText(tree, 'a', 'Лазеры').getAttribute('href');
+  out.plate = byText(tree, 'button', 'Advanced plate options').disabled; out.link = byText(tree, 'a', 'Lasers').getAttribute('href');
 """, routes=routes)
-    assert "os" in out["root"].split() and "Сначала добавьте лазер и установите линзу" in out["text"] and out["plate"] is True and out["link"] == "#/devices"
+    assert "os" in out["root"].split() and "First add a laser and install a lens" in out["text"] and out["plate"] is True and out["link"] == "#/devices"
 
 
 @node
@@ -289,7 +356,7 @@ def test_the_laser_page_shows_the_same_short_list_with_the_same_filters_and_keep
   const panel = card.querySelectorAll('section').find((s) => s.textContent.startsWith('Эксперименты этого лазера'));
   out.head = panel.querySelector('.dashboard-panel-head').textContent;
   out.toolbar = [panel.querySelector('.lst-search') != null, chips(panel), selectOf(panel, 'Задача').options.map((o) => o.textContent),
-    selectOf(panel, 'Порядок').options.map((o) => o.textContent)];
+    selectOf(panel, 'Sort order').options.map((o) => o.textContent)];
   await chip(panel, 'Приняты').dispatch('click'); await tick();
   out.accepted = titles(panel);
   out.kept = [JSON.parse(ctx.__store['list:laser-experiments']).filters, ctx.__store['list:experiments'] || null];
@@ -298,13 +365,13 @@ def test_the_laser_page_shows_the_same_short_list_with_the_same_filters_and_keep
 """)
     assert out["head"] == "Эксперименты этого лазера3Открыть в общем списке"
     search, states, tasks, orders = out["toolbar"]
-    assert search and states == ["Все · 3", "Нужна проверка · 1", "Ждут фото · 1", "Приняты · 1"] and tasks == ["все задачи · 3", "Надписи · 3"]
+    assert search and states == ["All · 3", "Нужна проверка · 1", "Ждут фото · 1", "Приняты · 1"] and tasks == ["все задачи · 3", "Lettering · 3"]
     assert orders == ["Сначала недавние", "Сначала к проверке", "По названию"]
     assert out["accepted"] == ["Тест Q-Pulse"] and out["kept"][0] == {"status": "accepted", "task": ""} and out["kept"][1] is None   # its own choice, not the screen's
     assert out["api"] == ["card", "list", "layers"] and out["empty"] == "Пусто"
 
 
-# -- «Создать плату»: the plate dialog ---------------------------------------------------------------------------------------------
+# -- «Create plate»: the plate dialog ---------------------------------------------------------------------------------------------
 DIALOG = """
 const fs = require('fs');
 const {context, load, El} = require(%(dom)s);
@@ -431,16 +498,16 @@ def test_the_plate_dialog_says_the_unit_and_the_permitted_values_of_every_number
   for (let i = 0; i < 5; i += 1) await tick();
   out.laser = box.querySelectorAll('.f-error').map((n) => n.textContent);
 """)
-    assert "от 3 до 300" in out["words"]["width"] and "единица: мм" in out["words"]["width"] and "не больше 5" in out["words"]["width"]
-    assert "больше 0 и не больше 100" in out["words"]["power"] and "единица: %" in out["words"]["power"]
-    assert "больше 0 и не больше 10000" in out["words"]["speed"] and "единица: мм/с" in out["words"]["speed"]
-    assert "от 1 до 4000" in out["words"]["frequency"] and "единица: кГц" in out["words"]["frequency"]       # the laser's own range
-    assert "от 1 до 300" in out["words"]["size"] and "от 1 до 20" in out["words"]["passes"] and "целое число" in out["words"]["passes"]
+    assert "from 3 to 300" in out["words"]["width"] and "unit: mm" in out["words"]["width"] and "не больше 5" in out["words"]["width"]
+    assert "greater than 0 and at most 100" in out["words"]["power"] and "unit: %" in out["words"]["power"]
+    assert "greater than 0 and at most 10000" in out["words"]["speed"] and "unit: mm/s" in out["words"]["speed"]
+    assert "from 1 to 4000" in out["words"]["frequency"] and "unit: kHz" in out["words"]["frequency"]       # the laser's own range
+    assert "from 1 to 300" in out["words"]["size"] and "from 1 to 20" in out["words"]["passes"] and "whole number" in out["words"]["passes"]
     wrong = out["wrong"]
     assert wrong["posted"] == 0 and wrong["kept"] == "5, 2, 40" and wrong["invalid"] == "true" and wrong["toasts"] == 0
-    assert any("Значение 2: Допустимо: от 3 до 300 мм. Введено: 2" in text for text in wrong["beside"])
-    assert any("Ширины полосок заливки" in text and "осталось в форме" in text for text in wrong["summary"])
-    assert any("Допустимо: от 1 до 4000 кГц. Введено: 5000" in text for text in out["laser"])
+    assert any("Значение 2: Allowed: from 3 to 300 mm. Entered: 2" in text for text in wrong["beside"])
+    assert any("Ширины полосок заливки" in text and "remain in the form" in text for text in wrong["summary"])
+    assert any("Allowed: from 1 to 4000 kHz. Entered: 5000" in text for text in out["laser"])
 
 
 @node
@@ -466,8 +533,8 @@ def test_a_refusal_of_the_server_stays_in_the_plate_dialog_with_everything_typed
   out.toastsAfter = ctx.document.body.querySelectorAll('.toast').length;
 """)
     assert out["open"] and out["kept"] == "900" and out["toasts"] == 0
-    assert len(out["stock"]) == 1 and "Запись заготовки не выполнена" in out["stock"][0] and out["toastsAfter"] == 0
-    assert len(out["said"]) == 1 and "скорость теста не должна превышать 10000 мм/с" in out["said"][0] and "осталось в форме" in out["said"][0]
+    assert len(out["stock"]) == 1 and "Запись заготовки failed" in out["stock"][0] and out["toastsAfter"] == 0
+    assert len(out["said"]) == 1 and "скорость теста не должна превышать 10000 мм/с" in out["said"][0] and "remain in the form" in out["said"][0]
 
 
 # -- the CSS ---------------------------------------------------------------------------------------------------------------------------
@@ -485,7 +552,7 @@ def test_the_list_and_the_right_column_share_the_height_and_only_the_list_and_lo
 def test_the_source_builds_the_frame_from_the_shared_classes_and_keeps_what_other_tests_and_screens_rely_on():
     for part in ("h('div', {class: 'os ex'}, hero,", "h('div', {class: 'os-body ex-body'},", "h('section', {class: 'os-col ex-list'},", "h('div', {class: 'ex-right'}, taskSlot,",
                  "h('section', {class: 'os-col ex-task'},", "{class: 'os-col ex-find'}", "ExperimentCards.list(shown, {id: 'experiments',",
-                 "panel('Выводы для материала', latest.size, insightCards,", "App.post('/application-guide/next-plate'", "PlateDialog.open(devices, null, reload)"):
+                 "panel('Material findings', latest.size, insightCards,", "App.post('/application-guide/next-plate'", "PlateDialog.open(devices, null, reload)"):
         assert part in SCREEN, part
     assert "{class: 'dashboard-hero'" not in SCREEN and "{class: 'experiment-dashboard'" not in SCREEN and "exp-columns" not in SCREEN     # the old page frame is gone
     assert "return {card, list, layers};" in CARDS and "App.list({id, items: experiments" in CARDS                  # the laser page keeps using the same list
@@ -517,17 +584,17 @@ def test_the_laboratory_proposes_the_next_plate_of_each_kind_of_photo_engraving_
     routes = {**ROUTES, "/api/photo-knowledge": {"status": 200, "json": KNOWN}, "/api/devices/1/findings": {"status": 200, "json": [FINDING, image]},
               "/api/photo-knowledge/plate": {"status": 201, "json": {"plan_id": 12, "name": "Фотогравировка · TCE-12"}}}
     out = run(tmp_path, """
-  const panel = tree.querySelectorAll('section').find((s) => has(s, 'ex-find') && s.textContent.includes('Фотогравировка: что предлагает лаборатория'));
+  const panel = tree.querySelectorAll('section').find((s) => has(s, 'ex-find') && s.textContent.includes('Photo engraving: laboratory recommendations'));
   out.head = panel.querySelector('.os-col-head').textContent;
   out.cards = panel.querySelectorAll('article').map((a) => a.textContent);
-  out.image = tree.querySelectorAll('article').find((a) => a.textContent.startsWith('Изображение')).textContent;
+  out.image = tree.querySelectorAll('article').find((a) => a.textContent.startsWith('Image')).textContent;
   out.asked = ctx.requests.filter((r) => r.path === '/api/photo-knowledge').map((r) => r.url);
   out.buttons = panel.querySelectorAll('article').map((a) => a.querySelectorAll('button').map((b) => b.textContent));
   await byText(panel.querySelectorAll('article')[1], 'button', 'Сделать плату: 3 копии').dispatch('click'); await tick(); await tick();
   out.made = ctx.requests.filter((r) => r.path === '/api/photo-knowledge/plate').map((r) => JSON.parse(r.body));
   out.went = ctx.location.hash;
 """, routes=routes)
-    assert out["head"].startswith("Фотогравировка: что предлагает лаборатория3")                    # three kinds have an experiment proposed
+    assert out["head"].startswith("Photo engraving: laboratory recommendations3")                    # three kinds have an experiment proposed
     assert out["asked"] == ["/api/photo-knowledge?device_id=1&lens_id=5&material_id=1"]
     jarvis, atkinson, stucki, grey = out["cards"]
     assert "мощность вдвое больше: темнее на 6 L*, оценка +0,1 (по фото №7)" in jarvis                 # what the power does here
@@ -535,7 +602,7 @@ def test_the_laboratory_proposes_the_next_plate_of_each_kind_of_photo_engraving_
     assert "Картинки для платы ещё нет: сделайте первую плату из фотоработы или фотозоны" in stucki   # nothing to engrave it from yet
     assert out["buttons"] == [["Сделать следующую плату"], ["Сделать плату: 3 копии"], [], []]
     # the image purpose of the capability plate no longer says only «needs a test»: what the photographs measured is said there
-    assert out["image"].startswith("ИзображениеФото измерено") and "лучше всего вышел вид «Джарвис» (оценка 0,81 по фото №7)" in out["image"]
+    assert out["image"].startswith("ImagePhoto measured") and "the best result was “Джарвис” (score 0.81 from photo #7)" in out["image"]
     assert jarvis.startswith("Джарвиспоиск идёт") and "Лучшее: 20 %, 125 мм/с, 60 кГц, 200 нс, шаг 0,01 мм — автоматическая оценка 0,81 по фото №7" in jarvis
     assert "Следующая плата вокруг копии 2 J P20, изменения вдвое меньше." in jarvis and jarvis.endswith("Сделать следующую плату")
     assert "Ещё не фотографировался на этом лазере и титане." in atkinson and "на лучших настройках другого вида точками" in atkinson
@@ -551,6 +618,6 @@ def test_a_long_list_of_supporting_observations_is_a_count_and_a_list_not_a_sent
     short = run(tmp_path, "out.text = tree.querySelector('.ex-task').textContent; out.refs = tree.querySelectorAll('.srefs').length;")
     long_ = run(tmp_path, "out.text = tree.querySelector('.ex-task').textContent; out.refs = tree.querySelectorAll('.srefs').length;"
                 "out.count = tree.querySelector('.srefs-count').textContent;", routes=routes)
-    assert "наблюдения №11, №12" in short["text"] and short["refs"] == 0                       # a few stay in the sentence, as before
+    assert "observations #11, #12" in short["text"] and short["refs"] == 0                       # a few stay in the sentence, as before
     assert "наблюдения №40" not in long_["text"] and long_["refs"] == 1 and long_["count"] == "12"
-    assert "Наблюдения-основания" in long_["text"] and "основание — проверка №7" in long_["text"]
+    assert "Evidence observations" in long_["text"] and "evidence: review #7" in long_["text"]

@@ -10,8 +10,8 @@ from typing import Literal
 from fastapi import APIRouter, File, Form, Request, Response, UploadFile
 from pydantic import BaseModel
 
-from .. import (analysis, application_guide, capability_plates, colormap, designer, experiments, findings, ingest, knowledge, model, oxide,
-               photo_work, plans, recheck, setup as su, tasks, vector_job, work_errors)
+from .. import (analysis, application_guide, capability_plates, colormap, designer, engraving_time, experiments, findings, ingest, knowledge,
+               lightburn, model, oxide, photo_work, plans, recheck, setup as su, tasks, vector_job, work_errors)
 from .common import (MAX_LIGHTBURN_BYTES, MAX_PHOTO_BYTES, lens_param, picture_response, public_pair, public_plan, read_upload,
                      refresh_after_change, store_of)
 from .common import content_disposition
@@ -79,6 +79,7 @@ class ApplicationGoalIn(BaseModel):
     goal: str | None = None
     task: str | None = None               # a task kind of REQ-020 instead of (or with) the guide's goal
     pulse_width: float | None = None      # the operator's choice when the suggestion has no pulse width (DEC-043)
+    preview_revision: str | None = None
 
 
 class TaskIn(BaseModel):
@@ -152,18 +153,64 @@ def application_guide_for_stock(request: Request, device_id: int, material_id: i
     return application_guide.suggest(store_of(request), device_id, material_id, goal, task)
 
 
-@router.post("/application-guide/next-plate", status_code=201)
-def create_next_application_plate(body: ApplicationGoalIn, request: Request):
-    s = store_of(request)
-    suggestion = application_guide.suggest(s, body.device_id, body.material_id, body.goal, body.task)
+def _guide_plate(store, device_id: int, material_id: int, goal: str | None, task: str | None, pulse_width: float | None):
+    suggestion = application_guide.suggest(store, device_id, material_id, goal, task)
     plate = suggestion["plate"]
     if plate is None:
         raise su.ValidationError(suggestion["message"])
     settings = {**plate["settings"], "research_goal": suggestion["goal"], "source_pair_id": plate["source_pair_id"]}
-    if body.task:
-        settings["task"] = body.task
-    if body.pulse_width is not None:
-        settings["pulse_width"] = body.pulse_width
+    if task:
+        settings["task"] = task
+    if pulse_width is not None:
+        settings["pulse_width"] = pulse_width
+    if settings.get("pulse_width") is None:
+        raise su.ValidationError("Select a pulse width supported by the laser.")
+    return suggestion, plate, settings
+
+
+def _guide_preview_revision(prepared: dict, settings: dict) -> str:
+    data = {"test_type": prepared["experiment"]["test_type"], "settings": settings,
+            "device_id": prepared["device"]["id"], "passport": prepared["device"]["passport"],
+            "lens": prepared["lens"], "material": prepared["material"], "summary": prepared["experiment"]["summary"],
+            "clean_layer": prepared["clean_layer"], "marker_layer": prepared["marker_layer"]}
+    return hashlib.sha256(json.dumps(data, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")).hexdigest()
+
+
+@router.get("/application-guide/preview")
+def preview_application_plate(request: Request, device_id: int, material_id: int, goal: str | None = None,
+                              task: str | None = None, pulse_width: float | None = None):
+    """Estimate the suggested plate without writing a plate, plan or file."""
+    store = store_of(request)
+    _, plate, settings = _guide_plate(store, device_id, material_id, goal, task, pulse_width)
+    prepared = capability_plates.preview(store, device_id, material_id, plate["test_type"], settings)
+    plan = {"mode": plans.MODE_CAPABILITY, "layers": prepared["layers"], "markers": prepared["markers"],
+            "marker_labels": prepared["label_regions"], "clean_regions": prepared["clean_regions"],
+            "marker_layer": prepared["marker_layer"], "clean_layer": prepared["clean_layer"],
+            "experiment": prepared["experiment"], "plan_identifier": prepared["identifier"], "export_mirror_y": True,
+            "lightburn_settings": {"global_passes": prepared["values"]["global_passes"], "bidirectional": True,
+                                   "cross_hatch": False, "scan_angle": 0.0, "angle_increment": 0.0}}
+    estimate, time_reason = None, None
+    if prepared.get("pictures"):
+        time_reason = "The plate image is not available to the time estimator."
+    else:
+        try:
+            estimate = engraving_time.of_project(lightburn.parse_bytes(plans.export_lbrn2(plan)))
+        except (su.ValidationError, lightburn.LightBurnError, KeyError, ValueError) as exc:
+            time_reason = str(exc)
+    return {"test_type": plate["test_type"], "summary": prepared["experiment"]["summary"], "time": estimate,
+            "time_reason": time_reason, "revision": _guide_preview_revision(prepared, settings)}
+
+
+@router.post("/application-guide/next-plate", status_code=201)
+def create_next_application_plate(body: ApplicationGoalIn, request: Request):
+    s = store_of(request)
+    _, plate, settings = _guide_plate(s, body.device_id, body.material_id, body.goal, body.task, body.pulse_width)
+    if body.preview_revision is not None:
+        prepared = capability_plates.preview(s, body.device_id, body.material_id, plate["test_type"], settings)
+        if body.preview_revision != _guide_preview_revision(prepared, settings):
+            raise su.ValidationError("The recommendation or equipment settings changed. Review the updated preview before creating the plate.")
+        with s.transaction():
+            return capability_plates._persist_prepared(s, prepared, body.device_id, body.material_id, plate["test_type"])
     return capability_plates.create(s, body.device_id, body.material_id, plate["test_type"], settings)
 
 

@@ -3,7 +3,7 @@ import json
 from fastapi.testclient import TestClient
 import pytest
 
-from titanium_platform import application_guide, capability_plates, capability_results, devices, lenses, plans
+from titanium_platform import application_guide, capability_plates, capability_results, devices, experiments, lenses, plans
 from titanium_platform import setup as su
 from titanium_platform.api.app import create_app
 from titanium_platform.db import now
@@ -20,6 +20,62 @@ def hardware(store):
     material = su.save_material(store, "Grade 2 sheet", grade="Grade 2")
     other = su.save_material(store, "Other titanium sheet", grade="Grade 5")
     return laser, material, other
+
+
+
+def test_goal_labels_are_english_and_cover_core_research_goals():
+    goals = application_guide.list_goals()
+    assert {"text", "line", "color", "image"} <= {goal["id"] for goal in goals}
+    assert all(not any("\u0400" <= char <= "\u04ff" for char in goal["name"] + goal["objective"]) for goal in goals)
+
+
+@pytest.mark.parametrize("goal", ["text", "line", "color", "image"])
+def test_suggested_plate_preview_matches_created_geometry_and_estimates_export_time(tmp_path, goal):
+    with TestClient(create_app(tmp_path / "data")) as client:
+        store = client.app.state.store
+        laser, material, _ = hardware(store)
+        params = {"device_id": laser["id"], "material_id": material["id"], "goal": goal}
+        before = store.one("SELECT COUNT(*) AS n FROM plan")["n"]
+        preview = client.get("/api/application-guide/preview", params=params)
+        assert preview.status_code == 200, preview.text
+        estimate = preview.json()
+        assert store.one("SELECT COUNT(*) AS n FROM plan")["n"] == before
+        assert estimate["summary"]["size_mm"]["width"] > 0 and estimate["summary"]["size_mm"]["height"] > 0
+        assert estimate["time"] and estimate["time"]["complete"] and estimate["time"]["seconds"] > 0
+        created = client.post("/api/application-guide/next-plate", json={**params, "preview_revision": estimate["revision"]})
+        assert created.status_code == 201, created.text
+        plan = plans.get_plan(store, created.json()["plan_id"])
+        actual = experiments.plan_time(plan)
+        assert estimate["summary"]["size_mm"] == plan["experiment"]["summary"]["size_mm"]
+        assert actual and actual["complete"] and estimate["time"]["seconds"] == pytest.approx(actual["seconds"], rel=0.1)
+
+
+def test_suggested_plate_preview_rejects_a_changed_configuration(tmp_path):
+    with TestClient(create_app(tmp_path / "data")) as client:
+        store = client.app.state.store
+        laser, material, _ = hardware(store)
+        params = {"device_id": laser["id"], "material_id": material["id"], "goal": "text"}
+        preview = client.get("/api/application-guide/preview", params=params).json()
+        plans.save_marker_layer_settings(store, 30, 60, 150, line_interval=0.01, passes=1)
+        refused = client.post("/api/application-guide/next-plate", json={**params, "preview_revision": preview["revision"]})
+        assert refused.status_code == 422 and "changed" in refused.json()["error"]
+        assert store.one("SELECT COUNT(*) AS n FROM plan")["n"] == 0
+
+
+def test_plate_preview_requires_a_supported_pulse_when_the_default_is_unavailable(tmp_path):
+    with TestClient(create_app(tmp_path / "data")) as client:
+        store = client.app.state.store
+        laser, material, _ = hardware(store)
+        passport = dict(laser["passport"], pulse_steps=[s for s in laser["passport"]["pulse_steps"] if s["pulse_width_ns"] != 200])
+        devices.update_device(store, laser["id"], passport=passport)
+        params = {"device_id": laser["id"], "material_id": material["id"], "goal": "color"}
+        missing = client.get("/api/application-guide/preview", params=params)
+        assert missing.status_code == 422 and "Select a pulse width" in missing.json()["error"]
+        invalid = client.get("/api/application-guide/preview", params={**params, "pulse_width": 9999})
+        assert invalid.status_code == 422
+        valid = client.get("/api/application-guide/preview", params={**params, "pulse_width": 250})
+        assert valid.status_code == 200 and valid.json()["revision"]
+        assert store.one("SELECT COUNT(*) AS n FROM plan")["n"] == 0
 
 
 def test_text_goal_creates_compact_clean_first_plate_and_records_its_goal(tmp_path):
@@ -86,7 +142,7 @@ def test_depth_and_cutting_are_not_presented_as_surface_photo_recipes(store):
         suggestion = application_guide.suggest(store, laser["id"], material["id"], goal)
         assert suggestion["status"] == "measurement_needed"
         assert suggestion["plate"] is None
-        assert "пока" in suggestion["next_step"]
+        assert "no ready settings" in suggestion["next_step"]
 
 
 def test_other_material_can_be_catalogued_without_using_titanium_cleaning(store):
