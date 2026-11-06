@@ -56,6 +56,6 @@ def test_the_photograph_of_a_vector_work_keeps_its_check_in_the_experiment_even_
 
 
 def test_the_plan_page_of_a_vector_work_has_no_delete_test_button_and_no_link_to_an_experiment_before_a_photograph():
-    assert "vector ? null : btn('Удалить тест'" in PLAN_JS
-    assert re.search(r"const toExperiment = !restored \? \(vector && !p\.active_pairs \? null : link\('/experiment/plan-' \+ p\.id, 'К эксперименту'\)\)", PLAN_JS)
-    assert PLAN_JS.count("btn('Удалить тест'") == 1                                   # the other plans keep it
+    assert "vector ? null : btn('Delete test'" in PLAN_JS
+    assert re.search(r"const toExperiment = !restored \? \(vector && !p\.active_pairs \? null : link\('/experiment/plan-' \+ p\.id, 'Open experiment'\)\)", PLAN_JS)
+    assert PLAN_JS.count("btn('Delete test'") == 1                                   # the other plans keep it

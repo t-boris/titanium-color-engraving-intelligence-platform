@@ -1088,23 +1088,23 @@ def test_the_screen_shows_the_two_sections_and_one_large_picture_painted_in_tita
   out.classes = svgs.map((s) => s.getAttribute('class'));
   const picture = svgs.find((s) => (s.getAttribute('class') || '').split(' ').includes('vw-ed-svg'));
   out.titanium = picture.querySelectorAll('path').map((p) => [p.getAttribute('data-color'), p.getAttribute('fill'), p.getAttribute('stroke')]);
-  out.exportDisabled = byText(tree, 'button', 'Скачать LightBurn').disabled;
+  out.exportDisabled = byText(tree, 'button', 'Download LightBurn').disabled;
   out.links = tree.querySelectorAll('a').map((a) => a.getAttribute('href'));
   out.tabs = tree.querySelectorAll('button').filter((b) => b.getAttribute('role') === 'tab' && b.getAttribute('id').startsWith('vw-tab-')).map((b) => b.textContent);
   const screen = tree;                                            // the screen is the workspace itself
-  out.inScreen = ['Splitting algorithm', 'Number of colors', 'Split again', 'Слои титана', 'Исходные цвета', 'Подробно по цветам…', 'Варианты раскраски', 'Раскрасить с помощью AI',
-                  'Скачать LightBurn', '← My works', 'Make a copy']
+  out.inScreen = ['Splitting algorithm', 'Number of colors', 'Split again', 'Titanium layers', 'Source colors', 'Color details…', 'Coloring variants', 'Color with AI',
+                  'Download LightBurn', '← My works', 'Make a copy']
     .filter((t) => !screen.textContent.includes(t) && !screen.querySelectorAll('select, input, button').some((c) => c.getAttribute('aria-label') === t));
   out.pictures = screen.querySelectorAll('svg').map((s) => s.getAttribute('class'));
 """)
     text = out["text"]
-    assert out["tabs"] == ["Разбиение", "Document colors", "AI", "Варианты", "Результат", "Файл"] and out["inScreen"] == []          # one screen: tabs, the picture, the panel
-    assert not any(old in text for old in ("1. Разбиение", "2. Цвета", "3. Файл LightBurn"))
+    assert out["tabs"] == ["Segmentation", "Document colors", "AI", "Variants", "Result", "File"] and out["inScreen"] == []          # one screen: tabs, the picture, the panel
+    assert not any(old in text for old in ("1. Segmentation", "2. Colors", "3. LightBurn file"))
     assert "vw-ed-svg" in out["pictures"] and "vw-areas" in out["pictures"]
-    for part in ("Файл LightBurn", "Оценка времени всей работы", "no face found", "Слои титана", "Исходные цвета",
-                 "Подробно по цветам…", "самый быстрый цвет в пределах допуска", "Algorithm Mosaic", "Important regions: faces, eyes, lips"):
+    for part in ("LightBurn file", "Estimated time for the whole work", "no face found", "Titanium layers", "Source colors",
+                 "Color details…", "fastest color within ΔE tolerance", "Algorithm Mosaic", "Important regions: faces, eyes, lips"):
         assert part in text, part
-    assert not any(bad in text for bad in ("null", "undefined", "NaN", "без перевода", "[object", "Принять")), text[:3000]
+    assert not any(bad in text for bad in ("null", "undefined", "NaN", "untranslated", "[object", "Accept")), text[:3000]
     assert sum("vw-ed-svg" in (c or "").split() for c in out["classes"]) == 1 and "vw-areas" in out["classes"]
     view = routes[f"/api/vector/{job['id']}"]["json"]
     for rgb in (YELLOW, PAPER):                                                          # the far yellow is painted too, not hatched
@@ -1137,17 +1137,17 @@ def test_the_colour_step_sends_contrast_and_artistic_with_its_group_and_names_th
     c, j = work, job
     colouring(c, j, op="assign", mode="artistic", subset="warm")
     out = run_screen(tmp_path, j, routes_of(c, j), """
-  await byText(tree, 'button', 'Контраст соседей').dispatch('click'); await tick();
-  const group = tree.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Из каких цветов');
+  await byText(tree, 'button', 'Contrast neighbors').dispatch('click'); await tick();
+  const group = tree.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Color group');
   out.groups = group.querySelectorAll('option').map((o) => [o.value, o.textContent]);
   group.value = 'cool'; await group.dispatch('change');
-  await byText(tree, 'button', 'Художественно').dispatch('click'); await tick();
+  await byText(tree, 'button', 'Artistic').dispatch('click'); await tick();
   out.posted = ctx.requests.filter((r) => r.method === 'POST').map((r) => JSON.parse(r.body));
-  out.variants = tree.querySelectorAll('strong').map((s) => s.textContent).filter((t) => t.startsWith('№ '));
+  out.variants = tree.querySelectorAll('strong').map((s) => s.textContent).filter((t) => t.startsWith('#'));
 """)
-    assert out["groups"] == [["all", "все цвета"], ["warm", "тёплые"], ["cool", "холодные"], ["bright", "яркие"]]
+    assert out["groups"] == [["all", "all colors"], ["warm", "warm"], ["cool", "cool"], ["bright", "bright"]]
     assert out["posted"] == [{"op": "assign", "mode": "contrast"}, {"op": "assign", "mode": "artistic", "subset": "cool"}]
-    assert any(v.endswith("Художественно · тёплые (вариант 1)") for v in out["variants"])
+    assert any(v.endswith("Artistic · warm (variant 1)") for v in out["variants"])
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
@@ -1278,7 +1278,7 @@ def test_the_four_algorithms_are_chosen_on_the_screen_each_with_what_it_looks_li
   const hint = () => tree.querySelectorAll('p').find((p) => p.className === 'toolbar-hint').textContent;
   out.hints = {};
   for (const [value] of out.options) { select.value = value; await select.dispatch('change'); out.hints[value] = hint(); }
-  out.detail = tree.querySelectorAll('select').filter((s) => s.getAttribute('aria-label') === 'Детальность').length;
+  out.detail = tree.querySelectorAll('select').filter((s) => s.getAttribute('aria-label') === 'Detail').length;
   select.value = 'planes'; await select.dispatch('change');
   await byText(tree, 'button', 'Split again').dispatch('click');
   await byText(ctx.document.body.querySelector('.modal'), 'button', 'Split again').dispatch('click'); await tick();
@@ -1299,7 +1299,7 @@ def test_the_four_algorithms_are_chosen_on_the_screen_each_with_what_it_looks_li
 
 def test_the_start_form_sends_the_algorithm_with_the_other_photograph_fields():
     screen = (UI / "screens" / "vector.js").read_text(encoding="utf-8")
-    assert "const algorithm = VectorSplit.picker('slic');" in screen and "f.add('algorithm', 'Алгоритм разбиения', algorithm.select" in screen
+    assert "const algorithm = VectorSplit.picker('slic');" in screen and "f.add('algorithm', 'Segmentation algorithm', algorithm.select" in screen
     assert "fd.append('algorithm', v.algorithm)" in screen and "value: algorithm.select.value" in screen          # read once by the form, sent with the other fields
 
 
@@ -1309,7 +1309,7 @@ def test_an_export_refused_by_the_server_is_shown_translated_and_the_file_is_fet
     routes = routes_of(work, j)
     routes[f"/api/vector/{j['id']}/export.lbrn2"] = {"status": 422, "json": {"error": "every region is excluded: there is nothing to engrave", "kind": "invalid"}}
     out = run_screen(tmp_path, j, routes, """
-  const button = byText(tree, 'button', 'Скачать LightBurn');
+  const button = byText(tree, 'button', 'Download LightBurn');
   out.disabled = button.disabled;
   await button.dispatch('click');
   out.toast = ctx.document.body.querySelectorAll('div').filter((d) => (d.className || '').startsWith('toast')).map((d) => d.textContent);
@@ -1322,7 +1322,7 @@ def test_an_export_refused_by_the_server_is_shown_translated_and_the_file_is_fet
     assert out["disabled"] is False and out["reenabled"]
     assert any("every region is excluded: there is nothing to engrave" in t for t in out["toast"])
     assert f"GET /api/vector/{j['id']}/export.lbrn2" in out["requests"]
-    assert out["failure"].startswith("Файл не получен: every region is excluded: there is nothing to engrave") and out["retry"] == ["Повторить"]
+    assert out["failure"].startswith("File not received: every region is excluded: there is nothing to engrave") and out["retry"] == ["Retry"]
 
 
 def test_the_area_overlay_does_not_paint_the_chart_background_over_the_picture():
@@ -1432,11 +1432,11 @@ def test_the_slider_sends_the_last_position_once_and_the_editor_redraws_the_bord
   out.stillThere = tree.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === 'Line smoothing, mm') === slider;
   out.readoutAfter = readout.textContent;
 """)
-    assert out["initial"] == ["range", "0", "2", "0.05", "0.5"] and out["readoutBefore"].replace(",", ".") == "0.50 мм"
-    assert out["readoutDuring"].replace(",", ".") == "1.20 мм"                                                         # the number follows the finger at once
+    assert out["initial"] == ["range", "0", "2", "0.05", "0.5"] and out["readoutBefore"].replace(",", ".") == "0.50 mm"
+    assert out["readoutDuring"].replace(",", ".") == "1.20 mm"                                                         # the number follows the finger at once
     assert out["posted"] == [[f"/api/vector/{j['id']}/smoothing", {"mm": 1.2}]]                    # one request, with the last position
     assert out["geometry"] == 1 and out["renders"] == 0                                            # the borders are fetched again, nothing else redrawn
-    assert out["stillThere"] and out["readoutAfter"].replace(",", ".") == "1.20 мм"                                   # the slider is the same element, still in the hand
+    assert out["stillThere"] and out["readoutAfter"].replace(",", ".") == "1.20 mm"                                   # the slider is the same element, still in the hand
 
 
 def test_the_editor_and_the_slider_are_wired_to_the_smoothness_of_the_work():
@@ -1480,13 +1480,13 @@ def test_the_regions_and_the_history_of_a_traced_work_are_short_lists_edited_on_
     j["history"] = [{"version": v, "op": {"op": "set_tolerance"}, "at": f"2026-10-{v:02d}T10:00:00"} for v in range(1, 23)]
     out = run_screen(tmp_path, j, {f"/api/vector/{j['id']}": {"status": 200, "json": j}}, """
   const card = (title) => tree.querySelectorAll('div').find((d) => (d.querySelector('h3') || {}).textContent === title);
-  const regions = card('Области: 36'), history = card('История правок');
+  const regions = card('Regions: 36'), history = card('Edit history');
   const mains = (root) => root.querySelectorAll('.lst-main');
   out.lines = mains(regions).length; out.count = regions.querySelector('.lst-count').textContent;
   out.first = mains(regions)[0].textContent;
   out.actions = regions.querySelectorAll('.lst-act')[0].querySelectorAll('button').map((b) => b.textContent);
-  out.taskBefore = regions.querySelectorAll('select').filter((s) => (s.getAttribute('aria-label') || '').startsWith('Задача области')).length;
-  const box = regions.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === 'Выбрать r1'); box.checked = true; await box.dispatch('change');
+  out.taskBefore = regions.querySelectorAll('select').filter((s) => (s.getAttribute('aria-label') || '').startsWith('Region task')).length;
+  const box = regions.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === 'Select r1'); box.checked = true; await box.dispatch('change');
   out.openAfterBox = regions.querySelectorAll('.lst-det').filter((d) => !d.hidden).length;
   let stopped = false;                                       // the small DOM bubbles anyway: that the box stops its click is what a browser obeys
   await box.dispatch('click', {stopPropagation() { stopped = true; }}); await tick();
@@ -1504,15 +1504,15 @@ def test_the_regions_and_the_history_of_a_traced_work_are_short_lists_edited_on_
   out.revert = history.querySelectorAll('.lst-act')[0].querySelectorAll('button').map((b) => b.textContent);
 """)
     assert out["lines"] == 30 and out["count"] == "showing 30 of 36"
-    assert out["first"].startswith("r1Есть рецепт") and "1.00 мм²" in out["first"] and f"группа {first['layer_key']}" in out["first"]
-    assert out["actions"][:2] == ["Удалить", "Исключить (без рецепта)"]
+    assert out["first"].startswith("r1Recipe available") and "1.00 mm²" in out["first"] and f"group {first['layer_key']}" in out["first"]
+    assert out["actions"][:2] == ["Delete", "Exclude (no recipe)"]
     assert out["taskBefore"] == 0 and out["openAfterBox"] == 0 and out["boxStops"] is True         # the box marks the region, it does not open the line
     (opened,) = out["opened"]
-    assert "Контур · 2.00 мм²" in opened and "Перенести" in opened and out["taskAfter"] == ["Задача области r2"]
+    assert "Outline · 2.00 mm²" in opened and "Move" in opened and out["taskAfter"] == ["Region task r2"]
     assert out["weakFirst"] == ["r9", "r18", "r27", "r36", "r1"]
-    assert out["chips"] == ["All · 36", "Есть рецепт · 32", "Мало данных · 4"]
+    assert out["chips"] == ["All · 36", "Recipe available · 32", "Insufficient data · 4"]
     assert out["history"][0].startswith("v22") and out["history"][1].startswith("v21") and out["historyCount"] == "showing 20 of 22"
-    assert out["revert"] == ["Вернуть эту версию"]
+    assert out["revert"] == ["Restore this version"]
 
 
 # -- the size of a work (feature work-size-and-splitting-a-region-again, REQ-001, DEC-001, DEC-002) ---------------------------------------------
