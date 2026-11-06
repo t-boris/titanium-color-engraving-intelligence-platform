@@ -21,7 +21,7 @@ import math
 import numpy as np
 
 FIT_MM = 0.02                  # a segment strays at most this far from the smoothed path
-FLAT_MM = 0.2                  # step along a curve when it is flattened to points (the deviation stays well below 0.01 mm)
+FLAT_MM = 0.05                 # finer samples keep small smoothed regions consistent with the exported curves
 MIN_STEP_MM = 0.04             # the smoothed path is sampled at sigma / STEP_DIVISOR, but not finer than this nor coarser than MAX_STEP_MM
 MAX_STEP_MM = 0.25
 STEP_DIVISOR = 4

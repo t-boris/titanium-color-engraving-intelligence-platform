@@ -412,7 +412,10 @@ def test_a_wrong_size_is_said_beside_its_box_with_nothing_sent_and_what_was_type
 @node
 def test_the_split_colours_the_colour_settings_and_the_ai_description_are_checked_before_anything_is_asked_or_sent(work, job, tmp_path):
     c, j = work, job
-    out = run(tmp_path, routes_of(c, j), {"plan": str(j["id"])}, f"""
+    routes = routes_of(c, j)
+    # This test exercises form validation, independent of the machine's AI credentials.
+    routes[f"/api/vector/{j['id']}"]["json"]["ai"]["available"] = True
+    out = run(tmp_path, routes, {"plan": str(j["id"])}, f"""
   {DIALOG} {POSTS}
   const said = (root) => root.querySelectorAll('span').filter((x) => x.classList.contains('f-error')).map((x) => x.textContent);
   const labelled = (text) => tree.querySelectorAll('label').find((l) => (l.querySelector('span') || {{}}).textContent === text);

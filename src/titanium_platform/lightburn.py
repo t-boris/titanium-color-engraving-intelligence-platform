@@ -37,7 +37,7 @@ from . import photo_modes
 _HANDLE_TAG = re.compile(r"(c0x|c0y|c1x|c1y)")
 _PRIMITIVE = re.compile(r"([LB])(\d+) (\d+)")
 _BITMAP_NOT_A_SETTING = ("Type", "CutIndex", "CutOrder", "W", "H", "Data", "File", "SourceHash")
-FLATNESS_MM = 0.01   # a flattened Bezier deviates from its curve by less than this (REQ-023)
+FLATNESS_MM = 0.001  # flattened geometry stays within 0.001 mm of its curve (REQ-023)
 # Layer setting tags this reader knows: the ones it reads into named settings or into the description of an image layer,
 # the run order, sub-layers, wobble, the picture processing gathered from image objects, and the further LightBurn tags found
 # in the operator's files and in the files this system writes, which are kept with the recipe as they are (DEC-051).
@@ -404,7 +404,7 @@ def _flatten_bezier(p0, p1, p2, p3) -> list[tuple[float, float]]:
     """
     a = math.hypot(p0[0] - 2 * p1[0] + p2[0], p0[1] - 2 * p1[1] + p2[1])
     b = math.hypot(p1[0] - 2 * p2[0] + p3[0], p1[1] - 2 * p2[1] + p3[1])
-    n = max(1, min(64, math.ceil(math.sqrt(6 * max(a, b) / (8 * FLATNESS_MM)))))
+    n = max(1, min(256, math.ceil(math.sqrt(6 * max(a, b) / (8 * FLATNESS_MM)))))
     points = []
     for i in range(1, n + 1):
         t = i / n
