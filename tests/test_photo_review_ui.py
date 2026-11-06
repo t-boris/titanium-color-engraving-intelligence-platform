@@ -299,7 +299,7 @@ def test_the_detail_tool_says_why_it_has_nothing_to_offer_and_what_to_use_instea
   out.unchecked = text(region(tree, 'anchor'));
   out.askedServer = ctx.requests.length - before;
 """)
-    assert "Не удалось получить детали файла" in out["failed"][0] and "Сначала проверьте фотографию" in out["failed"][0] and out["failed"][1] == 1   # translated, with a retry
+    assert "Не удалось получить детали файла" in out["failed"][0] and "check the photograph before choosing a detail" in out["failed"][0] and out["failed"][1] == 1   # translated, with a retry
     assert "нет деталей" in out["empty"] and "Углы работы" in out["empty"]
     assert "после первой проверки" in out["unchecked"] and out["askedServer"] == 0               # no request that the server would refuse
 
@@ -408,7 +408,7 @@ def test_a_warning_shows_what_needs_attention_with_the_tool_that_looks_into_it(t
   out.opened = toolButtons(tree)[1].getAttribute('aria-expanded');
 """)
     by_tool = {tuple(tools): note for note, tools in out["notes"]}
-    assert "Выравнивание начато по одной детали, поставленной вручную" in by_tool[("Привязка по детали",)]           # the check's own sentence, in Russian
+    assert "Alignment starts from one manually placed detail" in by_tool[("Привязка по детали",)]           # the check's own sentence
     assert any(note.startswith("Не измерены слои: 1") for note in by_tool.values()) and ("Слои файла",) in by_tool
     assert out["stillAcceptable"] == [False] and out["opened"] == "true"                                          # a warning does not block what the server allows
 
@@ -526,7 +526,7 @@ def test_accepting_sends_one_request_hands_over_through_the_hook_and_a_refusal_i
   out.toast = ctx.document.body.querySelectorAll('div').filter((d) => d.classList.contains('toast')).map(text);
 """)
     assert refused["went"] == [] and refused["reloads"] == 1                                         # nowhere to go; the page is drawn again from the server's state
-    assert any("Сначала проверьте маски слоёв" in t for t in refused["toast"])
+    assert any("review the layer masks overlaid on the photograph before accepting" in t for t in refused["toast"])
 
 
 def test_the_accept_stage_shows_the_provenance_the_measurement_rules_and_the_engraved_version_and_rejects_with_an_explanation(tmp_path, states):
