@@ -94,7 +94,7 @@
   },
   "controller": {
    "software": "EZCAD 2.14.10",
-   "source": "IMG_3261: таблица отладки параметров станка (Laser marking machine parameter debugging table)",
+   "source": "IMG_3261: laser marking machine parameter debugging table",
    "tabs": [
     {
      "key": "field",
@@ -102,19 +102,19 @@
       {
        "key": "Field Size",
        "value": 170,
-       "unit": "мм",
+       "unit": "mm",
        "status": "handwritten"
       },
       {
        "key": "Offset X",
        "value": 0.0,
-       "unit": "мм",
+       "unit": "mm",
        "status": "printed"
       },
       {
        "key": "Offset Y",
        "value": 0.0,
-       "unit": "мм",
+       "unit": "mm",
        "status": "printed"
       },
       {
@@ -132,24 +132,24 @@
       {
        "key": "Special pos. X",
        "value": 0.0,
-       "unit": "мм",
+       "unit": "mm",
        "status": "printed"
       },
       {
        "key": "Special pos. Y",
        "value": 0.0,
-       "unit": "мм",
+       "unit": "mm",
        "status": "printed"
       },
       {
        "key": "Galvo 1 Scale",
-       "value": "см. фото",
+       "value": "see photo",
        "unit": null,
        "status": "handwritten"
       },
       {
        "key": "Galvo 2 Scale",
-       "value": "см. фото",
+       "value": "see photo",
        "unit": null,
        "status": "handwritten"
       }
@@ -173,19 +173,19 @@
       {
        "key": "Max PWM",
        "value": 200.0,
-       "unit": "кГц",
+       "unit": "kHz",
        "status": "printed"
       },
       {
-       "key": "Max PWM: рукописная пометка",
-       "value": "см. фото",
+       "key": "Max PWM: handwritten note",
+       "value": "see photo",
        "unit": null,
        "status": "handwritten"
       },
       {
        "key": "Min PWM",
        "value": 20.0,
-       "unit": "кГц",
+       "unit": "kHz",
        "status": "printed"
       },
       {
@@ -197,13 +197,13 @@
       {
        "key": "Pulse Width",
        "value": 1.0,
-       "unit": "мкс",
+       "unit": "µs",
        "status": "printed"
       },
       {
        "key": "Pulse Period",
        "value": 5.0,
-       "unit": "кГц",
+       "unit": "kHz",
        "status": "printed"
       },
       {
@@ -221,7 +221,7 @@
       {
        "key": "FirstPulseKiller",
        "value": 40.0,
-       "unit": "мкс",
+       "unit": "µs",
        "status": "printed"
       },
       {
@@ -233,7 +233,7 @@
       {
        "key": "Open MO Delay",
        "value": 8.0,
-       "unit": "мс",
+       "unit": "ms",
        "status": "printed"
       },
       {
@@ -251,25 +251,25 @@
       {
        "key": "Analog MinV",
        "value": 0.0,
-       "unit": "В",
+       "unit": "V",
        "status": "printed"
       },
       {
        "key": "Analog MaxV",
        "value": 5.0,
-       "unit": "В",
+       "unit": "V",
        "status": "printed"
       },
       {
        "key": "VT1",
        "value": 100.0,
-       "unit": "мкс",
+       "unit": "µs",
        "status": "printed"
       },
       {
        "key": "VT2",
        "value": 1000.0,
-       "unit": "мкс",
+       "unit": "µs",
        "status": "printed"
       }
      ]
@@ -310,12 +310,12 @@
       {
        "key": "Marking Finish IO: Pulse width",
        "value": 10.0,
-       "unit": "мс",
+       "unit": "ms",
        "status": "printed"
       },
       {
        "key": "Start Mark IO: Inport",
-       "value": "см. фото",
+       "value": "see photo",
        "unit": null,
        "status": "handwritten"
       },
@@ -351,60 +351,60 @@
       {
        "key": "Start Mark Delay",
        "value": 0.0,
-       "unit": "мс",
+       "unit": "ms",
        "status": "printed"
       },
       {
        "key": "Finish Mark Delay",
        "value": 0.0,
-       "unit": "мс",
+       "unit": "ms",
        "status": "printed"
       },
       {
        "key": "Min Power Delay",
        "value": 0.0,
-       "unit": "мс",
+       "unit": "ms",
        "status": "printed"
       },
       {
        "key": "Max Power Delay",
        "value": 0.0,
-       "unit": "мс",
+       "unit": "ms",
        "status": "printed"
       },
       {
        "key": "Analog current FPK",
        "value": 100.0,
-       "unit": "мкс",
+       "unit": "µs",
        "status": "printed"
       },
       {
        "key": "Red light pointer: light Speed",
        "value": 3000.0,
-       "unit": "мм/с",
+       "unit": "mm/s",
        "status": "printed"
       },
       {
        "key": "Red light pointer: Offset Pos X",
        "value": 0.0,
-       "unit": "мм",
+       "unit": "mm",
        "status": "handwritten"
       },
       {
        "key": "Red light pointer: Offset Pos Y",
        "value": 0.0,
-       "unit": "мм",
+       "unit": "mm",
        "status": "handwritten"
       },
       {
        "key": "Red light pointer: Size ScaleX",
-       "value": "см. фото",
+       "value": "see photo",
        "unit": null,
        "status": "handwritten"
       },
       {
        "key": "Red light pointer: Size ScaleY",
-       "value": "см. фото",
+       "value": "see photo",
        "unit": null,
        "status": "handwritten"
       }
@@ -428,30 +428,30 @@
       {
        "key": "Left bottom corner X",
        "value": -85.0,
-       "unit": "мм",
+       "unit": "mm",
        "status": "handwritten"
       },
       {
        "key": "Left bottom corner Y",
        "value": -85.0,
-       "unit": "мм",
+       "unit": "mm",
        "status": "handwritten"
       },
       {
        "key": "Size Width",
        "value": 170.0,
-       "unit": "мм",
+       "unit": "mm",
        "status": "handwritten"
       },
       {
        "key": "Size Height",
        "value": 170.0,
-       "unit": "мм",
+       "unit": "mm",
        "status": "handwritten"
       },
       {
        "key": "Machine number (S/N)",
-       "value": "см. фото",
+       "value": "see photo",
        "unit": null,
        "status": "handwritten"
       }
@@ -461,12 +461,12 @@
   },
   "waveforms": [
    {
-    "title": "Рис. 1: 250 нс, 46 кГц",
+    "title": "Fig. 1: 250 ns, 46 kHz",
     "pulse_width_ns": 250,
     "frequency_khz": 46,
     "approximate": true,
-    "source": "IMG_3263: рисунки 1 и 2 протокола испытаний, оцифровано с фотографии (приблизительно)",
-    "note": "Снято на частоте среза этой длительности: энергия импульса наибольшая.",
+    "source": "IMG_3263: test report figures 1 and 2, digitized approximately from a photograph",
+    "note": "Measured at the cutoff frequency for this pulse duration, where pulse energy is greatest.",
     "t_ns": [
      -5.0,
      -4.5,
@@ -1515,12 +1515,12 @@
     ]
    },
    {
-    "title": "Рис. 2: 2 нс, 1950 кГц",
+    "title": "Fig. 2: 2 ns, 1950 kHz",
     "pulse_width_ns": 2,
     "frequency_khz": 1950,
     "approximate": true,
-    "source": "IMG_3263: рисунки 1 и 2 протокола испытаний, оцифровано с фотографии (приблизительно)",
-    "note": "Колебания после импульса — отклик детектора и кабеля, а не форма излучения лазера.",
+    "source": "IMG_3263: test report figures 1 and 2, digitized approximately from a photograph",
+    "note": "Oscillations after the pulse are the detector and cable response, not the laser emission waveform.",
     "t_ns": [
      -3.55,
      -3.525,
@@ -2620,27 +2620,27 @@
  "documents": [
   {
    "kind": "test_report",
-   "title": "Протокол испытаний (Test Data)",
+   "title": "Test data report",
    "file": "IMG_3262.JPG"
   },
   {
    "kind": "cutoff_table",
-   "title": "Таблица частот среза мощности",
+   "title": "Power cutoff frequency table",
    "file": "IMG_3260.JPG"
   },
   {
    "kind": "controller_config",
-   "title": "Таблица отладки параметров станка (EZCAD)",
+   "title": "Machine parameter debugging table (EZCAD)",
    "file": "IMG_3261.JPG"
   },
   {
    "kind": "waveform",
-   "title": "Формы импульса: рисунки 1 и 2",
+   "title": "Pulse waveforms: figures 1 and 2",
    "file": "IMG_3263.JPG"
   },
   {
    "kind": "packing_list",
-   "title": "Комплектность (Product List)",
+   "title": "Product list",
    "file": "IMG_3259.JPG"
   }
  ]
