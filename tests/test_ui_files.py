@@ -136,9 +136,9 @@ def test_the_findings_screen_separates_measured_conclusions_from_hypotheses_and_
 
 def test_the_designer_shows_the_question_reasons_status_and_result_of_a_proposal_and_the_ai_explanation_only_with_a_key():
     designer = _screen("designer.js")
-    for text in ("prop.questions", "prop.worth", "x.rationale", "'Почему выбран'", "'Результат'", "prop.status_history", "'Отклонить'",
-                 "'Принять и создать платы'", "/designer/proposals/${prop.id}/accept", "/designer/proposals/${prop.id}/reject",
-                 "/designer/proposals/${prop.id}/explanation", "'Пояснение AI — гипотезы, не измерения. '", "material_id: stock.value"):
+    for text in ("prop.questions", "prop.worth", "x.rationale", "'Why selected'", "'Result'", "prop.status_history", "'Reject'",
+                 "'Accept and create plates'", "/designer/proposals/${prop.id}/accept", "/designer/proposals/${prop.id}/reject",
+                 "/designer/proposals/${prop.id}/explanation", "'AI explanation: hypotheses, not measurements. '", "material_id: stock.value"):
         assert text in designer, text
     assert "if (!prop.explanation_available)" in designer and "get('/designer/proposals/' + chosen.id)" in designer
     assert "/designer/proposals/${prop.id}/plates" not in designer       # plates are made by accepting the proposal
@@ -165,7 +165,7 @@ const texts = (root) => root.querySelectorAll('.lst-main').map((m) => m.textCont
   const order = sets.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Sort order');
   order.value = 'utility'; await order.dispatch('change'); await tick();
   out.useful = texts(sets).slice(0, 2);
-  await sets.querySelectorAll('.lst-chip').find((c) => c.textContent.startsWith('измерены')).dispatch('click'); await tick();
+  await sets.querySelectorAll('.lst-chip').find((c) => c.textContent.startsWith('measured')).dispatch('click'); await tick();
   out.measured = texts(sets);
   await sets.querySelectorAll('.lst-main')[0].dispatch('click'); await tick();
   const open = sets.querySelectorAll('.lst-det').find((d) => !d.hidden);
@@ -197,13 +197,13 @@ def test_the_designer_lists_the_parameter_sets_of_a_proposal_twenty_at_a_time_wi
     assert done.returncode == 0, done.stderr[-2000:]
     out = json.loads(done.stdout)
     assert len(out["first"]) == 20 and out["count"] == "showing 20 of 25" and out["more"] == "Show 5 more"
-    assert out["first"][0].startswith("№ 110.0% · 100 кГц") and out["first"][0].endswith("Пробел в покрытииизмерен: фото 1")   # the planner's order
-    assert out["chips"][:4] == ["All · 25", "Целевой цвет · 8", "Высокая неопределённость · 8", "Пробел в покрытии · 9"]
-    assert out["chips"][4:] == ["All · 25", "измерены · 1", "ещё нет · 24"]
-    assert out["useful"][0].startswith("№ 2534.0%") and out["useful"][1].startswith("№ 2433.0%")
+    assert out["first"][0].startswith("#110.0% · 100 kHz") and out["first"][0].endswith("Coverage gapmeasured: photos 1")   # the planner's order
+    assert out["chips"][:4] == ["All · 25", "Target color · 8", "High uncertainty · 8", "Coverage gap · 9"]
+    assert out["chips"][4:] == ["All · 25", "measured · 1", "not yet · 24"]
+    assert out["useful"][0].startswith("#2534.0%") and out["useful"][1].startswith("#2433.0%")
     assert out["measured"] == [out["first"][0]]
     labels, links = out["details"]
-    assert labels == ["Почему выбран", "Полезность", "Цель", "Результат"] and links == ["#/analysis/9"]
+    assert labels == ["Why selected", "Utility", "Target", "Result"] and links == ["#/analysis/9"]
 
 
 def test_an_accepted_photo_engraving_links_to_its_preview_and_a_finished_work_offers_its_file():

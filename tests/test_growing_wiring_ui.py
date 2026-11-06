@@ -97,14 +97,14 @@ def test_the_designer_chooses_its_stock_in_the_selector_and_means_all_measured_s
           await picker.ready;
           out.start = {label: q(picker, '.matpick-label').textContent, value: picker.value, clear: q(picker, '.matpick-clear').textContent,
             lists: requests('/api/materials').map((x) => x.url)};
-          const propose = button(box, 'Предложить плату');
+          const propose = button(box, 'Propose plate');
           await propose.dispatch('click');
           picker.value = '41';
           await until(() => picker.record !== null);
           await propose.dispatch('click');
           out.sent = requests('/designer/propose').map((x) => JSON.parse(x.body).material_id);
         """, ("MaterialPicker",))
-    assert out["start"] == {"label": "все измеренные заготовки", "value": "", "clear": "Все заготовки", "lists": []}          # no list of three hundred is read
+    assert out["start"] == {"label": "all measured stocks", "value": "", "clear": "All stocks", "lists": []}          # no list of three hundred is read
     assert out["sent"] == [None, 41]
 
 
@@ -117,13 +117,13 @@ def test_the_designer_refuses_a_wrong_count_seed_or_step_beside_its_box_keeps_it
           const box = mount(await ctx.__screens.designer.render({query: {}}));
           const labelled = (text) => qa(box, 'label').find((l) => (l.querySelector('span') || {}).textContent === text);
           const proposals = () => requests('/designer/propose').length;
-          const size = labelled('Число наборов').firstControl(), seed = labelled('Зерно').firstControl(), step = labelled('Шаг линий').firstControl();
+          const size = labelled('Number of sets').firstControl(), seed = labelled('Seed').firstControl(), step = labelled('Line interval').firstControl();
           size.value = '41'; seed.value = '1.5'; step.value = '0';
-          await button(box, 'Предложить плату').dispatch('click');
-          out.wrong = [proposals(), labelled('Число наборов').errorText(), labelled('Зерно').errorText(), labelled('Шаг линий').errorText(),
+          await button(box, 'Propose plate').dispatch('click');
+          out.wrong = [proposals(), labelled('Number of sets').errorText(), labelled('Seed').errorText(), labelled('Line interval').errorText(),
             size.value, seed.value, step.value, size.getAttribute('aria-invalid')];
           size.value = '6'; seed.value = '1729'; step.value = '0.025';
-          await button(box, 'Предложить плату').dispatch('click');
+          await button(box, 'Propose plate').dispatch('click');
           out.right = [proposals(), JSON.parse(requests('/designer/propose')[0].body)];
         """, ("MaterialPicker",))
     assert out["wrong"][0] == 0
