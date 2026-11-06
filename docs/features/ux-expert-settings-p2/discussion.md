@@ -69,3 +69,7 @@ The same simulated coarse-pointer check also measured width: representative visi
 ### Implementation · 2026-11-06
 
 Keyboard follow-up: in the MarkView browser on the disposable setup, 71 successive Tab presses moved from Patch 1 L to Patch 24 b; intermediate focus was sampled at Patch 1 a/b, Patch 2 L, Patch 12 b and Patch 23 b/Patch 24 L/a/b. The browser tool's Shift+Tab command left focus unchanged even on an ordinary summary control, so it was not used as evidence of an application defect. In development Electron 0.40.0 on a separate disposable workshop, actual Shift+Tab moved Patch 1 a to Patch 1 L and Patch 2 L to Patch 1 b; Tab moved back to Patch 1 a. This is not a complete screen-reader audit.
+
+### Implementation · 2026-11-06
+
+Responsive MarkView browser check using same-origin iframe viewports on a disposable workshop: Works at 320×600 and 800×600 in both normal and compact modes showed 20 rows and document scrollWidth equaled clientWidth (303 and 783 respectively). At 320×600 in both modes, a capture reference L=150 stayed focused and retained the error message; input rendered about 66–68×45px and document scrollWidth equaled clientWidth (303). Visually inspected the compact reference error. This checks those screens in a desktop browser, not a physical tablet, touch ergonomics, all screens or real workshop lighting.
