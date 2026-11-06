@@ -890,6 +890,35 @@ def test_comparison_advances_after_each_change_and_a_long_slider_drag_is_one_cha
 
 
 @node
+def test_nonvisual_ai_permission_keeps_the_last_visual_comparison(tmp_path):
+    out = run(tmp_path, {"work": "7"}, """
+  const group = tree.querySelector('.ge-comparison'), image = group.querySelector('img');
+  const original = ctx.fetch;
+  ctx.fetch = async (url, opts = {}) => {
+    const response = await original(url, opts);
+    const body = opts.body ? JSON.parse(opts.body) : {};
+    if (String(url).endsWith('/settings') && Object.hasOwn(body, 'ai_photo')) {
+      const next = await response.json();
+      next.picture.preview = shown(tree);  // The real preview key excludes AI photo permission.
+      return {...response, json: async () => next};
+    }
+    return response;
+  };
+  const permission = input(tree, (i) => i.getAttribute('type') === 'checkbox' && i.parentNode.textContent.includes('reduced image'));
+  permission.checked = true; await permission.dispatch('change'); await settle();
+  out.initial = group.hidden;
+  const width = labelled(tree, 'Width on titanium, mm');
+  width.value = '70'; await width.dispatch('change'); await settle();
+  out.changed = [group.hidden, image.getAttribute('src'), shown(tree)];
+  permission.checked = false; await permission.dispatch('change'); await settle();
+  out.after = [group.hidden, image.getAttribute('src'), shown(tree)];
+""")
+    assert out["initial"] is True
+    assert out["changed"][0] is False and out["changed"][1] != out["changed"][2]
+    assert out["after"] == out["changed"]
+
+
+@node
 def test_a_tone_slider_dragged_saves_once_when_it_pauses_as_it_is_puts_the_picture_back_and_the_forecast_follows(tmp_path):
     """photo-zone-dots REQ-002 crit. 1: the sliders' own movement (their 'input' events) and «Reset adjustments» on the photo work screen."""
     out = run(tmp_path, {"work": "7"}, """

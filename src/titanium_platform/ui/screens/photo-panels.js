@@ -531,6 +531,8 @@ const PhotoPanels = (() => {
     function compare(previous, next) {
       const before = previous && previous.picture && previous.picture.preview;
       const after = next && next.picture && next.picture.preview;
+      // A nonvisual edit (such as AI photo permission) must not replace the previous visual comparison.
+      if (before && before === after) return;
       comparison.hidden = !(before && after);
       if (!before || !after) { comparison.open = false; return; }
       comparisonError.hidden = true;
