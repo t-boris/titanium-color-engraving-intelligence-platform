@@ -137,6 +137,23 @@ OPEN = """
 
 
 @node
+def test_inscription_primary_fields_and_collapsed_groups_preserve_controls(tmp_path):
+    out = run_editor(tmp_path, editor_routes(), OPEN + """
+  await item(0).dispatch('click'); await tick();
+  const groups = pane.querySelectorAll('details').filter((d) => d.classList.contains('lt-group'));
+  out.groups = groups.map((d) => [d.querySelector('summary').textContent, !!d.open]);
+  const parentGroup = (node) => { for (let n = node; n && n !== pane; n = n.parentNode) if (n.classList.contains('lt-group')) return n.querySelector('summary').textContent; return null; };
+  out.primary = [pane.querySelector('textarea'), field('Высота букв, мм'), group('Цвет букв')].map(parentGroup);
+  out.placement = [field('x, мм'), field('y, мм'), field('Поворот, °')].map(parentGroup);
+  out.shape = [field('Ширина, %'), group('Расположение')].map(parentGroup);
+  out.inlay = [field('Зазор вокруг букв, мм'), group('Подложка')].map(parentGroup);
+""")
+    assert out["groups"] == [["Размещение", False], ["Форма текста", False], ["Врезка", False]]
+    assert out["primary"] == [None, None, None]
+    assert out["placement"] == ["Размещение"] * 3 and out["shape"] == ["Форма текста"] * 2 and out["inlay"] == ["Врезка"] * 2
+
+
+@node
 def test_the_tab_draws_the_inscriptions_cut_into_the_picture_and_each_change_is_an_operation_of_the_work(tmp_path):
     out = run_editor(tmp_path, editor_routes(), OPEN + """
   out.svgClass = svg().getAttribute('class');
