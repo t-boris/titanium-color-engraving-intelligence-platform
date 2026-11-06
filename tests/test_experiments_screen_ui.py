@@ -423,7 +423,7 @@ def test_the_laser_page_shows_the_same_short_list_with_the_same_filters_and_keep
     out = run(tmp_path, """
   const all = data.routes['/api/experiments'].json;
   const card = ctx.DeviceView.experimentsCard(all, {id: 1, name: 'Laser A', lens: {id: 5, name: 'F-Theta', focal_length_mm: 174}}, [{id: 5, name: 'F-Theta', focal_length_mm: 174}]);
-  const panel = card.querySelectorAll('section').find((s) => s.textContent.startsWith('Эксперименты этого лазера'));
+  const panel = card.querySelectorAll('section').find((s) => s.textContent.startsWith('Experiments for this laser'));
   out.head = panel.querySelector('.dashboard-panel-head').textContent;
   out.toolbar = [panel.querySelector('.lst-search') != null, chips(panel), selectOf(panel, 'Task').options.map((o) => o.textContent),
     selectOf(panel, 'Sort order').options.map((o) => o.textContent)];
@@ -433,7 +433,7 @@ def test_the_laser_page_shows_the_same_short_list_with_the_same_filters_and_keep
   out.api = Object.keys(ctx.ExperimentCards);
   out.empty = ctx.ExperimentCards.list([], {empty: 'Пусто'}).querySelector('.lst-empty').textContent;
 """)
-    assert out["head"] == "Эксперименты этого лазера3Открыть в общем списке"
+    assert out["head"] == "Experiments for this laser3Open in all experiments"
     search, states, tasks, orders = out["toolbar"]
     assert search and states == ["All · 3", "Needs review · 1", "Awaiting photo · 1", "Accepted · 1"] and tasks == ["All tasks · 3", "Lettering · 3"]
     assert orders == ["Most recent", "Needs review first", "Title"]
