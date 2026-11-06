@@ -29,3 +29,11 @@ Prepared an explicitly labeled light study preview behind ?theme-study=light, wi
 ### Implementation · 2026-11-06
 
 Validation so far: full pytest run reported 3003 passed and one outdated Settings tab expectation; updated that test and all 103 affected tests passed on rerun. Desktop Node suite passed 36/36; the 0.40.0 wheel built and a disposable-workshop smoke returned 0.40.0. CI workflow is disabled and the goal excludes a PR; no CI run or published release is claimed. Actual workshop lighting, tablet, Electron UI and before/after performance evaluation remain outstanding.
+
+### Implementation · 2026-11-06
+
+MarkView browser testing found that the optional study banner inserted literal 'null' in the ordinary theme. Fixed the shell's child list and confirmed on reload that the stray text is absent and compact density remains selected; regression coverage added.
+
+### Implementation · 2026-11-06
+
+Full rerun: pytest -q -rs -n 12, 3005 passed, 0 skipped. During that run a MarkView browser check found and fixed ordinary-theme stray text; the affected router/accessibility tests were rerun afterwards: 52 passed. Wheel rebuilt after that fix. Workshop-lighting/tablet comparison and Electron UI review remain incomplete.

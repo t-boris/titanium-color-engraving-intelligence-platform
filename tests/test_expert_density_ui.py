@@ -61,7 +61,8 @@ async function run(search) {
   ctx.App.start();
   await new Promise(resolve => setTimeout(resolve, 0));
   const note = ctx.document.body.querySelector('.theme-study-note');
-  return {light: ctx.document.body.classList.contains('theme-study-light'), note: note && note.textContent};
+  return {light: ctx.document.body.classList.contains('theme-study-light'), note: note && note.textContent,
+    strayNull: ctx.document.body.textContent.includes('null')};
 }
 (async () => console.log(JSON.stringify([await run(''), await run('?theme-study=light')])))()
   .catch(e => { console.error(e.stack); process.exit(1); });
@@ -70,5 +71,5 @@ async function run(search) {
                               'ui': json.dumps(str(UI) + '/'), 'tables': json.dumps(TABLES)})
     proc = subprocess.run(['node', str(script)], capture_output=True, text=True, timeout=30)
     assert proc.returncode == 0, proc.stderr
-    assert json.loads(proc.stdout) == [{'light': False, 'note': None},
-                                       {'light': True, 'note': 'Light theme study preview · not a released theme'}]
+    assert json.loads(proc.stdout) == [{'light': False, 'note': None, 'strayNull': False},
+                                       {'light': True, 'note': 'Light theme study preview · not a released theme', 'strayNull': False}]

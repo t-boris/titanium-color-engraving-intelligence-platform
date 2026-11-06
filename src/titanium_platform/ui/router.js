@@ -156,7 +156,7 @@ Object.assign(App, (() => {
       h('header', {class: 'app-header'},
         h('a', {class: 'brand', href: '#/experiments'}, 'Laser workshop', ' ', versionTag, h('small', {}, 'Materials · Settings · Works')),
         h('div', {class: 'header-actions'}, menuButton, typeof Operations !== 'undefined' ? Operations.entry() : null)),
-      lightStudy ? h('p', {class: 'theme-study-note', role: 'status'}, 'Light theme study preview · not a released theme') : null,
+      ...(lightStudy ? [h('p', {class: 'theme-study-note', role: 'status'}, 'Light theme study preview · not a released theme')] : []),
       h('div', {class: 'app-layout'}, sidebar, main)];
   }
 
