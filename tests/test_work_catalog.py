@@ -452,7 +452,7 @@ def test_real_works_each_open_rename_copy_and_delete_through_their_own_routes_an
         made = client.post(f"/api{item['base']}/{item['id']}/copy", json={})
         assert made.status_code == 201
         copy = client.get(f"/api/works/{item['kind']}-{made.json()['id']}").json()
-        assert copy["id"] != item["id"] and copy["kind"] == item["kind"] and copy["name"].endswith("(копия)")
+        assert copy["id"] != item["id"] and copy["kind"] == item["kind"] and copy["name"].endswith("(copy)")
         assert client.get(f"/api/works/{item['key']}").json()["id"] == item["id"]
     assert world["store"].one("SELECT COUNT(*) AS n FROM plan")["n"] == plan_rows + 2
 

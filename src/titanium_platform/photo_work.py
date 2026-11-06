@@ -18,8 +18,8 @@ A work is a row of ``plan`` of its own mode (``plans.MODE_PHOTO_WORK``). The las
 * the kind of engraving (``kind``, 0.21.0): grayscale, or one of LightBurn's dot kinds (:data:`KINDS`), whose dots all fire at one power
   (``dot_power``) chosen on the scale, or at a recipe picked on the colour map (``dot_recipe``, 0.25.0, :mod:`dot_colours`: its settings,
   its step the dots' pitch, and its colour at the work's width); a dot kind is shown from the dots' colour (the scale's at that power or
-  the recipe's, the cleaned titanium between the dots) until that kind has been photographed at those settings (a ramp of «Проба этого
-  вида», ``width_ramp``, or an engraving), then from its measured tones; its picture is engraved as uploaded (the greys chosen for
+  the recipe's, the cleaned titanium between the dots) until that kind has been photographed at those settings (a ramp of «Test this
+  kind», ``width_ramp``, or an engraving), then from its measured tones; its picture is engraved as uploaded (the greys chosen for
   colours, the contours and the rules of parts are grayscale's and wait for it); LightBurn's dot width correction of a dot kind
   (``dot_width``, 0.28.0, ``photo_state.DOT_WIDTH_MM``: off by default), written to its layer, its ramp and the mode its tones are measured at;
 * the picture's brightness, contrast and gamma (``tone``, 0.27.0, :func:`photo_state.toned`): its greys in that tone are what a dot kind
@@ -67,7 +67,7 @@ THUMB_PX = 360                      # the longer side of the picture of a work i
 KEEP_DECODED = 2                    # decoded pictures kept in memory: the work open now and the one before
 GRAYSCALE = st.GRAYSCALE
 KINDS = st.KINDS
-TILE_PX = 360                       # the longer side of a kind's picture in «Какая гравировка?»
+TILE_PX = 360                       # the longer side of a kind's picture in «Which engraving?»
 DATA = ("image_path", "image_name", "image_size", "scale", "min_power", "max_power", "width_mm", "by_colour", "colour_choice", "contours", "rules",
         "colouring", "kind", "dot_power", "dot_recipe", "dot_width", "tone", "tone_after_match", "sharpness", "ai_photo", "ai", "ai_theme", "undo", "redo", "updated_at", "texts",
         "evidence_source", "source_versions")
@@ -361,7 +361,7 @@ _dot_power = ps.dot_power_at
 
 def _measured_dots(store: Store, plan: Mapping) -> prediction.Curve | None:
     """The tones of the work's dot kind at the settings its dots fire at and its titanium, as photographs of that kind measured them (a
-    ramp of «Проба этого вида» or an engraving in that kind), at the work's width; None until that kind was photographed there."""
+    ramp of «Test this kind» or an engraving in that kind), at the work's width; None until that kind was photographed there."""
     try:
         return ps.curve_for(_ev(store, plan), st.kind_mode(mode_of(plan), plan), plan["width_mm"])[0]
     except PredictionError:
@@ -564,7 +564,7 @@ def closeup(store: Store, plan_id: int) -> rc.Picture:
 
 
 def kinds(store: Store, plan_id: int) -> dict:
-    """«Какая гравировка?»: every kind that colours titanium (:data:`KINDS`) with the work's picture as it would come out in it, the one
+    """«Which engraving?»: every kind that colours titanium (:data:`KINDS`) with the work's picture as it would come out in it, the one
     the work has marked. Grayscale on the work's Min and Max and greys; a dot kind at the work's dots' power, or where the scale's colour
     stands out most, estimated from the scale (``_dot_look``). With no measured scale there is nothing to show (``problem``)."""
     plan = _work(store, plan_id)
@@ -927,12 +927,12 @@ RAMP_MARGIN_MM = 19.0                # what a grey-ramp plate adds to its widest
 def width_ramp(store: Store, plan_id: int) -> dict:
     """A grey-ramp plate of one ramp as wide as the work, at its scale's settings, Min and Max: engraved and photographed before the
     picture, it measures the scale at the size the picture is engraved at (the colour depends on the length of the rows, DEC-107). In a
-    dot kind the ramp is engraved in that kind at the dots' power and dot width («Проба этого вида»): its photograph measures the kind's
+    dot kind the ramp is engraved in that kind at the dots' power and dot width («Test this kind»): its photograph measures the kind's
     tones there, which then replace the estimate from the scale. A plate is made for the lens on the laser now, so the work's lens must be on it."""
     plan = _work(store, plan_id)
     if es.pin_of(plan) is not None:
         raise su.ValidationError("a ramp measures this workshop's own scale, and this work uses a laboratory release's scale: check the release's "
-                                 "settings on this laser with a transfer experiment («Проверить у себя»)")
+                                 "settings on this laser with a transfer experiment («Test on your laser»)")
     mode = mode_of(plan)
     lens = devices.get_device(store, plan["device_id"]).get("lens") or {}
     if lens.get("id") != plan["lens_id"]:
@@ -970,7 +970,7 @@ def variations(store: Store, plan_id: int) -> dict:
     plan = _work(store, plan_id)
     if es.pin_of(plan) is not None:
         raise su.ValidationError("a variations plate tries settings on this workshop's laser, and this work uses a laboratory release's scale: "
-                                 "check the release's settings on this laser with a transfer experiment («Проверить у себя»)")
+                                 "check the release's settings on this laser with a transfer experiment («Test on your laser»)")
     lens = devices.get_device(store, plan["device_id"]).get("lens") or {}
     if lens.get("id") != plan["lens_id"]:
         raise su.ValidationError("the laser has another lens on it than this work's scale was measured with: put that lens on the laser first")

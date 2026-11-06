@@ -191,7 +191,7 @@ def test_a_copy_is_a_work_of_its_own_with_the_same_picture_colouring_and_variant
     r = c["client"].post(f"/api/vector/{j['id']}/copy")                                                                # no body: the name is made
     assert r.status_code == 201 and set(r.json()) == {"id"} and r.json()["id"] != j["id"]
     copy = c["client"].get(f"/api/vector/{r.json()['id']}").json()
-    assert copy["name"] == "Portrait (копия)" and [w["id"] for w in works(c)] == [copy["id"], j["id"]]
+    assert copy["name"] == "Portrait (copy)" and [w["id"] for w in works(c)] == [copy["id"], j["id"]]
     for same in ("colours", "colouring", "settings", "layers", "variants", "split", "size_mm", "smoothing_mm", "totals", "engraving_task", "strategy"):
         assert copy[same] == original[same], same
     assert (copy["undo"], copy["redo"], copy["exports"]) == (0, 0, []) and copy["plan_identifier"] != original["plan_identifier"]
@@ -218,7 +218,7 @@ def test_a_copy_goes_on_alone_and_survives_the_deletion_of_the_work_it_came_from
     export = c["client"].get(f"/api/vector/{copy['id']}/export.lbrn2")
     assert export.status_code == 200 and b"LightBurnProject" in export.content
     again = c["client"].post(f"/api/vector/{copy['id']}/copy")                                                         # a copy can be copied
-    assert again.status_code == 201 and c["client"].get(f"/api/vector/{again.json()['id']}").json()["name"] == "Try blue (копия)"
+    assert again.status_code == 201 and c["client"].get(f"/api/vector/{again.json()['id']}").json()["name"] == "Try blue (copy)"
 
 
 def test_a_copy_keeps_the_ai_colouring_but_not_the_permission_to_send_the_photograph(work, job, model):
@@ -261,7 +261,7 @@ def test_a_null_name_or_an_empty_object_means_the_made_name(work, job):
     c, j = work, job
     assert c["client"].post(f"/api/vector/{j['id']}/copy", json={"name": None}).status_code == 201
     assert c["client"].post(f"/api/vector/{j['id']}/copy", json={}).status_code == 201
-    assert [w["name"] for w in works(c)] == ["Portrait (копия)", "Portrait (копия)", "Portrait"]
+    assert [w["name"] for w in works(c)] == ["Portrait (copy)", "Portrait (copy)", "Portrait"]
 
 
 def test_a_copy_of_a_plan_that_is_not_a_vector_work_is_refused(work):

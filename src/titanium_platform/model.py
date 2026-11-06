@@ -248,28 +248,28 @@ def _finish_camera_relative_set(entry: dict) -> dict:
     for sample in entry["samples"]:
         lab = sample["lab"]
         if sample.get("delta_e_from_clean_witness", 99) <= 4:
-            sample["relative_appearance"] = "почти как очищенная поверхность на этом фото"
+            sample["relative_appearance"] = "almost like the cleaned surface in this photo"
         elif lab[0] < 28:
-            sample["relative_appearance"] = "тёмный, почти чёрный на этом фото"
+            sample["relative_appearance"] = "dark, almost black in this photo"
         elif lab[2] >= 8:
-            sample["relative_appearance"] = "тёплый / желтоватый сдвиг b* на этом фото"
+            sample["relative_appearance"] = "warm / yellowish b* shift in this photo"
         elif lab[0] >= 40 and (lab[1] ** 2 + lab[2] ** 2) ** 0.5 < 10:
-            sample["relative_appearance"] = "нейтральный серый / серебристый вид на этом фото"
+            sample["relative_appearance"] = "neutral gray / silver appearance in this photo"
         else:
-            sample["relative_appearance"] = "относительный оттенок на этом фото"
+            sample["relative_appearance"] = "relative hue in this photo"
     findings = []
     if tests:
         darkest = min(tests, key=lambda s: s["lab"][0])
         brightest = max(tests, key=lambda s: s["lab"][0])
         warmest = max(tests, key=lambda s: s["lab"][2])
         findings = [
-            {"kind": "darkest", "label": "Самый тёмный тестовый след", "name": darkest["name"], "lab": darkest["lab"], "parameters": darkest["parameters"]},
-            {"kind": "brightest", "label": "Самый светлый тестовый участок", "name": brightest["name"], "lab": brightest["lab"], "parameters": brightest["parameters"]},
-            {"kind": "warmest", "label": "Наибольшее смещение по жёлтой оси b*", "name": warmest["name"], "lab": warmest["lab"], "parameters": warmest["parameters"]},
+            {"kind": "darkest", "label": "Darkest test mark", "name": darkest["name"], "lab": darkest["lab"], "parameters": darkest["parameters"]},
+            {"kind": "brightest", "label": "Lightest test area", "name": brightest["name"], "lab": brightest["lab"], "parameters": brightest["parameters"]},
+            {"kind": "warmest", "label": "Largest shift along the yellow b* axis", "name": warmest["name"], "lab": warmest["lab"], "parameters": warmest["parameters"]},
         ]
         if clean:
             distinct = max(tests, key=lambda s: s.get("delta_e_from_clean_witness", 0.0))
-            findings.append({"kind": "surface_contrast", "label": "Сильнее всего отличается от очищенной поверхности",
+            findings.append({"kind": "surface_contrast", "label": "Most different from the cleaned surface",
                              "name": distinct["name"], "lab": distinct["lab"], "delta_e": distinct["delta_e_from_clean_witness"],
                              "parameters": distinct["parameters"]})
     entry["findings"] = findings
@@ -295,8 +295,8 @@ def _finish_camera_relative_set(entry: dict) -> dict:
                 "status": "provisional" if entry.get("provisional") else "measured_relative",
             })
     entry["color_variants"] = variants
-    entry["limits"] = ["Цвет и Lab относительны только к этому RAW-снимку. Разные фото нельзя объединять без эталонной карты.",
-                       "Эти наблюдения видны на карте для сравнения, но не используются как стандартные цветовые прогнозы."]
+    entry["limits"] = ["Color and Lab are relative only to this RAW photo. Different photos cannot be combined without a reference chart.",
+                       "These observations appear on the map for comparison but are not used as standard color predictions."]
     return entry
 
 
@@ -326,7 +326,7 @@ def camera_relative_sets(store: Store, device_id: int, lens_id: int | None) -> l
                              if item.get("index") == row["layer_index"]
                              or (item.get("name") and item.get("name") == evidence.get("layer_name"))), {})
         sample = {"observation_id": row["id"], "layer_index": row["layer_index"],
-                  "name": evidence.get("layer_name") or f"Слой {row['layer_index']}",
+                  "name": evidence.get("layer_name") or f"Layer {row['layer_index']}",
                   "role": evidence.get("role") or "test feature", "lab": json.loads(row["lab_json"]),
                   "parameters": json.loads(row["parameters_json"]), "pixels": evidence.get("pixels"),
                   "line_metrics": evidence.get("line_metrics"), "submeasurements": evidence.get("submeasurements", []),
@@ -385,7 +385,7 @@ def camera_relative_sets(store: Store, device_id: int, lens_id: int | None) -> l
                       "scan_angle": rep.get("scan_angle"), "angle_increment": rep.get("angle_increment"),
                       "source_settings": lightburn.recipe_settings(rep.get("source_settings"))}
             entry["samples"].append({"observation_id": None, "layer_index": rep.get("index"),
-                                     "name": rep.get("name") or f"Слой {rep.get('index')}",
+                                     "name": rep.get("name") or f"Layer {rep.get('index')}",
                                      "role": rep.get("role") or "test feature", "lab": rep["measured_lab"],
                                      "parameters": params, "pixels": rep.get("pixels"),
                                      "line_metrics": rep.get("line_metrics"), "submeasurements": rep.get("submeasurements", []),

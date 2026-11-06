@@ -1,4 +1,4 @@
-"""«Перепроверить все работы» (feature findings-you-can-manage-short-lists-re-check, REQ-004, DEC-089): what a re-check would do, starting
+"""«Recheck all works» (feature findings-you-can-manage-short-lists-re-check, REQ-004, DEC-089): what a re-check would do, starting
 it, following it, stopping it, and its report (the last one too, after a restart)."""
 from __future__ import annotations
 

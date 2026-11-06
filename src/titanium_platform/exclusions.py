@@ -1,7 +1,7 @@
 """The operator's exclusions (feature act-on-findings): measurements taken out of every calculation by a decision, never by changing
 them (observations are immutable, REQ-001).
 
-Two decisions, each kept in ``operator_exclusion`` until «Вернуть» revokes it (the record and the audit stay):
+Two decisions, each kept in ``operator_exclusion`` until «Restore» revokes it (the record and the audit stay):
   measurement       one measured layer of one photograph (REQ-001, DEC-001). It is kept by the photograph's first measurement and the
                     layer, as the stable anomaly key (DEC-002 of findings-you-can-manage-short-lists-re-check), so every re-measure of
                     the photograph stays out; a re-photo of the engraving is another photograph and counts.
@@ -130,7 +130,7 @@ def _settings(obs: list[dict]) -> dict:
 
 
 def preview_measurement(store: Store, observation_id: int) -> dict:
-    """What «Убрать измерение» would change: the layer that leaves and the recipe's colour before and after (REQ-004)."""
+    """What «Remove measurement» would change: the layer that leaves and the recipe's colour before and after (REQ-004)."""
     o = _observation(store, observation_id)
     members = _recipe(store, o["device_id"], o["lens_id"], o["recipe_key"])
     remaining = [m for m in members if m["id"] != observation_id]
@@ -143,7 +143,7 @@ def preview_measurement(store: Store, observation_id: int) -> dict:
 
 
 def preview_latest(store: Store, device_id: int, lens_id: int | None, recipe_key: str) -> dict:
-    """What «Считать с последней гравировки» would change: the engraving kept, the older ones that leave, and the recipe's colour
+    """What «Use latest engraving» would change: the engraving kept, the older ones that leave, and the recipe's colour
     before and after (REQ-002, REQ-004). Refused when the recipe has one engraving."""
     members = _recipe(store, device_id, lens_id, recipe_key)
     if not members:
@@ -200,7 +200,7 @@ def _insert(store: Store, kind: str, p: dict, note: str | None, finding_key: str
 
 
 def exclude_measurement(store: Store, observation_id: int, note: str | None = None, finding_key: str | None = None) -> dict:
-    """«Убрать измерение»: one measured layer of one photograph leaves every calculation (REQ-001)."""
+    """«Remove measurement»: one measured layer of one photograph leaves every calculation (REQ-001)."""
     from . import ingest
     _guard(store)
     p = preview_measurement(store, observation_id)
@@ -214,7 +214,7 @@ def exclude_measurement(store: Store, observation_id: int, note: str | None = No
 
 def count_from_latest(store: Store, device_id: int, lens_id: int | None, recipe_key: str, note: str | None = None,
                       finding_key: str | None = None) -> dict:
-    """«Считать с последней гравировки»: the recipe counts from its newest engraving, its older ones leave (REQ-002). An earlier decision
+    """«Use latest engraving»: the recipe counts from its newest engraving, its older ones leave (REQ-002). An earlier decision
     of the recipe is replaced, and the engravings it left out stay out."""
     _guard(store)
     p = preview_latest(store, device_id, lens_id, recipe_key)
@@ -231,7 +231,7 @@ def count_from_latest(store: Store, device_id: int, lens_id: int | None, recipe_
 
 
 def revoke(store: Store, exclusion_id: int) -> dict:
-    """«Вернуть»: the measurements of a decision count again; the record and the audit stay."""
+    """«Restore»: the measurements of a decision count again; the record and the audit stay."""
     _guard(store)
     row = store.one("SELECT * FROM operator_exclusion WHERE id=?", (exclusion_id,))
     if row is None:

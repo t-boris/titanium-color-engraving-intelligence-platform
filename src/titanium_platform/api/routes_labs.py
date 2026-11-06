@@ -1,5 +1,5 @@
 """Portable laboratories (feature electron, REQ-083..085): the workshop's own laboratory published as a ``.tcelab`` release, and the
-laboratories of others connected from their files. The screens are «Моя лаборатория» and «Подключённые лаборатории» (``#/labs``)."""
+laboratories of others connected from their files. The screens are «My laboratory» and «Connected laboratories» (``#/labs``)."""
 from __future__ import annotations
 
 import uuid
@@ -150,7 +150,7 @@ def release_scales(request: Request, body: dict):
 
 @router.post("/transfers", status_code=201)
 def transfer(request: Request, body: dict):
-    """«Проверить у себя»: a test plate of one colour of a connected release on the own laser (see lab_transfer.create)."""
+    """«Test on your laser»: a test plate of one colour of a connected release on the own laser (see lab_transfer.create)."""
     return lab_transfer.create(store_of(request), body)
 
 

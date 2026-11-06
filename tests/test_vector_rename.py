@@ -128,7 +128,7 @@ def test_a_copy_made_after_a_rename_is_named_after_the_new_name_and_renaming_a_c
     c, j = work, job
     assert rename(c, j, "Imma").status_code == 200
     copy = copy_of(c, j)
-    assert copy["name"] == "Imma (копия)"
+    assert copy["name"] == "Imma (copy)"
     assert rename(c, copy, "Imma, blue").status_code == 200
     assert view(c, copy)["name"] == "Imma, blue" and view(c, j)["name"] == "Imma"
     assert [w["name"] for w in works(c)] == ["Imma, blue", "Imma"]

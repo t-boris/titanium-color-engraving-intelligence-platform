@@ -39,7 +39,7 @@ def runs(request: Request, limit: int = 50):
 
 @router.post("/runs", status_code=201)
 def run_now(request: Request):
-    """Analyse everything accepted so far now ("Пересчитать выводы"); waits for a run already in progress."""
+    """Analyse everything accepted so far now ("Recalculate findings"); waits for a run already in progress."""
     return findings.run_analysis(store_of(request), "manual")
 
 
@@ -70,13 +70,13 @@ def get_finding(finding_id: int, request: Request):
 
 @router.post("/findings/{finding_id}/mark")
 def mark_finding(finding_id: int, body: MarkIn, request: Request):
-    """«Учтено», «Скрыть», «Вернуть», «Закрепить», «Открепить» or a note; kept by the finding's key across runs (DEC-001)."""
+    """«Acknowledged», «Hide», «Restore», «Pin», «Unpin» or a note; kept by the finding's key across runs (DEC-001)."""
     return findings.mark(store_of(request), finding_id, body.action, body.note)
 
 
 @router.post("/findings/{finding_id}/remedy")
 def remedy(finding_id: int, body: RemedyIn, request: Request):
-    """«Убрать измерение» or «Считать с последней гравировки» (feature act-on-findings): without ``confirm`` what it would change, with
+    """«Remove measurement» or «Use latest engraving» (feature act-on-findings): without ``confirm`` what it would change, with
     it the decision, after which the knowledge, the findings and the works are recalculated once; refused while every work is being
     re-checked."""
     return findings.remedy(store_of(request), finding_id, body.action, body.note, body.confirm)
@@ -126,5 +126,5 @@ def list_exclusions(request: Request, include_revoked: bool = False):
 
 @exclusions_router.post("/{exclusion_id}/revoke")
 def revoke_exclusion(exclusion_id: int, request: Request):
-    """«Вернуть»: the measurements of the decision count again, recalculated once."""
+    """«Restore»: the measurements of the decision count again, recalculated once."""
     return exclusions.revoke(store_of(request), exclusion_id)

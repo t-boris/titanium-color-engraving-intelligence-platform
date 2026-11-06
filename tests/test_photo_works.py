@@ -115,7 +115,7 @@ def test_a_copy_is_a_work_of_its_own_rename_changes_the_name_only_and_delete_rem
     client.post(f"/api/photo-works/{work['id']}/settings", json={"min_power": 12, "max_power": 28, "by_colour": True})
     made = client.post(f"/api/photo-works/{work['id']}/copy", json={}).json()
     copy = client.get(f"/api/photo-works/{made['id']}").json()
-    assert copy["name"] == "Inna (копия)" and copy["identifier"] != work["identifier"]
+    assert copy["name"] == "Inna (copy)" and copy["identifier"] != work["identifier"]
     assert (copy["min_power"], copy["max_power"], copy["by_colour"], copy["scale"]) == (12, 28, True, work["scale"])
     store = app_world["client"].app.state.store
     paths = [photo_work._work(store, i)["image_path"] for i in (work["id"], made["id"])]

@@ -114,7 +114,7 @@ def export_plan(plan_id: int, request: Request):
     if plan["status"] == conversion.ST_DRAFT:
         raise conversion.ConversionError("the plan is a draft: finish the conversion before exporting")
     if plan["status"] in {"Superseded", "Cancelled"}:
-        raise su.ProtectedError("эта плата заменена или отменена; откройте актуальную плату исследования")
+        raise su.ProtectedError("this plate has been replaced or canceled; open the current research plate")
     data = plans.export_lbrn2(plan)
     lifecycle.record_plain_export(s, plan_id)       # the file is recorded (number, time, markers) and a ready plan becomes exported
     return Response(data, media_type="application/xml", headers={"Content-Disposition": content_disposition(plan["name"], ".lbrn2")})

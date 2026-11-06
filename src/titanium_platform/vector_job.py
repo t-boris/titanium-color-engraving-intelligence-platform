@@ -12,7 +12,7 @@ LightBurn mode fits the group: a filled outline (fill, colour, filled text, tona
 centre-line needs Line mode. Colour areas take the nearest such entry by colour, tonal areas by lightness, and are adequate
 only when the distance plus the entry's expected error is within the threshold (DEC-030); text and line art take the
 nearest fitting entry by colour, because their legibility and line width are not measured (REQ-020). A region without an
-adequate entry is weak: hatched in the preview, listed, never exported. The operator deletes it, excludes it ("без рецепта":
+adequate entry is weak: hatched in the preview, listed, never exported. The operator deletes it, excludes it ("without a recipe":
 kept in the document, left out of the file), substitutes an entry of the eligible palette for its settings group, or sends
 its colour to the Experiment Designer as a target.
 
@@ -48,7 +48,7 @@ COLOUR_TASKS = ("color", "fill", "tonal")
 DOCUMENT_OPS = ("set_task", "set_layer", "delete", "merge", "set_tolerance")
 EXPORTED = ("matched", "chosen")
 ST_EXPORTED = "Exported"
-JOB_NAME = "Векторная работа"
+JOB_NAME = "Vector work"
 SMOOTHING_MM = 0.5                      # a new photograph work's smoothing of its borders; a work made before has none (0: as traced)
 SMOOTHING_MAX_MM = 2.0                  # the end of the slider (REQ-052, DEC-083)
 EXPORT_MIRROR_Y = True                  # the picture is laid out top-down, which LightBurn's galvo canvas shows upside down unless the file says
@@ -753,7 +753,7 @@ def resplit(store: Store, plan_id: int, params: dict) -> None:
 
 
 def split_preview(store: Store, plan_id: int, params: dict) -> dict:
-    """How many regions and colours the picture would be split into with these settings (the ones «Разбить заново» takes), the work left as
+    """How many regions and colours the picture would be split into with these settings (the ones «Split again» takes), the work left as
     it is: the density slider shows the count before the split is made. Each answer is kept for its picture and settings."""
     plan = _photo_job(store, plan_id)
     if not isinstance(params, dict):
@@ -1379,7 +1379,7 @@ def zone_variations(store: Store, plan_id: int, number) -> dict:
     plan, zone, row = _zone_of_work(store, plan_id, number)
     if es.pin_of(plan) is not None:
         raise su.ValidationError("a variations plate tries settings on this workshop's laser, and this work uses a laboratory release's scale: "
-                                 "check the release's settings on this laser with a transfer experiment («Проверить у себя»)")
+                                 "check the release's settings on this laser with a transfer experiment («Test on your laser»)")
     found = _zone_cut(plan, zone)
     layer = pz.file_layer(_ev(store, plan), plan, zone, found, 0)
     box, pixels = layer["picture"], layer["picture"]["pixels"]
@@ -1415,7 +1415,7 @@ def _zone_picture(store: Store, plan: dict, row: dict) -> rc.Picture:
 
 
 def zone_kinds(store: Store, plan_id: int, number) -> dict:
-    """«Вид» of a photo zone: every kind that colours titanium with the zone as it would come out in it (the tiles), the one it has
+    """“Kind” of a photo zone: every kind that colours titanium with the zone as it would come out in it (the tiles), the one it has
     marked; a dot kind at the zone's dots' power, estimated from the scale until that kind was photographed there."""
     plan, zone, row = _zone_of_work(store, plan_id, number)
     evidence = _ev(store, plan)
@@ -2305,7 +2305,7 @@ def _split_region(plan: dict, document: dict, entries: list[dict], op: dict) -> 
 THUMB_PX = 360                              # the longer side of a thumbnail
 THUMB_SUPERSAMPLE = 2                       # drawn twice as large and reduced: smooth edges and no seam between two neighbours
 THUMB_BACKGROUND = (58, 60, 66)             # what no colour covers: a region left out of the file, or a work not coloured yet
-COPY_SUFFIX = " (копия)"
+COPY_SUFFIX = " (copy)"
 PLAN_COLUMNS = ("id", "name", "mode", "status", "device_id", "lens_id", "legacy_profile_id", "plate_id", "markers_enabled", "plan_identifier",
                 "band_count", "created_at", "research_session_id")        # what the plan row holds; the rest of a plan is its data
 

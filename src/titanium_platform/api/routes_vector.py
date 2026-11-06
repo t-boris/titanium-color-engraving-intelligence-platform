@@ -241,7 +241,7 @@ def vector_zone_kinds(plan_id: int, number: int, request: Request):
 
 @router.get("/vector/{plan_id}/photo/{number}/kinds/{kind}.png")
 def vector_zone_kind_picture(plan_id: int, number: int, kind: str, request: Request):
-    """The zone as it would come out in one kind, a tile of «Вид» (see vector_job.zone_kind_picture)."""
+    """The zone as it would come out in one kind, a tile of «Kind» (see vector_job.zone_kind_picture)."""
     return picture_response(request, vector_job.zone_kind_picture(store_of(request), plan_id, number, kind))
 
 
