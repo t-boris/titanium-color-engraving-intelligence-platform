@@ -1597,3 +1597,24 @@ body.has-creation-bar .ops-panel {max-height:min(60vh,520px,calc(100vh - var(--c
 .lst-row {flex-wrap:wrap}
 .lst-main {flex:1 1 10em}
 .ge-previous-image { width: 100%; height: auto; }
+
+/* ColorChecker reference values: each patch remains individually labeled at narrow widths. */
+.reference-grid {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%, 290px),1fr));gap:12px}
+.reference-patch {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding:12px;border:1px solid var(--line);border-radius:8px}
+.reference-patch>strong {grid-column:1/-1}
+.reference-patch input {width:100%;min-width:0}
+
+/* Compact density reduces spacing and decoration without reducing the size of controls or text. */
+body.density-compact .main {padding-top:24px}
+body.density-compact .main .stack,body.density-compact .main .grid {gap:12px}
+body.density-compact .main .card {padding:16px;background:var(--surface);box-shadow:none}
+body.density-compact .main .card h3 {padding-bottom:8px;margin-bottom:10px}
+body.density-compact .main .g3>.card {background:var(--surface)}
+body.density-compact .main .g3>.card::before {display:none}
+
+/* List names stay available without hover in either density. */
+.lst-main {flex-wrap:wrap;overflow:visible;white-space:normal}
+.lst-main .lst-text,.lst-main .fd-where,.lst-main .fd-note,.mat-list .lst-main .mat-grade {max-width:none;overflow:visible;white-space:normal;overflow-wrap:anywhere}
+@media (pointer:coarse) {
+  body.density-compact .main button,body.density-compact .main a.btn,body.density-compact .main input,body.density-compact .main select {min-height:44px}
+}

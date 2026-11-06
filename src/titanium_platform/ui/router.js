@@ -57,6 +57,14 @@ Object.assign(App, (() => {
   let sidebar = null, menuButton = null, railButton = null, pinButton = null;
   const pinKey = 'navigation.pinned';
   const pinned = () => { try { return localStorage.getItem(pinKey) === '1'; } catch (_) { return false; } };
+  const densityKey = 'display.density';
+  let density = 'normal';
+  try { if (localStorage.getItem(densityKey) === 'compact') density = 'compact'; } catch (_) { /* session-only preference */ }
+  function setDensity(value) {
+    density = value === 'compact' ? 'compact' : 'normal';
+    document.body.classList.toggle('density-compact', density === 'compact');
+    try { localStorage.setItem(densityKey, density); } catch (_) { /* session-only preference */ }
+  }
 
   // Fetch the application version once; hide the label if unavailable (REQ-057, DEC-099).
   let appVersion = null, versionAsked = false;
@@ -190,6 +198,7 @@ Object.assign(App, (() => {
 
   let nextNavigationOptions = null;
   const start = () => {
+    setDensity(density);
     addEventListener('resize', () => setMenu(menuOpen()));
     document.addEventListener('click', (ev) => {
       if (menuOpen() && !sidebar.contains(ev.target) && !(menuButton && menuButton.contains(ev.target))) setMenu(false);
@@ -220,5 +229,5 @@ Object.assign(App, (() => {
     render();
   };
   const go = (route, options = {}) => { nextNavigationOptions = options; location.hash = '#' + route; };
-  return {screens, register, render, start, go, checkVersion};
+  return {screens, register, render, start, go, checkVersion, setDensity, getDensity: () => density};
 })());
