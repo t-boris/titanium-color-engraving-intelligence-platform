@@ -66,11 +66,11 @@ def test_the_tab_shows_what_came_out_against_what_was_promised_with_both_picture
   out.dialog = ctx.document.body.querySelector('.modal').textContent;
 """)
     review = payload["reviews"][0]
-    assert "Результат гравировки" in out["text"] and f"Совпало слоёв {review['summary']['matched']} из {review['summary']['promised']} ожидаемых" in out["text"]
+    assert "Engraving result" in out["text"] and f"Matched {review['summary']['matched']} of {review['summary']['promised']} expected layers" in out["text"]
     assert len(out["rows"]) == review["summary"]["matched"] and out["rows"][0].find("ΔE") > 0                      # the worst layer first
     assert any("promised=true" in s for s in out["pictures"]) and any("promised=false" in s for s in out["pictures"])
-    assert all(f"engraving={review['engraving_id']}" in s for s in out["pictures"]) and out["label"] == "Результат"
-    assert "Ожидали" in out["dialog"] and "Получилось" in out["dialog"] and "ΔE" in out["dialog"]
+    assert all(f"engraving={review['engraving_id']}" in s for s in out["pictures"]) and out["label"] == "Result"
+    assert "Expected" in out["dialog"] and "Actual" in out["dialog"] and "ΔE" in out["dialog"]
     assert pair
 
 
@@ -81,7 +81,7 @@ def test_a_work_with_nothing_to_compare_says_what_to_do_and_a_file_never_made_pr
   const view = VR.view(data.job, run);
   out.text = view.textContent;
 """)
-    assert "Фото результата по этой работе ещё не принято" in out["text"] and "Файл из этой работы ещё не создавали" in out["text"]
+    assert "No result photo has been accepted for this work yet" in out["text"] and "No file has been created from this work yet" in out["text"]
 
 
 @node
@@ -99,8 +99,8 @@ def test_a_review_whose_promise_was_lost_says_so_instead_of_calling_it_another_f
   out.text = VR.view(data.job, run).textContent;
   out.card = VR.cardLines(data.listed).map((l) => l.textContent).join(' ');
 """)
-    assert "уже не восстановить, поэтому сравнения нет" in out["text"] and "Это другой файл" not in out["text"]
-    assert "обещанное файлом не сохранилось" in out["card"]
+    assert "cannot be reconstructed, so no comparison is available" in out["text"] and "This is a different file" not in out["text"]
+    assert "expected colors were not saved" in out["card"]
 
 
 @node
@@ -124,12 +124,12 @@ def test_a_file_whose_layers_match_none_of_the_works_says_it_is_another_file_and
   out.report = VR.reportCard(data.report.work_review).textContent;
 """)
     n = len(plan["layers"])
-    assert out["alerts"] == ["Ни один слой гравированного файла не совпал по настройкам со слоями файла этой работы. Это другой файл (его правили в "
-                             "LightBurn или сделали не из этой работы): сравнивать нечего."]
-    assert out["sides"] == [f"Ожидались, но на фото не найдены ({n})", f"Есть на фото, но не в файле работы ({n})"] and out["pictures"] == 0
-    assert "Совпало слоёв" not in out["text"]
-    assert out["card"] == ["Фото IMG_1.DNG: слои не совпали с файлом этой работы"]
-    assert "Ни один слой этого файла не совпал по настройкам с файлом работы." in out["report"]
+    assert out["alerts"] == ["No engraved file layers matched this work’s file layers by settings. This is a different file (it was edited in "
+                             "LightBurn or made from another work), so there is nothing to compare."]
+    assert out["sides"] == [f"Expected but not found in the photo ({n})", f"In the photo but not in the work file ({n})"] and out["pictures"] == 0
+    assert "Matched" not in out["text"]
+    assert out["card"] == ["Photo IMG_1.DNG: layers did not match this work’s file"]
+    assert "No layers in this file matched the work file by settings." in out["report"]
 
 
 @node
@@ -149,16 +149,16 @@ def test_a_moved_layer_is_listed_with_the_replacement_and_the_button_sends_an_or
   out.label = VR.tabLabel(data.job);
   await tick();
   out.idle = ran.slice();
-  await byText(view, 'button', 'Заменить').dispatch('click'); await tick();
+  await byText(view, 'button', 'Replace').dispatch('click'); await tick();
   out.one = ran.splice(0);
-  await view.querySelectorAll('button').find((b) => b.textContent.startsWith('Применить все замены')).dispatch('click'); await tick(); await tick();
+  await view.querySelectorAll('button').find((b) => b.textContent.startsWith('Apply all replacements')).dispatch('click'); await tick(); await tick();
   out.all = ran.splice(0);
 """)
-    assert "ушёл от обещанного" in out["text"] and out["label"] == "Результат · ⚠ 1"
+    assert "differ from the expected colors" in out["text"] and out["label"] == "Result · ⚠ 1"
     assert out["idle"] == []                                                         # REQ-047 crit. 7: shown, nothing applied until pressed
     assert out["one"] == [{"op": "set_colour", "colour": proposal["colour"], "entry_id": exact}]
     assert [op["colour"] for op in out["all"]] == [proposal["colour"], 99] and all(op["entry_id"] == exact for op in out["all"])
-    assert "Выгравированный файл не меняется" in out["text"]
+    assert "The engraved file stays unchanged" in out["text"]
 
 
 @node
@@ -174,8 +174,8 @@ def test_the_list_and_the_report_carry_the_conclusion(work, job, tmp_path):
   out.link = card.querySelectorAll('a').map((a) => a.getAttribute('href'));
   out.none = VR.reportCard(null);
 """)
-    assert any("Результат гравировки (IMG_1.DNG)" in line for line in out["lines"])
-    assert f"Вывод по работе «{job['name']}»" in out["card"] and out["link"] == [f"#/vector?plan={j['id']}"] and out["none"] is None
+    assert any("Engraving result (IMG_1.DNG)" in line for line in out["lines"])
+    assert f"Finding for work “{job['name']}”" in out["card"] and out["link"] == [f"#/vector?plan={j['id']}"] and out["none"] is None
 
 
 @node
@@ -196,7 +196,7 @@ def test_the_card_of_a_work_in_the_list_warns_of_the_layers_whose_colour_moved_a
 """)
     share = math.floor(listed["attention"]["area_share"] * 100 + 0.5)                                    # as Math.round rounds it
     assert listed["attention"]["layers"] == 1 and still["attention"]["layers"] == 0
-    assert out["lines"] == [["small vw-bad", f"⚠ Цвет 1 слоёв ушёл от обещанного файлом ({share} % площади)"]]
+    assert out["lines"] == [["small vw-bad", f"⚠ 1 layer colors differ from the file’s expected colors ({share} % of area)"]]
     assert out["still"] == []
 
 
@@ -247,13 +247,13 @@ def test_the_link_on_the_result_tab_opens_the_upload_form_for_this_work_with_its
     out = run(tmp_path, {"job": payload}, """
   out.hrefs = VR.view(data.job, run).querySelectorAll('a').map((a) => [a.textContent, a.getAttribute('href')]);
 """)
-    assert ["Загрузить фото для этой работы", f"#/ingest?plan={job['id']}&material={payload['material_id']}"] in out["hrefs"]
+    assert ["Upload a photo for this work", f"#/ingest?plan={job['id']}&material={payload['material_id']}"] in out["hrefs"]
     reviewed(work, job)
     payload = work["client"].get(f"/api/vector/{job['id']}").json()
     out = run(tmp_path, {"job": payload}, """
   out.hrefs = VR.view(data.job, run).querySelectorAll('a').map((a) => [a.textContent, a.getAttribute('href')]);
 """)
-    assert out["hrefs"].count(["Загрузить фото для этой работы", f"#/ingest?plan={job['id']}&material={payload['material_id']}"]) == 1
+    assert out["hrefs"].count(["Upload a photo for this work", f"#/ingest?plan={job['id']}&material={payload['material_id']}"]) == 1
 
 
 @node

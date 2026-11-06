@@ -145,15 +145,15 @@ def test_the_readiness_states_size_time_layers_and_checks_and_each_blocker_in_wo
   out.details = card.querySelectorAll('details').map((d) => d.textContent);
 """)
     assert out["text"].startswith("Файл LightBurn: пока нельзя")
-    assert "150,0 × 143,0 мм" in out["text"].replace(".", ",") and "≈ 2 мин 05 с (оценка неполная)" in out["text"] and "слоёв 31 из 29" in out["text"]
+    assert "150,0 × 143,0 мм" in out["text"].replace(".", ",") and "≈ 2 min 05 s (оценка неполная)" in out["text"] and "слоёв 31 из 29" in out["text"]
     assert "цвета есть недостижимые" in out["text"] and "чистка C00 есть" in out["text"] and "маркеры включены" in out["text"]
     assert out["rows"][0].startswith("Областей без достаточных данных: 2.") and "Нужно слоёв LightBurn: 31, доступно 29" in out["rows"][1]
-    assert out["rows"][2] == "Надпись 2 не выгравировать: Шрифта 'Gone Sans' больше нет на этом компьютере: выберите другой шрифт. Откройте её и исправьте."
-    assert out["rows"][3] == "Фотозона 1 не гравируется: Ширина картинки должна быть от 1 до 1000 мм."          # the reason is the inscription's and the zone's own
+    assert out["rows"][2] == "Надпись 2 не выгравировать: the font 'Gone Sans' is not on this computer any more: choose another font. Откройте её и исправьте."
+    assert out["rows"][3] == "Фотозона 1 не гравируется: the width of the picture must be 1..1000 mm."          # the reason is the inscription's and the zone's own
     assert out["rows"][4] == "Гравировать нечего: все области исключены."
     assert out["buttons"] == ["Показать область", "Открыть вкладку «Цвета»"] and out["targets"] == [{"kind": "region", "id": "r4"}, {"kind": "tab", "id": "colours"}]
     assert out["links"] == [["Цели экспериментов", "#/designer?device=1&lens=2"]]               # only for a blocker that is missing measurements
-    assert any("Все области исключены: гравировать нечего" in d for d in out["details"])        # the exact words of the check, on demand
+    assert any("every region is excluded: there is nothing to engrave" in d for d in out["details"])        # the exact words of the check, on demand
 
 
 @node
@@ -209,9 +209,9 @@ def test_a_refused_download_keeps_its_reason_in_russian_beside_the_button_with_a
   await got.failure.querySelector('button').dispatch('click'); await tick();
   out.after = [got.failure.hidden, done];
 """)
-    assert out["failure"][0] is False and out["failure"][1].startswith("Файл не получен: Все области исключены: гравировать нечего")
+    assert out["failure"][0] is False and out["failure"][1].startswith("Файл не получен: every region is excluded: there is nothing to engrave")
     assert out["failure"][2] == "alert" and out["failure"][3] == ["Повторить"]
-    assert out["enabled"] and out["doneAfterFailure"] == 0 and any("Все области исключены" in t for t in out["toast"])
+    assert out["enabled"] and out["doneAfterFailure"] == 0 and any("every region is excluded" in t for t in out["toast"])
     assert out["after"] == [True, 1]
 
 
@@ -376,7 +376,7 @@ def test_the_result_tab_lets_the_operator_choose_the_engraving_and_names_the_fil
     new = review(2, "NEW.DNG", "e2", "2026-10-22T10:00:00", kind="reconstructed")
     out = run(tmp_path, {"job": work_view([new, old])}, """
   const view = VR.view(data.job, run = async () => true);
-  const picker = view.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Гравировка');
+  const picker = view.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Engraving');
   out.options = picker.querySelectorAll('option').map((o) => o.textContent);
   out.first = view.textContent;
   picker.value = 'e1';
@@ -384,7 +384,7 @@ def test_the_result_tab_lets_the_operator_choose_the_engraving_and_names_the_fil
   out.second = view.textContent;
   out.pictures = view.querySelectorAll('img').map((i) => i.getAttribute('src'));
 """)
-    assert out["options"] == ["NEW.DNG · файл № 2 · 2026-10-22 10:00", "OLD.DNG · файл № 1 · 2026-10-21 10:00"]
+    assert out["options"] == ["NEW.DNG · file #2 · 2026-10-22 10:00", "OLD.DNG · file #1 · 2026-10-21 10:00"]
     assert "Основание: реконструкция." in out["first"] and "Это не исходное обещание файла." in out["first"] and "обещал сам файл" not in out["first"]
     assert "Основание: прогноз, сохранённый вместе с файлом № 1" in out["second"] and "Основание: реконструкция" not in out["second"]
     assert all("engraving=e1" in src for src in out["pictures"]) and len(out["pictures"]) == 2          # the pictures follow the chosen engraving, at one scale
@@ -399,8 +399,8 @@ def test_a_single_engraving_still_shows_which_file_it_is_compared_with_and_a_los
   out.lost = gone.textContent;
   out.lostPictures = gone.querySelectorAll('img').length;
 """)
-    assert out["one"] == ["IMG_1.DNG · файл № 1 · 2026-10-21 10:00"]
-    assert "Основание: нет. Прогноз файла № 2 не сохранялся" in out["lost"] and "уже не восстановить, поэтому сравнения нет" in out["lost"]
+    assert out["one"] == ["IMG_1.DNG · file #1 · 2026-10-21 10:00"]
+    assert "Основание: нет. Прогноз файла № 2 не сохранялся" in out["lost"] and "cannot be reconstructed, so no comparison is available" in out["lost"]
     assert out["lostPictures"] == 0                                                              # nothing is drawn as if it were the promise
 
 
@@ -414,10 +414,10 @@ def test_the_colour_and_the_photo_assessments_are_separate_sections_and_neither_
   out.both = sections(VR.view(data.both, async () => true));
   out.colour = sections(VR.view(data.colour, async () => true));
 """)
-    assert [label for label, _ in out["both"]] == ["Оценка цвета", "Оценка фотослоя"]
-    assert "Совпало слоёв 3 из 3 ожидаемых" in out["both"][0][1] and "Фотозона" not in out["both"][0][1]
-    assert "Прогноз фотослоя по прежним измерениям: медиана ошибки 2.5 ΔE" in out["both"][1][1]
-    assert [label for label, _ in out["colour"]] == ["Оценка цвета"]                              # no photograph layer: no empty section
+    assert [label for label, _ in out["both"]] == ["Color assessment", "Photo layer assessment"]
+    assert "Matched 3 of 3 expected layers" in out["both"][0][1] and "Фотозона" not in out["both"][0][1]
+    assert "Photo layer prediction from earlier measurements: median error 2.5 ΔE" in out["both"][1][1]
+    assert [label for label, _ in out["colour"]] == ["Color assessment"]                              # no photograph layer: no empty section
 
 
 @node
@@ -427,19 +427,19 @@ def test_the_largest_differences_come_first_and_the_rest_wait_for_a_press(tmp_pa
   const rows = () => view.querySelectorAll('button').filter((b) => (b.className || '').includes('vw-review-row')).map((b) => b.textContent);
   out.heading = view.querySelectorAll('h6').map((h) => h.textContent);
   out.few = rows();
-  await byText(view, 'button', 'Показать все (8)').dispatch('click');
+  await byText(view, 'button', 'Show all (8)').dispatch('click');
   out.all = rows().length;
-  out.back = !!byText(view, 'button', 'Показать только крупнейшие');
-  await byText(view, 'button', 'Показать только крупнейшие').dispatch('click');
+  out.back = !!byText(view, 'button', 'Show only largest');
+  await byText(view, 'button', 'Show only largest').dispatch('click');
   out.few2 = rows().length;
 """)
-    assert out["heading"] == ["Крупнейшие отличия"] and len(out["few"]) == 5 and out["few"][0].find("ΔE 8.0") > 0       # the worst layer first
+    assert out["heading"] == ["Largest differences"] and len(out["few"]) == 5 and out["few"][0].find("ΔE 8.0") > 0       # the worst layer first
     assert out["all"] == 8 and out["back"] and out["few2"] == 5
 
 
 @node
 def test_a_replacement_says_what_it_did_can_be_undone_and_stops_offering_the_undo_once_anything_else_was_done(tmp_path):
-    """A replacement is an ordinary edit of the work; right after it the tab says so and offers «Отменить замену». The offer is only for the
+    """A replacement is an ordinary edit of the work; right after it the tab says so and offers «Undo replacement». The offer is only for the
     replacement itself: another edit after it, or a colour no longer as the replacement left it, withdraws it."""
     proposal = {"colour": 1, "entry_id": "e9", "srgb": [200, 190, 180], "entry_srgb": [201, 191, 181], "delta_e_now": 6.0, "delta_e_proposed": 1.5}
     drift = {"layers": [{"name": "C01", "was_srgb": [200, 190, 180], "now_srgb": [190, 180, 170], "missing": False, "delta_e": 6.0, "area_mm2": 100.0,
@@ -450,36 +450,36 @@ def test_a_replacement_says_what_it_did_can_be_undone_and_stops_offering_the_und
   const runOp = async (op) => { ran.push(op); return true; };
   const draw = (j) => VR.view(j, runOp);
   let view = draw(data.job);
-  out.before = byText(view, 'button', 'Отменить замену') ? 'offered' : 'none';
-  await view.querySelectorAll('button').find((b) => b.textContent === 'Заменить').dispatch('click'); await tick();
+  out.before = byText(view, 'button', 'Undo replacement') ? 'offered' : 'none';
+  await view.querySelectorAll('button').find((b) => b.textContent === 'Replace').dispatch('click'); await tick();
   const after = {...data.job, undo: 0, colours: [{index: 1, entry_id: 'e9'}, {index: 2, entry_id: 'e2'}]};
   view = draw(after);
   out.said = status(view).textContent;
-  await byText(view, 'button', 'Отменить замену').dispatch('click'); await tick();
+  await byText(view, 'button', 'Undo replacement').dispatch('click'); await tick();
   out.ran = ran.splice(0);
-  out.gone = byText(draw(after), 'button', 'Отменить замену') ? 'offered' : 'none';
+  out.gone = byText(draw(after), 'button', 'Undo replacement') ? 'offered' : 'none';
   // all replacements at once: one undo per replacement
   view = draw(data.job);
-  await view.querySelectorAll('button').find((b) => b.textContent.startsWith('Применить все замены')).dispatch('click'); await tick(); await tick();
+  await view.querySelectorAll('button').find((b) => b.textContent.startsWith('Apply all replacements')).dispatch('click'); await tick(); await tick();
   ran.splice(0);
   const both = {...data.job, undo: 0, colours: [{index: 1, entry_id: 'e9'}, {index: 2, entry_id: 'e8'}]};
   view = draw(both);
   out.all = status(view).textContent;
-  await byText(view, 'button', 'Отменить замену').dispatch('click'); await tick(); await tick();
+  await byText(view, 'button', 'Undo replacement').dispatch('click'); await tick(); await tick();
   out.undone = ran.splice(0);
   // another edit after a replacement (the depth of the undo grew): the offer is withdrawn
   view = draw(data.job);
-  await view.querySelectorAll('button').find((b) => b.textContent === 'Заменить').dispatch('click'); await tick();
-  out.later = byText(draw({...after, undo: 1}), 'button', 'Отменить замену') ? 'offered' : 'none';
+  await view.querySelectorAll('button').find((b) => b.textContent === 'Replace').dispatch('click'); await tick();
+  out.later = byText(draw({...after, undo: 1}), 'button', 'Undo replacement') ? 'offered' : 'none';
   // the replaced colour changed since: the offer is withdrawn too
   view = draw(data.job);
-  await view.querySelectorAll('button').find((b) => b.textContent === 'Заменить').dispatch('click'); await tick();
-  out.changed = byText(draw({...after, colours: [{index: 1, entry_id: 'e5'}, {index: 2, entry_id: 'e2'}]}), 'button', 'Отменить замену') ? 'offered' : 'none';
+  await view.querySelectorAll('button').find((b) => b.textContent === 'Replace').dispatch('click'); await tick();
+  out.changed = byText(draw({...after, colours: [{index: 1, entry_id: 'e5'}, {index: 2, entry_id: 'e2'}]}), 'button', 'Undo replacement') ? 'offered' : 'none';
 """)
     assert out["before"] == "none"
-    assert out["said"].startswith("Исходный цвет заменён на ближайший измеренный (ΔE 1") and "Выгравированный файл не менялся." in out["said"]
+    assert out["said"].startswith("Original color replaced with the nearest measured color (ΔE 1") and "The engraved file was not changed." in out["said"]
     assert out["ran"] == [{"op": "set_colour", "colour": 1, "entry_id": "e9"}, {"op": "undo"}] and out["gone"] == "none"
-    assert out["all"].startswith("Заменено цветов: 2.") and out["undone"] == [{"op": "undo"}, {"op": "undo"}]
+    assert out["all"].startswith("Colors replaced: 2.") and out["undone"] == [{"op": "undo"}, {"op": "undo"}]
     assert out["later"] == "none" and out["changed"] == "none"
 
 
@@ -491,10 +491,10 @@ def test_a_replacement_the_server_refused_leaves_no_undo_to_offer(tmp_path):
     out = run(tmp_path, {"job": work_view([], attention=drift)}, """
   const ran = [];
   const view = VR.view(data.job, async (op) => { ran.push(op); return false; });
-  const button = byText(view, 'button', 'Заменить');
+  const button = byText(view, 'button', 'Replace');
   await button.dispatch('click'); await tick();
   out.again = !button.disabled;
-  out.offer = byText(VR.view(data.job, async () => false), 'button', 'Отменить замену') ? 'offered' : 'none';
+  out.offer = byText(VR.view(data.job, async () => false), 'button', 'Undo replacement') ? 'offered' : 'none';
   out.ran = ran.length;
 """)
     assert out["again"] and out["offer"] == "none" and out["ran"] == 1
@@ -507,8 +507,8 @@ def test_new_measurements_are_said_to_change_only_the_current_prediction_never_t
   out.same = VR.view(data.same, async () => true).textContent;
 """)
     for text in (out["none"], out["same"]):
-        assert "Текущий прогноз работы: цвета после новых измерений" in text
-        assert "Новые измерения меняют только текущий прогноз работы" in text and "не переписывают то, что обещал уже выгруженный файл" in text
+        assert "Current work prediction: colors after new measurements" in text
+        assert "New measurements update only the current work prediction" in text and "do not change the engraved file or the expected colors in an exported file" in text
 
 
 # -- the prediction review ------------------------------------------------------------------------------------------------------------
