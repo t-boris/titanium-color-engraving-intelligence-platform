@@ -1,9 +1,8 @@
-/* Настройки: заготовки титана, установки съёмки, правила оценки повторов для лазера с линзой и слой кодовых меток.
-   Лазеры и линзы — на экране «Лазеры»; рабочие параметры задаются для каждой платы и слоя (DEC-042, DEC-063). */
+/* Settings for stock, capture setups, repeatability rules and photo markers (DEC-042, DEC-063). */
 'use strict';
 (() => {
   const {h, get} = App;
-  const TABS = [['material', 'Титан'], ['rigs', 'Съёмка'], ['rules', 'Оценка повторов'], ['markers', 'Метки для фото']];
+  const TABS = [['material', 'Stock'], ['rigs', 'Capture'], ['rules', 'Repeatability'], ['markers', 'Photo markers']];
 
   App.register({id: 'setup', async render(ctx) {
     const tab = TABS.some((t) => t[0] === ctx.query.tab) ? ctx.query.tab : 'material';
@@ -11,9 +10,9 @@
     const body = tab === 'material' ? await MaterialCatalog.tab(ctx)
       : tab === 'rigs' ? SetupForms.rigsTab(await get('/setups'), reload)
         : tab === 'rules' ? await SetupRules.rulesTab(ctx, reload) : await SetupRules.markersTab(reload);
-    return h('div', {class: 'stack'}, h('h2', {}, 'Настройки'),
-      h('p', {class: 'sub'}, 'Заготовки титана, установки съёмки, правила оценки повторяемости для каждого лазера с линзой и кодовые метки на платах. '
-        + 'Лазеры и линзы описываются на экране «Лазеры»; мощность, частота, скорость, импульс, интервал и проходы задаются для каждой платы и слоя.'),
+    return h('div', {class: 'stack'}, h('h2', {}, 'Settings'),
+      h('p', {class: 'sub'}, 'Titanium stock, capture setups, repeatability rules for each laser and lens, and coded plate markers. '
+        + 'Configure lasers and lenses on the Lasers screen; set power, frequency, speed, pulse, spacing and passes for each plate and layer.'),
       h('div', {class: 'toolbar'}, h('span', {class: 'spacer'}),
         h('div', {class: 'row', role: 'tablist'}, TABS.map(([id, label]) => h('a', {href: `#/setup?tab=${id}`, class: 'btn' + (id === tab ? ' primary' : ''), role: 'tab', 'aria-selected': id === tab}, label)))),
       body);

@@ -1,5 +1,4 @@
-/* Графики лазера: строятся только из паспорта, который вернул сервер (REQ-017). Ничего не вводится дважды.
-   SVG рисуется здесь, без библиотек; внешний вид рамки задаёт styles.css (svg[role=img]). */
+/* Laser charts use the specifications returned by the server (REQ-017). SVG is drawn here and styled by styles.css. */
 'use strict';
 const DeviceCharts = (() => {
   const SVG = 'http://www.w3.org/2000/svg';
@@ -13,7 +12,7 @@ const DeviceCharts = (() => {
     return n;
   }
 
-  /** Деления оси: 1-2-5 по степеням десяти для логарифмической оси, «круглые» числа для линейной. */
+  /** Axis ticks: 1-2-5 powers of ten for logarithmic axes and round numbers for linear axes. */
   function ticks(lo, hi, log) {
     const out = [];
     if (log) {
@@ -30,8 +29,8 @@ const DeviceCharts = (() => {
   const fmt = (v) => (v >= 1000 ? v / 1000 + 'k' : String(+v.toPrecision(3)));
 
   /**
-   * График. series: [{name, points: [[x, y]], color, width, dash, markers, faint}],
-   * marks: [{x, y, label, color}] — отдельные точки (рассчитанная рабочая точка, частота среза).
+   * Chart. series: [{name, points: [[x, y]], color, width, dash, markers, faint}],
+   * marks: [{x, y, label, color}] — individual points (calculated operating point, cutoff frequency).
    */
   function plot({title, xLabel, yLabel, series, marks = [], xLog = false, yLog = false}) {
     const pts = series.flatMap((s) => s.points).concat(marks.map((m) => [m.x, m.y]));

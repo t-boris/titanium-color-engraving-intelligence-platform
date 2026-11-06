@@ -1,11 +1,11 @@
-/* The history of colour knowledge on its first page with an explicit «Показать ещё» (ux-growing-collections-p0, REQ-002). The history of a knowledge entry
+/* The history of colour knowledge on its first page with an explicit “Show more” (ux-growing-collections-p0, REQ-002). The history of a knowledge entry
    as the compact list, read from the server a page at a time (GET /knowledge/:id/history): the newest events first, the kind of event as a
-   filter with counts, the observations an event rests on under its line. Nothing is dropped: every event is reached by «Показать ещё», and
+   filter with counts, the observations an event rests on under its line. Nothing is dropped: every event is reached by “Show more”, and
    a rollback stays on the line of the event it undoes. */
 'use strict';
 const KnowledgeHistory = (() => {
   const {h, btn, pill, get, post, confirmBox} = App;
-  const SORTS = [['newest', 'Сначала новые'], ['oldest', 'Сначала старые']];
+  const SORTS = [['newest', 'Newest first'], ['oldest', 'Oldest first']];
   const when = (at) => (at || '').slice(0, 16).replace('T', ' ');
 
   /** The history list of the entry ``kid``. ``opts``: ``stage`` (its stage now: a rollback from production says so), ``labels`` ({STAGE, EVENT}:
@@ -28,15 +28,15 @@ const KnowledgeHistory = (() => {
         h('span', {class: 'small'}, `${stageName(e.from_stage)} → ${stageName(e.to_stage)}`),
         h('span', {class: 'lst-text small muted', title: reasonOf(e)}, reasonOf(e))],
       details: (e) => h('div', {class: 'stack small'}, h('p', {}, reasonOf(e)),
-        SourceRefs.observations(e.observation_ids, {label: 'Наблюдения-основания события'})),
+        SourceRefs.observations(e.observation_ids, {label: 'Observations supporting this event'})),
       actions: (e) => (e.from_stage && e.type !== 'rollback'
-        ? [btn('Откатить переход', () => confirmBox('Откатить переход', 'Будет добавлено новое событие; стадия не повышается.', 'Откатить', async () => {
+        ? [btn('Roll back transition', () => confirmBox('Roll back transition', 'A new event will be added; the stage will not be promoted.', 'Roll back', async () => {
           await post(`/knowledge/${kid}/rollback`, {event_id: e.id, confirm_production: opts.stage === 'production'});
           if (opts.after) opts.after(); else App.render();
         }), 'btn-small')] : []),
-      filters: [{key: 'type', label: 'Событие', select: true, options: Object.entries(EVENT)}],
+      filters: [{key: 'type', label: 'Event', select: true, options: Object.entries(EVENT)}],
       sorts: SORTS,
-      empty: 'Истории нет', className: 'kn-history-list'});
+      empty: 'No history yet', className: 'kn-history-list'});
   }
 
   return {list};

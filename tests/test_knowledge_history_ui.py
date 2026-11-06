@@ -64,7 +64,7 @@ def test_the_kind_of_event_filters_with_counts_and_the_order_can_be_turned(entry
       const history = ctx.KnowledgeHistory.list({kid}, {{labels}});
       const box = mount(history.el);
       await history.ready;
-      const kind = qa(box, 'label').find((l) => l.textContent.startsWith('Событие')).querySelector('select');
+      const kind = qa(box, 'label').find((l) => l.textContent.startsWith('Event')).querySelector('select');
       out.options = kind.options.map((o) => o.textContent);
       kind.value = 'questioned';
       await kind.dispatch('change');
@@ -83,7 +83,7 @@ def test_the_kind_of_event_filters_with_counts_and_the_order_can_be_turned(entry
     assert out["options"][0] == "all · 46" and "помечено «под вопросом» · 11" in out["options"] and "повышено автоматически · 34" in out["options"]
     assert out["filtered"]["rows"] == 11 and out["filtered"]["pills"] == ["помечено «под вопросом»"] and "type=questioned" in out["filtered"]["asked"]
     assert out["oldest"]["first"] == "создано" and out["oldest"]["rollback"] == []                      # the first event has no earlier stage to return to
-    assert out["oldest"]["next"] == ["Откатить переход"]
+    assert out["oldest"]["next"] == ["Roll back transition"]
 
 
 def test_the_observations_behind_an_event_are_a_count_with_a_button_and_a_rollback_stays_on_its_event(entry, tmp_path):
@@ -100,16 +100,16 @@ def test_the_observations_behind_an_event_are_a_count_with_a_button_and_a_rollba
       const refs = q(box, '.srefs');
       out.details = {{count: q(refs, '.srefs-count').textContent, label: q(refs, '.srefs-label').textContent, toggle: q(refs, '.srefs-toggle').textContent,
         drawn: qa(refs, 'a').length, reason: qa(box, 'p')[0] ? qa(box, 'p').map((p) => p.textContent)[0] : null}};
-      await button(newest, 'Откатить переход').dispatch('click');
-      const ok = button(doc.body, 'Откатить');
+      await button(newest, 'Roll back transition').dispatch('click');
+      const ok = button(doc.body, 'Roll back');
       out.dialog = {{title: q(doc.body, '.modal').getAttribute('aria-label'), focusedFirst: doc.activeElement && doc.activeElement.textContent}};
       await ok.dispatch('click');
       const sent = requests('/rollback');
       out.rollback = {{count: sent.length, method: sent[0].method, body: JSON.parse(sent[0].body), after}};
     """, EXPORTS)
-    assert out["details"]["count"] == "30" and out["details"]["label"] == "Наблюдения-основания события: " and out["details"]["toggle"] == "Show IDs"
+    assert out["details"]["count"] == "30" and out["details"]["label"] == "Observations supporting this event: " and out["details"]["toggle"] == "Show IDs"
     assert out["details"]["drawn"] == 0 and out["details"]["reason"] == "причина последняя"            # thirty numbers are not printed until asked for
-    assert out["dialog"] == {"title": "Откатить переход", "focusedFirst": "Cancel"}                      # a quick Enter never confirms
+    assert out["dialog"] == {"title": "Roll back transition", "focusedFirst": "Cancel"}                      # a quick Enter never confirms
     assert out["rollback"]["count"] == 1 and out["rollback"]["method"] == "POST" and out["rollback"]["after"] == 1
     assert out["rollback"]["body"]["confirm_production"] is True and isinstance(out["rollback"]["body"]["event_id"], int)
 
@@ -141,7 +141,7 @@ def test_an_entry_without_events_says_so(tmp_path):
       out.text = q(box, '.lst-empty').textContent;
       out.rows = lines(box).length;
     """, EXPORTS)
-    assert out == {"text": "Истории нет", "rows": 0}
+    assert out == {"text": "No history yet", "rows": 0}
 
 
 def test_the_knowledge_page_reads_the_first_page_of_the_history_and_counts_the_observations_behind_the_colour(tmp_path):

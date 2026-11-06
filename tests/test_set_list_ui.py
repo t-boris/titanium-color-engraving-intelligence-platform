@@ -56,7 +56,7 @@ def test_a_set_the_page_leaves_out_stays_in_view_and_a_search_finds_a_set(tmp_pa
     assert out["beyond"]["note"].startswith("The selected row is beyond the displayed portion of the list.")
     assert out["found"]["titles"] == ["Набор 7"] and out["found"]["focus"] is True                 # the search is typed in without losing the cursor
     assert out["found"]["note"].startswith("The selected row is hidden by the search or filters.")
-    assert out["none"]["text"] == "Наборов с таким названием нет." and out["none"]["conditions"] == "Conditions: search “zzz”." and out["none"]["rows"] == 0
+    assert out["none"]["text"] == "No sets match this name." and out["none"]["conditions"] == "Conditions: search “zzz”." and out["none"]["rows"] == 0
     assert out["back"] == {"rows": 20, "search": "", "count": "showing 20 of 51"}
 
 
@@ -67,4 +67,4 @@ def test_an_empty_collection_says_so(tmp_path):
       await list.ready;
       out.text = q(box, '.lst-empty').textContent;
     """, EXPORTS)
-    assert out == {"text": "Наборов нет"}
+    assert out == {"text": "No sets yet"}

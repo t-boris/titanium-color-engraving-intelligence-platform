@@ -22,8 +22,8 @@ const SetList = (() => {
         return [h('button', {type: 'button', class: 'lm-set' + (on ? ' active' : ''), 'aria-pressed': String(on), title: `${s.title} · ${s.note || ''}`,
           onClick: () => opts.onSelect(s.id)}, h('strong', {}, s.title), h('span', {class: 'muted small'}, s.note || ''))];
       },
-      sorts: [['listed', 'Как в списке', (a, b) => sets.indexOf(a) - sets.indexOf(b)]],
-      empty: opts.empty || 'Наборов нет', noResults: 'Наборов с таким названием нет.'});
+      sorts: [['listed', 'Listed order', (a, b) => sets.indexOf(a) - sets.indexOf(b)]],
+      empty: opts.empty || 'No sets yet', noResults: 'No sets match this name.'});
   }
 
   return {list};
