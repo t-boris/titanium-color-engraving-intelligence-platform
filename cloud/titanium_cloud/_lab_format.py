@@ -57,19 +57,16 @@ MEDIA_TYPE = "application/vnd.titanium.tcelab+json"
 # The approved usage terms (DEC-042): id -> version, permissions and the names the screens show.
 USAGE_TERMS = {
     "CC-BY-4.0": {"version": "4.0", "commercial": True, "modify": True, "redistribute": True,
-                  "name": {"ru": "CC BY 4.0 — с указанием автора", "en": "CC BY 4.0 — with attribution"},
-                  "summary": {"ru": "Можно использовать, изменять и передавать дальше, в том числе коммерчески, указывая автора.",
-                              "en": "Use, adapt and share, commercially too, with attribution."},
+                  "name": {"en": "CC BY 4.0 — with attribution"},
+                  "summary": {"en": "Use, adapt and share, commercially too, with attribution."},
                   "url": "https://creativecommons.org/licenses/by/4.0/"},
     "CC-BY-NC-4.0": {"version": "4.0", "commercial": False, "modify": True, "redistribute": True,
-                     "name": {"ru": "CC BY-NC 4.0 — некоммерчески", "en": "CC BY-NC 4.0 — non-commercial"},
-                     "summary": {"ru": "Можно использовать, изменять и передавать дальше с указанием автора, но не коммерчески.",
-                                 "en": "Use, adapt and share with attribution, not commercially."},
+                     "name": {"en": "CC BY-NC 4.0 — non-commercial"},
+                     "summary": {"en": "Use, adapt and share with attribution, not commercially."},
                      "url": "https://creativecommons.org/licenses/by-nc/4.0/"},
     "tce-own-engravings-1": {"version": "1", "commercial": True, "modify": False, "redistribute": False,
-                             "name": {"ru": "Только для своих гравировок", "en": "For own engravings only"},
-                             "summary": {"ru": "Можно гравировать по этим данным и продавать изделия; передавать файл или данные дальше нельзя.",
-                                         "en": "Engrave with these data and sell the products; do not pass the file or its data on."},
+                             "name": {"en": "For own engravings only"},
+                             "summary": {"en": "Engrave with these data and sell the products; do not pass the file or its data on."},
                              "url": None},
 }
 
