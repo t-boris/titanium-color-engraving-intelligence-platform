@@ -176,7 +176,7 @@ const VectorSplit = (() => {
     const FRAME = [['left', 'Слева, %', 25, 0], ['top', 'Сверху, %', 25, 0], ['width', 'Ширина, %', 50, 0.1], ['height', 'Высота, %', 50, 0.1]];
     const frame = Object.fromEntries(FRAME.map(([key, label, value]) => [key, h('input', {type: 'number', step: '0.1', min: '0', max: '100', value: String(value), 'aria-label': `Область: ${label}`})]));
     // each of the four says beside itself what is wrong with it (the frame must lie inside the picture); what was typed stays
-    const frameFields = Object.fromEntries(FRAME.map(([key, label]) => [key, App.field(label, frame[key], null, {required: true, constraint: key === 'left' || key === 'top' ? 'от 0 до 100' : 'больше 0, не больше 100'})]));
+    const frameFields = Object.fromEntries(FRAME.map(([key, label]) => [key, App.field(label, frame[key], null, {required: true, constraint: key === 'left' || key === 'top' ? 'from 0 to 100' : 'greater than 0, at most 100'})]));
     for (const key of Object.keys(frame)) frame[key].addEventListener('input', () => frameFields[key].clearError());
     const numNote = h('p', {class: 'small vw-area-note', role: 'status', 'aria-live': 'polite'});
     const numActs = h('div', {class: 'row'});
@@ -221,7 +221,7 @@ const VectorSplit = (() => {
       const single = {left: l >= 0 && l <= 100, top: t >= 0 && t <= 100, width: w > 0 && w <= 100, height: hh > 0 && hh <= 100};
       const wrong = Object.keys(frame).filter((k) => !Number.isFinite(parseFloat(frame[k].value)) || !single[k]);
       if (wrong.length) {
-        for (const k of wrong) frameFields[k].setError(Number.isFinite(parseFloat(frame[k].value)) ? `Допустимо: ${k === 'left' || k === 'top' ? 'от 0 до 100' : 'больше 0, не больше 100'} %. Введено: ${frame[k].value}` : 'Введите число, %');
+        for (const k of wrong) frameFields[k].setError(Number.isFinite(parseFloat(frame[k].value)) ? `Допустимо: ${k === 'left' || k === 'top' ? 'from 0 to 100' : 'greater than 0, at most 100'} %. Введено: ${frame[k].value}` : 'Введите число, %');
         frameFields[wrong[0]].firstControl().focus();
         return {error: 'Укажите все четыре числа рамки области: слева и сверху от 0 до 100, ширина и высота больше 0 и не больше 100 %'};
       }

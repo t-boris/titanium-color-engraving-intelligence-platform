@@ -33,8 +33,8 @@ def page_scripts():
 
 
 AUDIT = r"""
-const UNIT = /(мм|мкм|%|нс|кГц|Вт|нм|\bч\b|с\/см|\bс\b|°|ΔE|×|ячеек|мДж|Дж|без единицы|единица:|минут)/i;
-const RANGE = /(допустимо|от \d|не меньше|больше|не больше|целое|\d\s*[–-]\s*\d|ограничен)/i;
+const UNIT = /(mm|µm|%|ns|kHz|W|nm|\bh\b|s\/cm|\bs\b|°|ΔE|×|cells|mJ|\bJ\b|unitless|unit:|minutes|pixels)/i;
+const RANGE = /(allowed|from \d|at least|greater than|at most|whole number|\d\s*[–-]\s*\d|limited)/i;
 const seen = {controls: 0, unnamed: [], numeric: 0, noUnit: [], noRange: []};
 const audited = new WeakSet();                                  // a control seen on a tab is not counted again on the next
 const walk = (node, fn) => { fn(node); for (const c of node.childNodes || []) if (c.nodeType === 1) walk(c, fn); };
@@ -157,8 +157,8 @@ const screens = [
 const unbuilt = [];
 // The buttons that open a dialog (their words say so: a window, a form to fill) are pressed, the dialog is audited and closed. A button that
 // destroys or sends something is never pressed.
-const OPENS = /…$|^(Новая работа|Создать плату|Размер|Выбрать настройки|Целевой цвет|Подробно)/;
-const NEVER = /Удал|Сброс|Убрать|Очист|Отмен|Закрыть|Принять|Подтверд|Отправ|Сохран|Запуст|Скачать|Выход/;
+const OPENS = /…$|^(Новая работа|Создать плату|Размер|Выбрать настройки|Целевой цвет|Подробно|New work|Create plate|Size|Choose settings|Target color|Details)/i;
+const NEVER = /Удал|Сброс|Убрать|Очист|Отмен|Закрыть|Принять|Подтверд|Отправ|Сохран|Запуст|Скачать|Выход|delete|reset|remove|clear|cancel|close|accept|confirm|send|save|start|download|sign out/i;
 const dialogs = [];
 async function openDialogs(tree, where) {
   const opened = new Set();

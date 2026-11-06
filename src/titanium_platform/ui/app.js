@@ -232,7 +232,7 @@ const App = (() => {
     const sampler = h('details', {class: 'target-sampler'}, h('summary', {}, 'Sample a color from an image'),
       h('div', {class: 'stack'}, h('p', {class: 'small muted'}, 'The file is read on this device; the sample color depends on the image and display.'),
         App.filePick ? App.filePick(source, 'Choose image') : source, image,
-        h('div', {class: 'toolbar'}, field('X, px', x), field('Y, px', y), take), note));
+        h('div', {class: 'toolbar'}, field('X, px', x, null, {constraint: 'whole numbers from 0 to image width minus 1'}), field('Y, px', y, null, {constraint: 'whole numbers from 0 to image height minus 1'}), take), note));
     sampler.addEventListener('toggle', () => { if (sampler.open && imageUrl && !started) loadImage(imageUrl); });
     if (current) set(current); else { picker.value = '#7a5a34'; fill(sample, 'No color selected'); }
     const el = h('div', {class: 'target-color stack'},
