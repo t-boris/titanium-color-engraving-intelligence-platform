@@ -1327,21 +1327,37 @@ def test_the_controller_row_form_says_what_is_wrong_beside_the_box_and_keeps_wha
   let changed = 0;
   const form = ControllerRows.addForm(fields, {change: () => { changed += 1; }});
   body.append(form);
-  await button(form, '+ Добавить').dispatch('click'); await wait();
-  out.empty = {key: labelled(form, 'Название настройки').errorText(), value: labelled(form, 'Значение').errorText(), changed, toasts: body.querySelectorAll('.toast').length,
+  await button(form, '+ Add').dispatch('click'); await wait();
+  out.empty = {key: labelled(form, 'Setting name').errorText(), value: labelled(form, 'Value').errorText(), changed, toasts: body.querySelectorAll('.toast').length,
     form: form.querySelector('.f-form-error').textContent};
-  inputOf(form, 'Название настройки').value = ' Power ';
-  inputOf(form, 'Значение').value = '35,5';
-  await button(form, '+ Добавить').dispatch('click'); await wait();
-  out.twice = {key: labelled(form, 'Название настройки').errorText(), value: labelled(form, 'Значение').errorText(), kept: [inputOf(form, 'Название настройки').value, inputOf(form, 'Значение').value], changed};
-  inputOf(form, 'Название настройки').value = 'Speed';
-  await button(form, '+ Добавить').dispatch('click'); await wait();
+  inputOf(form, 'Setting name').value = ' Power ';
+  inputOf(form, 'Value').value = '35,5';
+  await button(form, '+ Add').dispatch('click'); await wait();
+  out.twice = {key: labelled(form, 'Setting name').errorText(), value: labelled(form, 'Value').errorText(), kept: [inputOf(form, 'Setting name').value, inputOf(form, 'Value').value], changed};
+  inputOf(form, 'Setting name').value = 'Speed';
+  await button(form, '+ Add').dispatch('click'); await wait();
   out.added = {fields, changed};
 """, scripts=SCRIPTS + ["screens/glossary-controller.js", "screens/controller-rows.js"])
-    assert out["empty"]["key"] == "Укажите название настройки" and out["empty"]["value"] == "Укажите значение настройки" and out["empty"]["changed"] == 0 and out["empty"]["toasts"] == 0
-    assert "“Название настройки”" in out["empty"]["form"]
-    assert out["twice"]["key"] == "Такая настройка в этом разделе уже есть" and out["twice"]["value"] == "" and out["twice"]["kept"] == [" Power ", "35,5"] and out["twice"]["changed"] == 0
+    assert out["empty"]["key"] == "Enter a setting name" and out["empty"]["value"] == "Enter a setting value" and out["empty"]["changed"] == 0 and out["empty"]["toasts"] == 0
+    assert "“Setting name”" in out["empty"]["form"]
+    assert out["twice"]["key"] == "This setting already exists in this section" and out["twice"]["value"] == "" and out["twice"]["kept"] == [" Power ", "35,5"] and out["twice"]["changed"] == 0
     assert out["added"]["fields"][1] == {"key": "Speed", "value": 35.5, "unit": None, "status": "confirmed"} and out["added"]["changed"] == 1
+
+
+@node
+def test_legacy_unread_controller_value_is_not_changed_by_an_empty_edit(tmp_path):
+    out = run(tmp_path, """
+  const ControllerRows = require('vm').runInContext('ControllerRows', ctx);
+  const field = {key: 'Power', value: ControllerRows.UNREAD, status: 'handwritten'};
+  let changed = 0;
+  const row = ControllerRows.row(field, [field], {help: false, change: () => changed++});
+  const input = row[1];
+  out.before = [input.value, input.getAttribute('placeholder'), field.value === ControllerRows.UNREAD];
+  await input.dispatch('change');
+  out.after = [input.value, field.value === ControllerRows.UNREAD, changed];
+""", scripts=SCRIPTS + ["screens/glossary-controller.js", "screens/controller-rows.js"])
+    assert out["before"] == ["", "Not read from photo", True]
+    assert out["after"] == ["", True, 0]
 
 
 @node
