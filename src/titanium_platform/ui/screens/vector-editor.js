@@ -179,6 +179,7 @@ const VectorEditor = (() => {
       h('span', {class: 'spacer'}),
       h('div', {class: 'vw-ed-group', role: 'group', 'aria-label': 'Отмена и повтор'}, undoBtn, redoBtn));
     const totals = h('p', {class: 'vw-ed-totals small'});
+    const toolStatus = h('p', {class: 'small vw-ed-tool-status', role: 'status', 'aria-live': 'polite'});
 
     const toolButtons = TOOLS.map(([t, label]) => btn(label, () => setTool(t)));
     const scopeButtons = SCOPES.map(([s, label]) => btn(label, () => setScope(s)));
@@ -272,7 +273,7 @@ const VectorEditor = (() => {
       onClick: () => (panelOpen ? closePanel(true) : openPanel(null))}, 'Панель: кисть, слои, цвета, надписи');
     bar.append(panelToggle);
     const el = h('div', {class: 'vw-editor'},
-      h('div', {class: 'vw-ed-main'}, bar, totals, stage,
+      h('div', {class: 'vw-ed-main'}, bar, toolStatus, totals, stage,
         h('p', {class: 'small muted'}, 'Колесо мыши — масштаб у курсора, перетаскивание — сдвиг (при «Выделении» — лассо, сдвиг — пробел+перетаскивание '
           + 'или средней кнопкой), «Вписать» — вся картинка. ', 'Ctrl+Z — отменить, Ctrl+Shift+Z — повторить, Esc — снять выделение. ',
         'Без мыши: Tab на картинку — стрелки сдвигают вид, + и − меняют масштаб, 0 вписывает; области выбираются в списке «Области» на вкладке «Цвета».')),
@@ -741,11 +742,17 @@ const VectorEditor = (() => {
     function undoRedo(kind) { if ((j[kind] || 0) > 0) act({op: kind}); }
 
     // --- панель -----------------------------------------------------------------------------------------------------------
+    function showToolStatus() {
+      const scopes = {region: 'одну область', colour: 'все области исходного цвета', fill: 'похожих соседей'};
+      toolStatus.textContent = state.tool === 'brush' ? `Инструмент: кисть. Щелчок изменит ${scopes[state.scope]}.`
+        : state.tool === 'select' ? 'Инструмент: выделение. Щелчок выбирает область.' : 'Инструмент: пипетка. Щелчок выбирает цвет.';
+    }
     function setTool(t) {
       state.tool = t;
       toolButtons.forEach((b, i) => b.setAttribute('aria-pressed', TOOLS[i][0] === t ? 'true' : 'false'));
       stage.setAttribute('class', `vw-ed-stage tool-${t}` + (spaceHeld ? ' pan-ready' : ''));
       scopeBox.hidden = t !== 'brush';
+      showToolStatus();
       refreshHover();
     }
 
@@ -753,6 +760,7 @@ const VectorEditor = (() => {
       state.scope = s;
       scopeButtons.forEach((b, i) => b.setAttribute('aria-pressed', SCOPES[i][0] === s ? 'true' : 'false'));
       simBox.hidden = s !== 'fill';
+      showToolStatus();
       refreshHover();
     }
 

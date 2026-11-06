@@ -291,15 +291,18 @@ def test_a_palette_of_hundreds_shows_sixty_squares_and_more_on_request_and_keeps
 def test_a_brush_click_paints_the_area_the_source_colour_or_the_fill_the_hover_outlined(tmp_path):
     out = run_editor(tmp_path, routes(), """
   svg().setAttribute('data-mark', 'first');
+  out.scopeRegion = tree.querySelector('.vw-ed-tool-status').textContent;
   await swatch('e14').dispatch('click');
   out.active = section('Активный цвет').textContent;
   await path('r1').dispatch('click'); await tick();
   await byText(tree, 'button', 'Весь исходный цвет').dispatch('click');
+  out.scopeColour = tree.querySelector('.vw-ed-tool-status').textContent;
   await path('r1').dispatch('pointermove', {clientX: 5, clientY: 5});
   out.hotColour = classed('vw-hot');
   out.tip = tree.querySelectorAll('div').find((d) => d.className === 'vw-ed-tip').textContent;
   await path('r1').dispatch('click'); await tick();
   await byText(tree, 'button', 'Заливка похожих').dispatch('click');
+  out.scopeFill = tree.querySelector('.vw-ed-tool-status').textContent;
   await path('r3').dispatch('pointermove', {clientX: 25, clientY: 5});
   out.hotBeforeReach = classed('vw-hot');
   await wait(200);
@@ -314,6 +317,7 @@ def test_a_brush_click_paints_the_area_the_source_colour_or_the_fill_the_hover_o
   out.sameSvg = svg().getAttribute('data-mark') === 'first';
   out.svgFetches = ctx.requests.filter((r) => r.path.endsWith('/split.svg')).length;
 """)
+    assert "одну область" in out["scopeRegion"] and "все области исходного цвета" in out["scopeColour"] and "похожих соседей" in out["scopeFill"]
     assert "Загрузка" not in out["active"] and "не оценено" in out["active"] and "автоматика его не выбирает" in out["active"]
     assert out["hotColour"] == ["r1", "r2"] and out["hotBeforeReach"] == ["r3"] and out["hotFill"] == ["r3", "r4"]
     assert out["tip"].startswith("Область r1 · исходный цвет № 1 · титан: ΔE 1.16") and "рецепт: 10.0 % · 30.0 кГц · 500 мм/с" in out["tip"]
@@ -776,6 +780,7 @@ def test_the_photo_tab_selects_regions_and_holds_the_selection_with_its_actions(
   out.before = [tool('Кисть'), tool('Выделение'), panelOf(section('Выделение'))];
   await tab('Фото').dispatch('click');
   out.on = [tool('Кисть'), tool('Выделение'), panelOf(section('Выделение'))];
+  out.status = tree.querySelector('.vw-ed-tool-status').textContent;
   out.stage = tree.querySelectorAll('div').find((d) => (d.className || '').startsWith('vw-ed-stage')).className;
   out.empty = section('Фотозоны').textContent;
   await path('r1').dispatch('click');
@@ -790,6 +795,7 @@ def test_the_photo_tab_selects_regions_and_holds_the_selection_with_its_actions(
 """)
     assert out["before"] == ["true", "false", "vw-ed-tab-panel-brush"]
     assert out["on"] == ["false", "true", "vw-ed-tab-panel-photo"] and "tool-select" in out["stage"]
+    assert "выделение" in out["status"] and "выбирает область" in out["status"]
     assert "Обведите мышью (лассо) области на картинке" in out["empty"] and "в «Выделении» выше" in out["empty"]
     assert out["selected"] == ["r1", "r2"] and out["sent"] == 0                      # a click on «Фото» selects, it does not paint
     assert "Сделать фотозоной" in out["actions"] and out["posted"] == [{"op": "photo_add", "regions": ["r1", "r2"]}]

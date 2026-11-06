@@ -170,8 +170,9 @@
     const el = h('div', {class: 'stack'});
     async function show() {
       const data = await get('/labs/own');
-      fill(el, publicForm(data.public, show), previewCard(data.terms, data.exports, show), await LabsCloud.ownCard(data.terms, show),
-        withdrawalCard(data.exports, data.withdrawals, show));
+      const cloud = h('div', {'aria-live': 'polite'}, 'Загрузка облака…');
+      fill(el, publicForm(data.public, show), previewCard(data.terms, data.exports, show), cloud, withdrawalCard(data.exports, data.withdrawals, show));
+      LabsCloud.ownCard(data.terms, show).then((card) => fill(cloud, card)).catch((e) => fill(cloud, h('p', {class: 'alert bad'}, e.message)));
     }
     await show();
     return el;
@@ -303,8 +304,10 @@
     const el = h('div', {class: 'stack'});
     async function show() {
       const list = await get('/labs/sources');
-      fill(el, await LabsCloud.automaticNotices(show), LabsCloud.updatesCard(list, show), list.length ? connectedList(list)
+      const notices = h('div', {'aria-live': 'polite'});
+      fill(el, notices, LabsCloud.updatesCard(list, show), list.length ? connectedList(list)
         : h('div', {class: 'card empty'}, h('h3', {}, 'Подключённых лабораторий нет'), h('p', {class: 'muted'}, 'Подключите лабораторию из каталога облака или из файла .tcelab: её цвета и шкалы станут источником новых работ.')));
+      LabsCloud.automaticNotices(show).then((node) => fill(notices, node)).catch(() => {});
     }
     await show();
     return h('div', {class: 'stack'}, fileCard(show), el);
@@ -473,9 +476,20 @@
 
   App.register({id: 'labs', async render(ctx) {
     if (ctx.query.source) return sourceScreen(encodeURIComponent(ctx.query.source));
-    const [own, sources, catalogue] = await Promise.all([ownTab(), sourcesList(), LabsCloud.catalogueTab()]);
-    const tabs = App.tabs([['own', 'Моя лаборатория', own], ['sources', 'Подключённые лаборатории', sources], ['catalogue', 'Каталог лабораторий', catalogue]],
-      {initial: ['sources', 'catalogue'].includes(ctx.query.tab) ? ctx.query.tab : 'own', remember: ctx.query.tab ? null : 'labs.tab', label: 'Лаборатории', prefix: 'labs-tab'});
+    const loaders = {own: ownTab, sources: sourcesList, catalogue: LabsCloud.catalogueTab};
+    const boxes = Object.fromEntries(Object.keys(loaders).map((id) => [id, h('div', {'aria-live': 'polite'})]));
+    const state = {};
+    function load(id) {
+      if (state[id]) return; // Includes an in-flight request; switching tabs does not start it twice.
+      state[id] = 'loading';
+      fill(boxes[id], h('p', {role: 'status'}, 'Загрузка…'));
+      loaders[id]().then((node) => { state[id] = 'ready'; fill(boxes[id], node); }).catch((e) => {
+        state[id] = null;
+        fill(boxes[id], h('div', {class: 'alert bad', role: 'alert'}, h('p', {}, e.message), btn('Повторить', () => load(id))));
+      });
+    }
+    const tabs = App.tabs([['own', 'Моя лаборатория', boxes.own], ['sources', 'Подключённые лаборатории', boxes.sources], ['catalogue', 'Каталог лабораторий', boxes.catalogue]],
+      {initial: ['sources', 'catalogue'].includes(ctx.query.tab) ? ctx.query.tab : 'own', remember: ctx.query.tab ? null : 'labs.tab', label: 'Лаборатории', prefix: 'labs-tab', onSelect: load});
     return h('div', {class: 'stack'},
       h('div', {class: 'row'}, h('div', {}, h('h2', {}, 'Лаборатории'),
         h('p', {class: 'sub'}, 'Переносимые результаты: выпуск своей лаборатории файлом .tcelab или в облако и подключённые выпуски других мастерских — из каталога облака или из файла — '

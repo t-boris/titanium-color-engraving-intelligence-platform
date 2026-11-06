@@ -91,6 +91,26 @@ def base_routes(**more) -> dict:
             "/api/cloud/catalogue": {"GET": ok({"api_url": "https://cloud.test", "signed_in": False, "labs": []})}, "/api/cloud/updates/automatic": {"POST": ok([])}, **more}
 
 
+@node
+def test_laboratory_tabs_load_on_selection_and_retry_a_failed_catalogue(tmp_path):
+    routes = base_routes(**{"/api/cloud/catalogue": {"GET": ok({"error": "offline"}, 503)}})
+    out = run(tmp_path, routes, """
+  const tree = await ctx.__screens.labs.render({query: {}}); await tick();
+  out.initial = ctx.requests.map((r) => r.path);
+  const tab = byText(tree, 'button', 'Каталог лабораторий');
+  await tab.dispatch('click'); await tick();
+  out.failed = byRole(tree, 'tabpanel')[2].textContent;
+  data.routes['/api/cloud/catalogue'] = {GET: {status: 200, json: {api_url: 'https://cloud.test', signed_in: false, labs: []}}};
+  await byText(byRole(tree, 'tabpanel')[2], 'button', 'Повторить').dispatch('click'); await tick();
+  out.recovered = byRole(tree, 'tabpanel')[2].textContent;
+  await tab.dispatch('click'); await tick();
+  out.catalogueRequests = ctx.requests.filter((r) => r.path === '/api/cloud/catalogue').length;
+""")
+    assert "/api/cloud/catalogue" not in out["initial"] and "/api/labs/sources" not in out["initial"]
+    assert "Повторить" in out["failed"] and "В каталоге пока нет лабораторий" in out["recovered"]
+    assert out["catalogueRequests"] == 2
+
+
 def test_the_cloud_files_are_loaded_in_order_show_cloud_text_as_text_and_name_every_cloud_route():
     scripts = re.findall(r'<script src="(/[^"]+)"', (UI_DIR / "index.html").read_text(encoding="utf-8"))
     order = {s: i for i, s in enumerate(scripts)}
@@ -303,6 +323,7 @@ def test_with_the_cloud_switched_off_or_unreachable_the_rest_of_the_screen_still
   const tree = await ctx.__screens.labs.render({query: {}});
   await tick();
   out.own = tree.querySelector('.cloud-own').textContent;
+  await byText(tree, 'button', 'Каталог лабораторий').dispatch('click'); await tick();
   out.catalogue = byRole(tree, 'tabpanel')[2].textContent;
   out.publicForm = tree.querySelectorAll('h3').map((x) => x.textContent);
 """)
@@ -340,10 +361,12 @@ def test_the_written_releases_the_connected_laboratories_the_catalogue_and_the_i
   const invited = cloud.querySelectorAll('.lst')[1];
   out.invitations = [lines(invited).map((x) => x.slice(0, 16)), invited.querySelectorAll('.lst-chip').map((c) => c.textContent),
     invited.querySelectorAll('button').filter((b) => b.textContent === 'Отозвать').length];
+  await byText(tree, 'button', 'Подключённые лаборатории').dispatch('click'); await tick();
   out.sources = [connected.querySelectorAll('.lab-name').map((n) => n.textContent), connected.querySelectorAll('.lst-chip').map((c) => c.textContent),
     connected.querySelectorAll('.lst-act').map((a) => a.textContent)];
   await connected.querySelectorAll('.lst-main')[0].dispatch('click'); await tick();
   out.sourceDetails = connected.querySelectorAll('.lst-det').find((d) => !d.hidden).textContent;
+  await byText(tree, 'button', 'Каталог лабораторий').dispatch('click'); await tick();
   out.catalogue = catalogue.querySelectorAll('.lst-chip').map((c) => c.textContent);
   await catalogue.querySelectorAll('.lst-chip').find((c) => c.textContent.startsWith('не подключены')).dispatch('click'); await tick();
   out.notConnected = catalogue.querySelectorAll('.lab-name').map((n) => n.textContent);

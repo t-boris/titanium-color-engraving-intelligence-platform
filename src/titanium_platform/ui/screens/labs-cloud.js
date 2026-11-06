@@ -261,7 +261,7 @@
     const progress = h('div', {class: 'stack cloud-progress', hidden: true});        // the same node in every redraw: a connection's end stays shown
     async function show() {
       let cat;
-      try { cat = await get('/cloud/catalogue'); } catch (e) { return fill(el, h('div', {class: 'card'}, h('p', {class: 'alert bad', role: 'alert'}, e.message))); }
+      try { cat = await get('/cloud/catalogue'); } catch (e) { return fill(el, h('div', {class: 'card'}, h('p', {class: 'alert bad', role: 'alert'}, e.message), btn('Повторить', show))); }
       fill(el, h('p', {class: 'small muted'}, `Облако: ${cat.api_url}` + (cat.signed_in ? '' : ' · без входа показываются только открытые лаборатории')),
         progress, cat.labs.length ? catalogueList(cat.labs, progress, show)
           : h('div', {class: 'card empty'}, h('h3', {}, 'В каталоге пока нет лабораторий'), h('p', {class: 'muted'}, 'Опубликованные выпуски появятся здесь; закрытые лаборатории — после приглашения.')),
