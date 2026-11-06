@@ -1158,7 +1158,7 @@ def test_the_upload_form_speaks_its_stage_once_and_keeps_the_counters_for_the_ey
   const input = form.querySelectorAll('input').find((i) => i.getAttribute('type') === 'file');
   input.files = [{name: 'IMG_1.dng'}];
   const live = form.querySelector('.upload-progress').querySelector('p');
-  button(form, 'Добавить фотографию и проверить').dispatch('click'); await wait();
+  button(form, 'Add photo and check').dispatch('click'); await wait();
   const xhr = FakeXhr.all[0];
   const seen = [];
   for (const percent of [10, 55, 90]) { xhr.progress(percent, 100); seen.push(live.textContent); }
@@ -1168,9 +1168,9 @@ def test_the_upload_form_speaks_its_stage_once_and_keeps_the_counters_for_the_ey
   out.checking = {text: live.textContent, spoken_text: live.childNodes.filter((n) => n.nodeType === 3).map((n) => n.data), hidden: live.querySelectorAll('span').map((s) => s.getAttribute('aria-hidden'))};
   out.panel = Operations.items().map((o) => [o.title, o.state]);
 """, scripts=SCRIPTS + ["filepick.js", "screens/ingest-upload.js"])
-    assert out["uploading"] == {"role": "status", "live": "polite", "texts": ["Загрузка фотографии: 10 %", "Загрузка фотографии: 55 %", "Загрузка фотографии: 90 %"],
-                                "spoken_text": ["Загрузка фотографии: "], "hidden": ["true"]}                  # the words once; the number is not read each time
-    assert out["checking"]["text"].endswith(" 0 с") and out["checking"]["hidden"] == ["true"]
+    assert out["uploading"] == {"role": "status", "live": "polite", "texts": ["Uploading photo: 10 %", "Uploading photo: 55 %", "Uploading photo: 90 %"],
+                                "spoken_text": ["Uploading photo: "], "hidden": ["true"]}                  # the words once; the number is not read each time
+    assert out["checking"]["text"].endswith(" 0 s") and out["checking"]["hidden"] == ["true"]
     assert len(out["checking"]["spoken_text"]) == 1 and not any(c.isdigit() for c in out["checking"]["spoken_text"][0])
     # the upload and the check that follows it are both in the panel (the screen may be left during either)
     assert out["panel"] == [["Checking uploaded photograph", "done"], ["Uploading repeat photograph", "done"]]

@@ -390,7 +390,7 @@ def test_the_upload_form_selects_the_record_of_the_address_and_sends_the_chosen_
       Xhr.sent = [];
       ctx.XMLHttpRequest = Xhr;
       const box = mount(await ctx.__screens.ingest.render({query: {material: '137'}}));
-      const stock = picker(box, 'Использованный титан / лист / партия');
+      const stock = picker(box, 'Titanium / sheet / batch used');
       await until(() => stock.record !== null);
       out.start = {pickers: qa(box, '.matpick').length, records: records(box), value: stock.value, label: labelOf(stock), urls: stockUrls()};
       stock.value = '64';
@@ -398,7 +398,7 @@ def test_the_upload_form_selects_the_record_of_the_address_and_sends_the_chosen_
       const files = qa(box, 'input').filter((i) => i.getAttribute('type') === 'file');
       files[0].files = [{name: 'work.lbrn2'}];
       files[1].files = [{name: 'IMG_1.CR3'}];
-      await button(box, 'Загрузить пару').dispatch('click');
+      await button(box, 'Upload pair').dispatch('click');
       await until(() => Xhr.sent.length === 1);
       const material = Xhr.sent[0].fd.items.find(([k]) => k === 'context');
       out.sent = {url: Xhr.sent[0].url, context: JSON.parse(material[1]).material_id};

@@ -235,9 +235,9 @@ FORM_BODY = """
   out.banner = tree.querySelectorAll('div').filter((d) => (d.className || '').split(' ').includes('alert')).map((d) => d.textContent);
   out.links = tree.querySelectorAll('a').map((a) => [a.textContent, a.getAttribute('href')]);
   const selects = tree.querySelectorAll('select');
-  out.laser = selects.find((s) => s.getAttribute('aria-label') === 'Лазер').value;
-  out.lens = selects.find((s) => s.getAttribute('aria-label') === 'Линза').value;
-  out.titanium = tree.querySelectorAll('.matpick').find((p) => p.getAttribute('aria-label') === 'Использованный титан / лист / партия').value;      // the stock selector, named by its visible label
+  out.laser = selects.find((s) => s.getAttribute('aria-label') === 'Laser').value;
+  out.lens = selects.find((s) => s.getAttribute('aria-label') === 'Lens').value;
+  out.titanium = tree.querySelectorAll('.matpick').find((p) => p.getAttribute('aria-label') === 'Titanium / sheet / batch used').value;      // the stock selector, named by its visible label
 """
 
 
@@ -260,7 +260,7 @@ def test_the_link_on_the_result_tab_opens_the_upload_form_for_this_work_with_its
 def test_the_upload_form_opened_for_a_work_names_it_and_takes_its_laser_lens_and_titanium(tmp_path):
     plan = {"id": 22, "name": "Inna + Boris", "mode": "Vector job", "device_id": 5, "lens_id": 3, "material_id": 4}
     out = upload_form(tmp_path, {"plan": "22", "material": "4"}, plan, FORM_BODY)
-    assert any("Фото для работы «Inna + Boris»" in text for text in out["banner"]), out["banner"]
+    assert any("Photo for work «Inna + Boris»" in text for text in out["banner"]), out["banner"]
     assert ["«Inna + Boris»", "#/vector?plan=22"] in out["links"]
     assert (out["laser"], out["lens"], out["titanium"]) == ("5", "3", "4")
 
