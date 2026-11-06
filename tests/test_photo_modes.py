@@ -133,7 +133,7 @@ def test_a_plain_frame_on_an_image_layer_strikes_nothing():
     assert covered is None or not covered[250:350, 150:450].any()
 
 
-# -- the Russian table in the UI says the same as the catalogue ---------------------------------------------------
+# -- the English table in the UI says the same as the catalogue ---------------------------------------------------
 def ui_table() -> dict:
     """{key: (family, predict)} read from the first line of each entry of ui/photo-modes.js."""
     import re
@@ -142,7 +142,7 @@ def ui_table() -> dict:
     return {m.group(1): (m.group(2), m.group(3)) for m in re.finditer(r"^    '?(\w+)'?: \{label: '[^']+', family: '(\w+)', predict: '(\w+)',", source, re.M)}
 
 
-def test_the_russian_table_of_the_ui_has_every_mode_of_the_catalogue_with_the_same_family_and_the_same_prediction():
+def test_the_english_table_of_the_ui_has_every_mode_of_the_catalogue_with_the_same_family_and_the_same_prediction():
     table = ui_table()
     assert tuple(table) == tuple(pm.MODES)
     for key, mode in pm.MODES.items():

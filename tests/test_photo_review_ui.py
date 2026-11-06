@@ -335,7 +335,7 @@ def test_a_matrix_pair_has_its_matrix_tool_open_and_no_detail_tool(tmp_path):
 
 
 # -- REQ-002: blockers and warnings with their tools ------------------------------------------------------------------------------
-def test_a_blocker_is_explained_in_russian_and_links_to_the_tool_that_resolves_it(tmp_path, states):
+def test_a_blocker_is_explained_in_english_and_links_to_the_tool_that_resolves_it(tmp_path, states):
     pairs, _, _ = states
     out = run_node(tmp_path, pairs, {}, """
   let tree = await draw('differs');

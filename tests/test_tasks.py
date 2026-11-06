@@ -435,7 +435,7 @@ def _js_keys(name: str) -> set[str]:
     return set(re.findall(r"(\w+):", body))
 
 
-def test_every_task_metric_basis_and_missing_context_has_a_russian_label():
+def test_every_task_metric_basis_and_missing_context_has_a_english_label():
     assert set(tasks.TASKS) <= _js_keys("KIND")
     assert set(tasks.METRICS) | set(tasks.UNAVAILABLE) <= _js_keys("METRIC")
     assert set(tasks.BASES) <= _js_keys("BASIS")

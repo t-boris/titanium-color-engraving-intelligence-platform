@@ -41,7 +41,7 @@ of source colours that share a border, with the share of all borders. Colours in
 towards "max_recipes", the number of different palette colours the whole picture may use. Never use an id that is not in "palette".
 Follow "wish" as an artist would, by your own principles of that look, while obeying "lightness". Choose for the whole picture at once:
 neighbouring regions should stay distinguishable and the result should look like one coherent piece.
-Reply with one JSON object and nothing else: {"colours": {"<source index>": "<palette id>", ...}, "note": "<one sentence in Russian: the idea you followed>"}."""
+Reply with one JSON object and nothing else: {"colours": {"<source index>": "<palette id>", ...}, "note": "<one sentence in English: the idea you followed>"}."""
 
 WISH = {
     "realistic": "Realistic: reproduce the photograph as faithfully as this palette allows. Match each source colour by perceived "

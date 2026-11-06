@@ -30,7 +30,7 @@ INSTRUCTIONS = """You decide how each part of a photograph looks when it is lase
 every grey of the picture becomes a laser power, and on titanium each power gives a colour: "scale" lists greys (0 black .. 255 white) with
 the L*a*b* colour each gives (L* 0 dark .. 100 light, a* green to red, b* blue to yellow). The picture was split into parts by a model:
 "parts" gives each part found, its share of the picture and its mean colour in the photograph. "wish" is what the operator wants, in their
-own words (often Russian). For each part choose one rule:
+own words. For each part choose one rule:
 - "as_is": the picture's own greys there, as the engraver converts the picture (by luminance);
 - "photo": each pixel the grey whose titanium colour is nearest the pixel's own colour;
 - "neutral": black and white, only the greys whose titanium colour is nearly grey ("neutral" gives the lightness they reach); an optional
@@ -42,7 +42,7 @@ own words (often Russian). For each part choose one rule:
 Choose target colours among the colours in "scale": others cannot be engraved, the nearest one is taken instead. A part the wish does not
 mention keeps its rule in "current", or "as_is" when it has none. Use only the parts in "parts".
 Reply with one JSON object and nothing else: {"rules": [{"part": "<part>", "kind": "<rule>", "lab": [L, a, b], "range": [L from, L to]}, ...],
-"note": "<one sentence in Russian: what you did>"}; give "lab" only for colour and even, "range" only for neutral when it is needed."""
+"note": "<one sentence in English: what you did>"}; give "lab" only for colour and even, "range" only for neutral when it is needed."""
 
 
 def request(wish) -> str:
@@ -91,12 +91,12 @@ split into objects: "objects" gives each one's "key", its kind (background; hair
 things worn; lips; eyes; "background-1", "background-2" ... are further pieces of the background), its share of the picture and its mean
 colour in the photograph. An object given a main colour is engraved with its middle tone in that colour and its own light and dark around
 it in colours of the same family; "shift" from -1 (darker) to 1 (lighter) moves its tones within that family. "wish" is what the operator
-wants, in their own words (often Russian); "current" is the main colour each object has now. Give every object a main colour by its
+wants, in their own words; "current" is the main colour each object has now. Give every object a main colour by its
 "power" - only powers listed in "colours" - and a shift: an object the wish does not mention keeps its colour in "current", or, when it has
 none, gets one that suits the wish and the picture. Keep the picture readable: objects that touch (the lips and the face, the face and the
 hair) should differ in colour or lightness.
 Reply with one JSON object and nothing else: {"colours": {"<key>": {"power": <power>, "shift": <-1..1>}, ...}, "note": "<one sentence in
-Russian: what you did>"}."""
+English: what you did>"}."""
 SHIFT_OUTSIDE = "the AI made an object lighter or darker beyond -1..1"
 POWER_TOLERANCE = 0.01              # %: a power the model repeats from "colours" may be rounded this much
 

@@ -196,7 +196,7 @@ def test_the_download_button_asks_the_server_once_for_a_double_click_then_runs_t
 
 
 @node
-def test_a_refused_download_keeps_its_reason_in_russian_beside_the_button_with_a_retry_that_works_once_the_server_agrees(tmp_path):
+def test_a_refused_download_keeps_its_reason_in_english_beside_the_button_with_a_retry_that_works_once_the_server_agrees(tmp_path):
     routes = {"/api/vector/7/export.lbrn2": {"status": 422, "json": {"error": "every region is excluded: there is nothing to engrave", "kind": "invalid"}}}
     out = run(tmp_path, {"routes": routes}, """
   let done = 0;
@@ -216,7 +216,7 @@ def test_a_refused_download_keeps_its_reason_in_russian_beside_the_button_with_a
 
 
 @node
-def test_a_download_that_cannot_reach_the_server_or_gets_an_unreadable_answer_says_so_in_russian(tmp_path):
+def test_a_download_that_cannot_reach_the_server_or_gets_an_unreadable_answer_says_so_in_english(tmp_path):
     routes = {"/api/vector/7/export.lbrn2": {"status": 500, "text": "<html>boom</html>", "type": "text/html"}}
     out = run(tmp_path, {"routes": routes}, """
   const got = LC.downloadButton('/vector/7/export.lbrn2', 'vector.lbrn2', 'Download LightBurn');

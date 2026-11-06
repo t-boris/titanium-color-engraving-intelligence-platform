@@ -381,7 +381,7 @@ def test_without_a_key_the_button_is_off_and_the_screen_says_why(work, job, mode
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
-def test_every_message_of_the_ai_colouring_has_a_russian_translation(tmp_path):
+def test_every_message_of_the_ai_colouring_has_a_english_message(tmp_path):
     from test_i18n_coverage import MARK, run_node
     messages = [ai.UNREADABLE, ai.NOT_MEASURED, ai.INCOMPLETE, ai.ORDER_BROKEN, "the AI chose 5 different colours but the file has 2 layers for them",
                 "the AI service did not answer: check the connection and the key, then try again", "the AI answer was cut off: try again",
@@ -393,3 +393,11 @@ def test_every_message_of_the_ai_colouring_has_a_russian_translation(tmp_path):
                 "every colour of the picture is chosen by hand or left out: there is nothing for the AI to colour"]
     left = run_node(tmp_path, messages, f"console.log(JSON.stringify(data.filter((s)=>tr(s).includes('{MARK}'))));\n")
     assert left == []
+
+
+def test_ai_coloring_prompts_request_english_notes():
+    from titanium_platform import ai_picture
+
+    for instructions in (ai.INSTRUCTIONS, ai_picture.INSTRUCTIONS, ai_picture.OBJECTS_INSTRUCTIONS):
+        assert "English:" in instructions
+        assert "Russian" not in instructions

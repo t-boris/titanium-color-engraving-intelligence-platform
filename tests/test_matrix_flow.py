@@ -83,7 +83,7 @@ def test_correcting_a_matrix_over_http_regenerates_its_file_and_checks_the_photo
     assert check["alignment"]["method"] == "material test grid" and check["problems"] == []
     cell = next(rep for rep in check["layers"] if rep["index"] == 1 * 4 + 2)
     assert (cell["matrix_cell"]["power"], cell["matrix_cell"]["speed"]) == (40.0, 600.0) and cell["measured_lab"] is not None
-    # the server keeps the generated names in English; the screens show them in Russian (I18N.name, test_ui_gaps)
+    # the server keeps the generated names in English; the screens show them in English (I18N.name, test_ui_gaps)
     assert corrected["engraving_title"].startswith("Material test: Power x Speed · 330 kHz 4 ns · ")
     assert all(re.fullmatch(r"Power \d+(\.\d+)? x Speed \d+(\.\d+)?", rep["name"]) for rep in check["layers"]), [r["name"] for r in check["layers"]]
 

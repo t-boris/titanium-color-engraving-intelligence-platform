@@ -1,5 +1,5 @@
 """Screens of the I-15 gaps: what they show is rendered from the fields the API returns (static checks of the scripts, as in
-test_ui_files and test_conversion_ui), and the names the server keeps in English are shown in Russian (run with node)."""
+test_ui_files and test_conversion_ui), and the names the server keeps in English are shown in English (run with node)."""
 import json
 import re
 import shutil
@@ -83,7 +83,7 @@ def test_the_hidden_margins_are_shown_per_side_on_the_review_and_the_experiment_
     assert "return {render, matrixGrid, hiddenMargins};" in review and "IngestReview.hiddenMargins(check.alignment)" in experiment
 
 
-# -- REQ-031: the names of a matrix and its cells in Russian ---------------------------------------------------------------------
+# -- REQ-031: the names of a matrix and its cells in English ---------------------------------------------------------------------
 def test_the_matrix_title_and_cell_names_are_shown_through_the_name_rules():
     review, experiment, dialogs = source("screens/ingest-review.js"), source("screens/experiment.js"), source("screens/ingest-dialogs.js")
     assert "I18N.name(pair.engraving_title)" in review and "I18N.name(layer.name)" in review and "I18N.name(l.name)" in review
@@ -92,7 +92,7 @@ def test_the_matrix_title_and_cell_names_are_shown_through_the_name_rules():
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
-def test_the_server_names_of_a_matrix_read_in_russian_and_an_operators_title_is_left_alone(tmp_path):
+def test_the_server_names_of_a_matrix_read_in_english_and_an_operators_title_is_left_alone(tmp_path):
     names = ["Material test: Power x Speed · 330 kHz 4 ns · IMG_3290", "Material test: Interval · 1950 kHz 2 ns · IMG_3291",
              "Material test: matrix · IMG_3292", "Power 20.0 x Speed 900", "Q-Pulse 4", "Interval 0.0030 x Power 35", "Cell 2,3",
              "Inna portrait", "C01", "Speed 900 x Colour 3"]
@@ -146,7 +146,7 @@ def test_the_matrix_review_shows_the_recognised_labels_the_uncertain_values_and_
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
-def test_the_notes_of_unread_shapes_and_unknown_settings_read_in_russian(tmp_path):
+def test_the_notes_of_unread_shapes_and_unknown_settings_read_in_english(tmp_path):
     out = run_translations(tmp_path, ["2 Ellipse objects on this layer are not read: no outline geometry",
                                       "settings unknown to this version are kept with the recipe but not interpreted: perfMode, rampLength"])
     assert out == ["2 Ellipse objects on this layer are not read: no outline geometry",

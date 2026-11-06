@@ -131,7 +131,7 @@ def public_plan(plan: dict, with_regions: bool = False) -> dict:
 def content_disposition(name: str, extension: str) -> str:
     """A ``Content-Disposition`` header that survives any plan name (RFC 6266 / RFC 5987).
 
-    HTTP header values must be Latin-1, but plan names are typed in a Russian UI. The plain ``filename`` is an
+    HTTP header values must be Latin-1, but plan names can contain non-ASCII characters. The plain ``filename`` is an
     ASCII fallback (every other character becomes ``_``); ``filename*`` carries the real name as UTF-8, which
     current browsers prefer. Quotes, backslashes, control characters and path separators never reach the header.
     """

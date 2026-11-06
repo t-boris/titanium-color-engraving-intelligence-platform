@@ -361,7 +361,7 @@ def test_rig_repeatability_is_shown_with_the_stability_data():
         assert ("reference chart" if screen.endswith("knowledge.js") else "reference card") in text, screen         # says it exists only for chart-corrected re-photographs
 
 
-def test_every_file_input_is_shown_through_the_russian_file_picker():
+def test_every_file_input_is_shown_through_the_english_file_picker():
     """Regression: the native file input showed 'Choose File / no file selected' in English, off-centre in its box."""
     pattern = re.compile(r"field\('[^']*', (\w+)\)")
     offenders = []

@@ -251,7 +251,7 @@ const App = (() => {
   const BODY_SOURCES = ['body', 'query', 'path', 'form', 'header', 'cookie'];
   const LIMIT_WORDS = {gt: (v) => `greater than ${v}`, ge: (v) => `at least ${v}`, lt: (v) => `less than ${v}`, le: (v) => `at most ${v}`};
   const LIMIT_OF = {greater_than: 'gt', greater_than_equal: 'ge', less_than: 'lt', less_than_equal: 'le'};
-  /** The text of one item of FastAPI's validation list, in Russian, from its ``type`` and ``ctx`` (nothing is made up: the limits are the server's). */
+  /** The text of one item of FastAPI's validation list, in English, from its ``type`` and ``ctx`` (nothing is made up: the limits are the server's). */
   function validationText(item) {
     const type = item && item.type;
     if (type === 'missing') return 'Complete this field';

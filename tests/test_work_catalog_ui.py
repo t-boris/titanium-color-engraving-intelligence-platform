@@ -502,7 +502,7 @@ def test_rename_of_a_work_that_has_gone_says_so_closes_and_the_catalog_is_read_a
   out.after = {{names: names(s), closed: dialog() == null, toast: toasts(), refreshed: gets().length - getsBefore}};
 """)
     assert out["after"]["names"] == ["V002"] and out["after"]["closed"] is True and out["after"]["refreshed"] >= 1
-    assert out["after"]["toast"] and "plan 1 not found" in out["after"]["toast"]                  # said in Russian, not as the server's English
+    assert out["after"]["toast"] and "plan 1 not found" in out["after"]["toast"]                  # said in English beside the control
 
 
 @node
