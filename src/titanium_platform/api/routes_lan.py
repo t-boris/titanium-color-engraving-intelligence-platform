@@ -176,7 +176,8 @@ PAIR_PAGE = """<!doctype html>
 @pages.get("/pair", response_class=HTMLResponse, include_in_schema=False)
 def pair_page(request: Request):
     """The page a tablet opens to enter the pairing code; it carries the CA fingerprint to compare with the browser's warning."""
-    certs = lan_of(request).ensure_certificates()
+    network = lan_of(request)
+    certs = network.certs or network.ensure_certificates()
     name = lan.settings(store_of(request))["name"]
     return HTMLResponse(PAIR_PAGE.replace("__NAME__", html.escape(name)).replace("__FINGERPRINT__", html.escape(certs.fingerprint)),
                         headers={"Cache-Control": "no-store"})
