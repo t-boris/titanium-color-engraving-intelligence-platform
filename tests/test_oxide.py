@@ -242,3 +242,16 @@ def test_only_model_eligible_observations_are_fitted_and_a_laser_and_lens_keep_t
     oxide.report(store, partition=(device_id, None))
     assert store.get_setting(f"oxide_model:laser:{device_id}/lens:unknown")["stamp"]["count"] == 8
     assert store.get_setting("oxide_model") is None                  # the partition's fit is kept apart from the general one
+
+
+def test_fewer_than_six_observations_leave_the_fit_summary_empty(store):
+    import obs
+    w = obs.setup(store)
+    evidence = {"role": "test feature", "color_measurement": {"mode": "reference_chart_corrected"}}
+    for index in range(4):
+        obs.add(store, w, (40 + index, 5, 10 + index), power=10 + index, model_eligible=1, evidence=evidence)
+    report = oxide.report(store)
+    assert report["points"] == []
+    assert report["summary"]["observations"] == 0
+    assert report["summary"]["median_de_coloured"] is None
+    assert "fewer than 6" in report["note"]

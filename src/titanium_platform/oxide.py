@@ -246,6 +246,8 @@ def report(store: Store, refit: bool = False, partition: tuple[int, int | None] 
     _attach_doses(store, points)
     ordered = assign_ramps(points, table) if ORDER_BY_RAMPS else 0
     residual = np.array([p["residual_de"] for p in points]) if points else np.zeros(0)
+    # A small input set is not fitted, so summarize only the points that actually have residuals.
+    coloured = np.array([p["coloured"] for p in points], dtype=bool)
     summary = {
         "observations": len(points), "coloured": int(coloured.sum()), "dark": int((~coloured).sum()),
         "median_de_coloured": round(float(np.median(residual[coloured])), 2) if coloured.any() else None,
