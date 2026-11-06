@@ -207,7 +207,7 @@ def _opener(ca_pem: bytes):
     return urllib.request.build_opener(urllib.request.HTTPSHandler(context=context), urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
 
 
-def test_downloading_a_running_workshops_ca_does_not_rediscover_network_addresses(tmp_path, monkeypatch):
+def test_existing_ca_and_pairing_page_do_not_rediscover_network_addresses(tmp_path, monkeypatch):
     with TestClient(create_app(tmp_path / "data"), base_url="http://127.0.0.1") as owner:
         expected = owner.app.state.lan.ensure_certificates().ca_pem()
 
@@ -217,6 +217,8 @@ def test_downloading_a_running_workshops_ca_does_not_rediscover_network_addresse
         monkeypatch.setattr(lan, "addresses", no_lookup)
         response = owner.get("/api/lan/ca")
         assert response.status_code == 200 and response.content == expected
+        page = owner.get("/pair")
+        assert page.status_code == 200 and owner.app.state.lan.certs.fingerprint in page.text
 
 
 def test_the_lan_server_starts_with_the_workshop_certificate_when_enabled_and_stops_when_switched_off(tmp_path):

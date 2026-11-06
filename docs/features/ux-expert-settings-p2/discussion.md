@@ -137,3 +137,7 @@ CI for PR #36 passed all 3006 tests on Linux/Python 3.11, then failed its instal
 ### Codex · 2026-11-06
 
 Two consecutive macOS CI runs timed out downloading the LAN CA although the TLS test passes locally. A plausible source is that the CA endpoint repeats hostname and address discovery on every request. Patch 0.40.2 serves the already loaded CA instead; 14 LAN tests passed with CI-matching FastAPI dependencies, including a new test that fails if CA download rediscovers addresses. The precise cause of the GitHub timeout remains unconfirmed until CI reruns.
+
+### Codex · 2026-11-06
+
+The 0.40.2 GitHub macOS run passed the previous CA-download point but timed out on the pairing page after restarting LAN. That page also repeated certificate/address discovery. Patch 0.40.3 uses the already loaded certificate on both routes. The new regression test fails against 0.40.2 and passes with the fix; all 14 LAN tests pass locally with CI-matching dependencies. GitHub confirmation remains pending.
