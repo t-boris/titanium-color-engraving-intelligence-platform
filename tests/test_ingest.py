@@ -275,6 +275,12 @@ def test_a_photograph_is_corrected_toward_the_chart_values_of_its_own_rig(world)
     evidence = json.loads(s.one("SELECT evidence_json FROM observation WHERE pair_id=? LIMIT 1", (pid,))["evidence_json"])
     assert evidence["chart_reference"]["source"] == "this chart measured with a spectrophotometer"
     assert ig.get_pair(s, pid)["stand_id"] == rig["id"]
+    # Changing or restoring a rig reference affects later checks, not accepted observations.
+    before = [tuple(row) for row in s.query("SELECT * FROM observation WHERE pair_id=? ORDER BY id", (pid,))]
+    su.save_chart_reference(s, rig["id"], ig.ph.published_reference()["patches_lab"], "D65", "2°", "replacement chart")
+    su.reset_chart_reference(s, rig["id"])
+    after = [tuple(row) for row in s.query("SELECT * FROM observation WHERE pair_id=? ORDER BY id", (pid,))]
+    assert after == before
 
 
 def test_a_rephotograph_is_taken_on_its_sources_rig_unless_another_is_chosen(world):

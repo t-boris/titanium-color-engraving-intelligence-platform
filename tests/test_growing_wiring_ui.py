@@ -18,7 +18,7 @@ def test_the_titanium_tab_of_the_settings_screen_is_the_paged_catalogue(tmp_path
             rows: rows(box).length, count: count(box), editor: q(box, '.mat-editor').getAttribute('aria-label'),
             unbounded: requests('/api/materials').filter((x) => (x.url === '/api/materials' || x.url.startsWith('/api/materials?')) && !x.url.includes('limit=')).length};
         """, ("MaterialCatalog",))
-    assert out["screen"] == {"title": "Settings", "tabs": ["Stock", "Capture", "Repeatability", "Photo markers"], "pressed": ["Stock"], "rows": 20,
+    assert out["screen"] == {"title": "Settings", "tabs": ["Stock", "Capture", "Repeatability", "Photo markers", "Display"], "pressed": ["Stock"], "rows": 20,
                              "count": "showing 20 of 60", "editor": "Material #5", "unbounded": 0}
 
 

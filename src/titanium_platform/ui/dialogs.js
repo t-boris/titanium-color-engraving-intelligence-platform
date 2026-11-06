@@ -16,10 +16,13 @@ Object.assign(App, (() => {
 
   // The dialogs open now, the last is on top: only it answers Escape and Tab, and everything behind the top one is inert.
   const open = [];
-  const FOCUSABLE = 'a, button, input, select, textarea, [tabindex]';
+  const FOCUSABLE = 'a, button, input, select, textarea, summary, [tabindex]';
   const reachable = (box) => [...box.querySelectorAll(FOCUSABLE)].filter((el) => {
-    if (el.disabled || el.getAttribute('tabindex') === '-1' || (el.localName === 'a' && !el.hasAttribute('href'))) return false;
-    for (let n = el; n && n !== box; n = n.parentNode) if (n.hidden) return false;
+    if (el.disabled || Number(el.getAttribute('tabindex')) < 0 || (el.localName === 'a' && !el.hasAttribute('href')) ||
+        (el.localName === 'input' && el.getAttribute('type') === 'hidden')) return false;
+    for (let n = el; n && n !== box; n = n.parentNode) if (n.hidden || (n.hasAttribute && n.hasAttribute('inert'))) return false;
+    if (typeof el.getClientRects === 'function' && !el.getClientRects().length) return false;
+    if (typeof getComputedStyle === 'function' && getComputedStyle(el).visibility === 'hidden') return false;
     return true;
   });
 
@@ -35,13 +38,14 @@ Object.assign(App, (() => {
     const onKey = (e) => {
       if (open[open.length - 1] !== self) return;               // a dialog above this one answers
       if (e.key === 'Escape') { close(); return; }
-      if (e.key !== 'Tab') return;
+      if (e.key !== 'Tab' || e.ctrlKey || e.metaKey || e.altKey) return;
       const items = reachable(box);
       if (!items.length) { e.preventDefault(); return; }
-      const now = document.activeElement;
-      const inside = !!now && box.contains(now);
-      if (e.shiftKey && (!inside || now === items[0])) { e.preventDefault(); items[items.length - 1].focus(); }
-      else if (!e.shiftKey && (!inside || now === items[items.length - 1])) { e.preventDefault(); items[0].focus(); }
+      const at = items.indexOf(document.activeElement);
+      // Native Tab can skip buttons on some systems, even though they are focusable. Traverse the dialog's actual controls ourselves.
+      const next = at < 0 ? (e.shiftKey ? items.length - 1 : 0) : (at + (e.shiftKey ? -1 : 1) + items.length) % items.length;
+      e.preventDefault();
+      items[next].focus();
     };
     const close = () => {
       if (closed) return;

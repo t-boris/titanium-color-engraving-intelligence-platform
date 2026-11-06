@@ -2,7 +2,7 @@
 type: bug
 id: BUG-014
 title: "UX: модальные окна не удерживают фокус и выбирают опасное подтверждение"
-status: open
+status: fixed
 severity: medium
 reporter: Boris Tsekinovsky
 created: 2026-11-05

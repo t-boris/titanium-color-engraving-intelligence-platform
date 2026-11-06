@@ -260,8 +260,10 @@ def test_a_confirmation_starts_on_cancel_keeps_tab_inside_and_gives_the_focus_ba
   const m = App.confirmBox('Delete work?', 'This cannot be undone.', 'Delete', async () => { ran += 1; });
   const names = () => doc.activeElement && doc.activeElement.textContent;
   out.start = names(); out.inert = shell.hasAttribute('inert');
-  const buttons = m.el.querySelectorAll('button');                                  // ×, Cancel, Delete: the browser moves between them itself
+  const buttons = m.el.querySelectorAll('button');                                  // ×, Cancel, Delete
   const close = buttons[0], last = buttons[buttons.length - 1];
+  await doc.dispatch('keydown', {key: 'Tab', shiftKey: false}); out.next = names(); // traversal does not depend on the OS skipping buttons
+  await doc.dispatch('keydown', {key: 'Tab', shiftKey: true}); out.previous = names();
   last.focus(); await doc.dispatch('keydown', {key: 'Tab', shiftKey: false}); out.forward = names();      // Tab from the last wraps to the first
   close.focus(); await doc.dispatch('keydown', {key: 'Tab', shiftKey: true}); out.backward = names();     // Shift+Tab from the first wraps to the last
   opener.focus(); await doc.dispatch('keydown', {key: 'Tab', shiftKey: false}); out.fromBehind = names();  // focus that got behind the dialog is pulled back in
@@ -269,6 +271,7 @@ def test_a_confirmation_starts_on_cancel_keeps_tab_inside_and_gives_the_focus_ba
   out.closed = [doc.body.querySelector('.modal'), ran, shell.hasAttribute('inert'), doc.activeElement === opener];
 """)
     assert out["start"] == "Cancel" and out["inert"] is True
+    assert (out["next"], out["previous"]) == ("Delete", "Cancel")
     assert (out["forward"], out["backward"], out["fromBehind"]) == ("×", "Delete", "×")
     assert out["closed"] == [None, 0, False, True]                              # Escape never confirms
 
@@ -285,6 +288,21 @@ def test_only_the_dialog_on_top_answers_escape_and_the_one_below_is_inert_until_
   out.afterTwo = [doc.body.querySelectorAll('.modal').length, shell.hasAttribute('inert')];
 """)
     assert out["under"] is True and out["afterOne"] == [1, False, True] and out["afterTwo"] == [0, False]
+
+
+@node
+def test_dialog_traversal_skips_controls_without_a_rendered_box(tmp_path):
+    out = run(tmp_path, """
+  const first = h('button', {type: 'button'}, 'First');
+  const hidden = h('button', {type: 'button'}, 'Not rendered');
+  hidden.getClientRects = () => [];
+  const third = h('button', {type: 'button'}, 'Third');
+  const m = App.modal('Choose', h('div', {}, first, hidden, third), [{label: 'Close', run: (d) => d.close()}]);
+  first.focus(); await doc.dispatch('keydown', {key: 'Tab'}); out.forward = doc.activeElement.textContent;
+  await doc.dispatch('keydown', {key: 'Tab', shiftKey: true}); out.backward = doc.activeElement.textContent;
+  m.close();
+""")
+    assert (out["forward"], out["backward"]) == ("Third", "First")
 
 
 @node

@@ -2,14 +2,24 @@
 'use strict';
 (() => {
   const {h, get} = App;
-  const TABS = [['material', 'Stock'], ['rigs', 'Capture'], ['rules', 'Repeatability'], ['markers', 'Photo markers']];
+  const TABS = [['material', 'Stock'], ['rigs', 'Capture'], ['rules', 'Repeatability'], ['markers', 'Photo markers'], ['display', 'Display']];
+
+  function displayTab() {
+    const density = h('select', {'aria-label': 'Display density'},
+      h('option', {value: 'normal'}, 'Normal'), h('option', {value: 'compact'}, 'Compact'));
+    density.value = App.getDensity();
+    density.addEventListener('change', () => App.setDensity(density.value));
+    return h('section', {class: 'card stack'}, h('h3', {}, 'Display density'),
+      h('p', {}, 'Choose the spacing that is comfortable on this device. Labels and errors remain visible.'),
+      App.field('Display density', density));
+  }
 
   App.register({id: 'setup', async render(ctx) {
     const tab = TABS.some((t) => t[0] === ctx.query.tab) ? ctx.query.tab : 'material';
     const reload = (t, extra) => { location.hash = `#/setup?tab=${t || tab}${extra ? '&' + extra : ''}`; App.render(); };
     const body = tab === 'material' ? await MaterialCatalog.tab(ctx)
       : tab === 'rigs' ? SetupForms.rigsTab(await get('/setups'), reload)
-        : tab === 'rules' ? await SetupRules.rulesTab(ctx, reload) : await SetupRules.markersTab(reload);
+        : tab === 'rules' ? await SetupRules.rulesTab(ctx, reload) : tab === 'display' ? displayTab() : await SetupRules.markersTab(reload);
     return h('div', {class: 'stack'}, h('h2', {}, 'Settings'),
       h('p', {class: 'sub'}, 'Titanium stock, capture setups, repeatability rules for each laser and lens, and coded plate markers. '
         + 'Configure lasers and lenses on the Lasers screen; set power, frequency, speed, pulse, spacing and passes for each plate and layer.'),

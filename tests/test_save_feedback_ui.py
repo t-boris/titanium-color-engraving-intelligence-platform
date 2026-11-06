@@ -1288,9 +1288,10 @@ def test_the_rig_form_and_its_chart_reference_say_what_is_wrong_beside_the_box_a
   const inputOf = (root, text) => labelled(root, text).firstControl();
   const writes = () => calls.filter((c) => !c.startsWith('GET'));
   const rig = {id: 5, name: 'Rig', camera: 'cam', lighting: 'LED', angle: '90', reference_chart: 'ColorChecker Classic', legacy: false, last_used: false,
-    chart_reference: {published: true, source: 'ColorChecker', white_point: 'D50', observer: '2°', patches_lab: [[1, 2, 3]]}};
+    chart_reference: {published: true, source: 'ColorChecker', white_point: 'D50', observer: '2°', patches_lab: Array.from({length: 24}, () => [50, 0, 0])}};
+  let sentReference = null;
   serve({'/setups/5': (opts) => ({status: 400, json: {error: 'camera is required', kind: 'invalid'}}),
-         '/setups/5/chart-reference': () => ({status: 400, json: {error: 'the white point must be one of D65, D50', kind: 'invalid'}})});
+         '/setups/5/chart-reference': (opts) => { sentReference = JSON.parse(opts.body); return {status: 400, json: {error: 'the white point must be one of D65, D50', kind: 'invalid'}}; }});
   const tab = SetupForms.rigsTab([rig], () => {});
   body.append(tab);
   const card = tab.querySelectorAll('.card')[0];
@@ -1300,21 +1301,35 @@ def test_the_rig_form_and_its_chart_reference_say_what_is_wrong_beside_the_box_a
   inputOf(card, 'Camera').value = 'Sony A7';
   await button(card, 'Save setup').dispatch('click'); await wait();
   out.refused = {writes: writes(), form: card.querySelectorAll('.f-form-error').pop().textContent, kept: inputOf(card, 'Camera').value, toasts: body.querySelectorAll('.toast').length};
-  // the chart reference: a list of 24 triples, L from 0 to 100, a and b from -128 to 127
+  // Invalid import does not disturb the grid; invalid components stay editable and identify their patch and field.
   const details = card.querySelector('details');
   const values = details.querySelector('textarea');
   values.value = '[[50, 0, 0]]';
+  await button(details, 'Load numbers into grid').dispatch('click'); await wait();
+  out.short = {message: details.querySelector('.alert.bad').textContent, kept: inputOf(details, 'Patch 4 L').value};
+  inputOf(details, 'Patch 4 L').value = '120';
   await button(details, 'Save reference values').dispatch('click'); await wait();
-  out.short = {writes: writes().filter((c) => c.includes('chart')), message: labelled(details, 'Reference Lab values').errorText(), kept: values.value};
-  values.value = JSON.stringify(Array.from({length: 24}, (_, i) => [i === 3 ? 120 : 50, 0, 0]));
+  out.range = {message: labelled(details, 'Patch 4 L').errorText(), kept: inputOf(details, 'Patch 4 L').value,
+    writes: writes().filter((c) => c.includes('chart'))};
+  inputOf(details, 'Patch 4 L').value = '42';
+  await button(details, 'Copy grid to raw numbers').dispatch('click'); await wait();
+  out.exported = JSON.parse(values.value);
   await button(details, 'Save reference values').dispatch('click'); await wait();
-  out.range = labelled(details, 'Reference Lab values').errorText();
+  out.server = {writes: writes().filter((c) => c.includes('chart')), kept: inputOf(details, 'Patch 4 L').value, payload: sentReference};
+  values.value = JSON.stringify(Array.from({length: 24}, (_, i) => [i, -i, i]));
+  await button(details, 'Load numbers into grid').dispatch('click'); await wait();
+  out.imported = [inputOf(details, 'Patch 24 L').value, inputOf(details, 'Patch 24 a').value, inputOf(details, 'Patch 24 b').value];
 """, scripts=SCRIPTS + ["screens/setup-forms.js"])
     assert out["empty"]["writes"] == [] and out["empty"]["camera"] == "Complete this field" and "“Camera”" in out["empty"]["form"]
     assert out["refused"]["writes"] == ["PUT /setups/5"] and out["refused"]["kept"] == "Sony A7" and out["refused"]["toasts"] == 0
     assert "remain in the form" in out["refused"]["form"]                                       # said above the buttons, not in a toast that goes away
-    assert out["short"]["writes"] == [] and out["short"]["message"] == "Exactly 24 [L, a, b] triples are required. Current: 1" and out["short"]["kept"] == "[[50, 0, 0]]"
-    assert out["range"] == "Triple 4: L must be 0–100 and a and b must be -128–127. Entered: [120, 0, 0]"
+    assert out["short"] == {"message": "Enter exactly 24 [L, a, b] numeric triples. The grid is unchanged.", "kept": "50"}
+    assert out["range"] == {"message": "Allowed: from 0 to 100. Entered: 120", "kept": "120", "writes": []}
+    assert len(out["exported"]) == 24 and out["exported"][3] == [42, 0, 0]
+    assert out["server"]["writes"] == ["PUT /setups/5/chart-reference"] and out["server"]["kept"] == "42"
+    assert out["server"]["payload"]["patches_lab"] == out["exported"]
+    assert out["server"]["payload"]["white_point"] == "D50"
+    assert out["imported"] == ["23", "-23", "23"]
 
 
 @node

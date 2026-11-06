@@ -1597,3 +1597,79 @@ body.has-creation-bar .ops-panel {max-height:min(60vh,520px,calc(100vh - var(--c
 .lst-row {flex-wrap:wrap}
 .lst-main {flex:1 1 10em}
 .ge-previous-image { width: 100%; height: auto; }
+
+/* ColorChecker reference values: each patch remains individually labeled at narrow widths. */
+.reference-grid {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%, 290px),1fr));gap:12px}
+.reference-patch {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding:12px;border:1px solid var(--line);border-radius:8px}
+.reference-patch>strong {grid-column:1/-1}
+.reference-patch input {width:100%;min-width:0}
+
+/* Compact density reduces spacing and decoration without reducing the size of controls or text. */
+body.density-compact .main {padding-top:24px}
+body.density-compact .main .stack,body.density-compact .main .grid {gap:12px}
+body.density-compact .main .card {padding:16px;background:var(--surface);box-shadow:none}
+body.density-compact .main .card h3 {padding-bottom:8px;margin-bottom:10px}
+body.density-compact .main .g3>.card {background:var(--surface)}
+body.density-compact .main .g3>.card::before {display:none}
+
+/* List names stay available without hover in either density. */
+.lst-main {flex-wrap:wrap;overflow:visible;white-space:normal}
+.lst-main .lst-text,.lst-main .fd-where,.lst-main .fd-note,.mat-list .lst-main .mat-grade {max-width:none;overflow:visible;white-space:normal;overflow-wrap:anywhere}
+@media (pointer:coarse) {
+  body.density-compact .main button,body.density-compact .main a.btn,body.density-compact .main input,body.density-compact .main select {min-height:44px}
+}
+
+/* Opt-in theme-study prototype: reached only through ?theme-study=light, not a released preference. */
+body.theme-study-light {color-scheme:light;--bg:#f3f5f9;--surface:#fff;--surface-2:#e8edf5;--text:#172235;--muted:#4d5b6e;--line:#bbc5d3;--line-2:#a5b3c6;--accent:#354eaa;--accent-soft:#e0e8fb;--danger:#9e253f;--success:#12694b;--warning:#805300;background:var(--bg);color:var(--text)}
+.theme-study-light .app-header {background:#f8faff;border-color:var(--line);box-shadow:none}
+.theme-study-light .app-header::after {background:var(--accent);opacity:.65}
+.theme-study-light .brand,.theme-study-light .brand:hover {color:var(--text)}
+.theme-study-light .brand small,.theme-study-light .app-version {color:var(--muted)}
+.theme-study-light .sidebar {background:#e9eef6;border-color:var(--line)}
+.theme-study-light .nav-link,.theme-study-light .nav-sublink,.theme-study-light .rail-toggle {color:#34465f}
+.theme-study-light .nav-link:hover,.theme-study-light .rail-toggle:hover,.theme-study-light .nav-group.is-active>.nav-link,.theme-study-light .nav-link[aria-current=page],.theme-study-light .nav-sublink[aria-current=page] {background:#d6e0f2;color:#172235;box-shadow:none}
+.theme-study-light .sidebar-note {color:var(--muted);border-color:var(--line)}
+.theme-study-light .card,.theme-study-light .g3>.card,.theme-study-light .g3>.card:nth-child(2),.theme-study-light .g3>.card:nth-child(3) {background:var(--surface);color:var(--text);border-color:var(--line);box-shadow:none}
+.theme-study-light .g3>.card>strong {color:var(--text)}
+.theme-study-light .btn,.theme-study-light .lst-chip {background:#eef2f8;color:#253858;border-color:#aab8cc;box-shadow:none}
+.theme-study-light .btn.primary,.theme-study-light .lst-chip.on {background:#d6e2ff;color:#1c347b;border-color:#718bcd}
+.theme-study-light .btn.danger {background:#fff1f3;color:#8c1d34;border-color:#c48191}
+.theme-study-light input,.theme-study-light select,.theme-study-light textarea {background:#fff;color:#172235;border-color:#8392a8}
+.theme-study-light label.f>span:first-child,.theme-study-light .f-error,.theme-study-light .muted,.theme-study-light .sub {color:var(--muted)}
+.theme-study-light .f-error,.theme-study-light .has-error .f-error {color:#9e253f}
+.theme-study-light .alert,.theme-study-light .lst-rows,.theme-study-light .lst-det,.theme-study-light .lst-pin {background:#edf2f9;color:var(--text);border-color:var(--line)}
+.theme-study-light .lst-row.open {background:#e1eafd}
+.theme-study-light :focus-visible {outline-color:#354eaa}
+.theme-study-note {position:relative;z-index:2;margin:0;padding:5px 16px;text-align:center;background:#fff0c9;color:#523800;font-weight:650}
+.theme-study-light label.f input,.theme-study-light label.f select,.theme-study-light label.f textarea,.theme-study-light .f input,.theme-study-light .f select,.theme-study-light .f textarea {background:#fff;color:#172235;border-color:#8392a8}
+.theme-study-light summary {color:#34465f}
+.theme-study-light input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]) {background:#fff;color:#172235;border-color:#8392a8}
+
+/* Long work, set and equipment names can wrap without a hover-only tooltip. */
+.dashboard-panel-head>a,.dashboard-file,.vw-work-title h2,.vw-name-row h2,.lm-title h2,.lm-set-title h3,.ep-title h2,.ep-check-name {
+  max-width:100%;overflow:visible;text-overflow:clip;white-space:normal;overflow-wrap:anywhere
+}
+/* Keep the experimental first-screen panels and their sticky list bars readable. */
+.theme-study-light .os-col,.theme-study-light .os-scroll .lst-bar,.theme-study-light .dashboard-item,.theme-study-light .dashboard-insight {background:#fff;color:var(--text);border-color:var(--line)}
+.theme-study-light .nav-link[aria-current=page] .nav-icon {color:#354eaa;opacity:1}
+.theme-study-light .dashboard-item-type,.theme-study-light .dashboard-insight-preview {color:var(--muted)}
+.theme-study-light .alert.bad {background:#fff1f3;color:#8c1d34;border-color:#c48191}
+.theme-study-light .alert.warn {background:#fff5dc;color:#704900;border-color:#c69b44}
+
+/* List filters and row actions must remain usable on touch in either density. */
+@media (pointer:coarse) {
+  .lst-chip,.lst-select select,.lst-act .btn {min-width:44px;min-height:44px}
+}
+/* Definition values must remain legible on the light study surface. */
+.theme-study-light .facts dd {color:var(--text)}
+/* Dialogs in the opt-in study variant use the same light surface as their text. */
+.theme-study-light .modal {background:var(--surface);color:var(--text);border-color:var(--line)}
+.theme-study-light .modal>.row:first-child,.theme-study-light .modal>.row:last-child {border-color:var(--line)}
+.theme-study-light .modal>.row:first-child .btn {background:#eef2f8;color:#253858;border-color:#aab8cc}
+
+/* Dialogs sit outside main: keep their controls touch-sized in either density too. */
+@media (pointer:coarse) {
+  body .modal .btn {min-width:44px;min-height:44px}
+  body .modal>.row:first-child .btn {width:44px;min-height:44px}
+  body .modal select {height:auto;min-height:44px}
+}

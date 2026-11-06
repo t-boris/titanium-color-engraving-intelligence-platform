@@ -6,29 +6,42 @@ const SetupForms = (() => {
   /** Reference chart values default to published values; custom Lab values can be saved or reset (DEC-025). */
   function chartReference(r, reload) {
     const ref = r.chart_reference;
-    const values = h('textarea', {rows: '5', 'aria-label': 'Reference Lab values'}, JSON.stringify(ref.patches_lab));
     const white = h('select', {'aria-label': 'White point'}, ['D65', 'D50'].map((w) => h('option', {value: w}, w)));
     white.value = ref.white_point;
-    const source = h('input', {value: ref.published ? '' : ref.source, placeholder: 'e.g. X-Rite ColorChecker Classic after 2014, D50'});
-    // the rules of setup.save_chart_reference: 24 triples (L 0 to 100, a and b -128 to 127), a source; a wrong text stays as typed with the reason beside it
+    const source = h('input', {value: ref.source || '', placeholder: 'e.g. X-Rite ColorChecker Classic after 2014, D50'});
     const form = Forms.create();
-    const triples = form.add('patches_lab', 'Reference Lab values', values, {required: true, help: '24 [L, a, b] triples: L from 0 to 100, a and b from -128 to 127',
-      read: () => {
+    const cells = Array.from({length: 24}, (_, i) => ['L', 'a', 'b'].map((component, j) => {
+      const input = h('input', {type: 'text', inputmode: 'decimal', value: String((ref.patches_lab[i] || [])[j] ?? '')});
+      const rule = component === 'L' ? {min: 0, max: 100} : {min: -128, max: 127};
+      const field = form.add(`patch_${i}_${j}`, `Patch ${i + 1} ${component}`, input, {required: true, quantity: rule});
+      return {input, field};
+    }));
+    const grid = h('div', {class: 'reference-grid', 'aria-label': 'Reference patches'}, cells.map((row, i) =>
+      h('div', {class: 'reference-patch'}, h('strong', {}, `Patch ${i + 1} · row ${Math.floor(i / 6) + 1}, column ${i % 6 + 1}`), row.map((cell) => cell.field))));
+    const raw = h('textarea', {rows: '5', 'aria-label': 'Raw reference numbers'});
+    const exchangeError = h('p', {class: 'alert bad', role: 'alert', hidden: true});
+    const exchange = h('details', {}, h('summary', {}, 'Import or export raw numbers (JSON)'),
+      h('p', {class: 'small'}, '24 triples in patch order, each [L, a, b]. Import replaces the grid only; save to apply.'), raw, exchangeError,
+      h('div', {class: 'row'}, btn('Load numbers into grid', () => {
         let list;
-        try { list = JSON.parse(values.value); } catch (_) { return {ok: false, message: 'Enter 24 [L, a, b] triples as in [[37.5, 12, 14], ...]'}; }
+        try { list = JSON.parse(raw.value); } catch (_) { list = null; }
         if (!Array.isArray(list) || list.length !== 24 || list.some((t) => !Array.isArray(t) || t.length !== 3 || t.some((n) => typeof n !== 'number' || !Number.isFinite(n)))) {
-          return {ok: false, message: `Exactly 24 [L, a, b] triples are required. Current: ${Array.isArray(list) ? list.length : 'not a list'}`};
+          exchangeError.textContent = 'Enter exactly 24 [L, a, b] numeric triples. The grid is unchanged.'; exchangeError.hidden = false; return;
         }
-        const at = list.findIndex(([L, a, b]) => L < 0 || L > 100 || a < -128 || a > 127 || b < -128 || b > 127);
-        return at >= 0 ? {ok: false, message: `Triple ${at + 1}: L must be 0–100 and a and b must be -128–127. Entered: [${list[at].join(', ')}]`} : {ok: true, value: list};
-      }});
+        cells.forEach((row, i) => row.forEach((cell, j) => { cell.input.value = String(list[i][j]); cell.field.clearError(); }));
+        exchangeError.hidden = true; exchangeError.textContent = '';
+      }), btn('Copy grid to raw numbers', () => {
+        const list = cells.map((row) => row.map(({input}) => Forms.parse(input.value, {}, {required: true})));
+        if (list.some((row) => row.some((v) => !v.ok))) { exchangeError.textContent = 'Complete every grid field with a number before exporting.'; exchangeError.hidden = false; return; }
+        raw.value = JSON.stringify(list.map((row) => row.map((v) => v.value)), null, 2); exchangeError.hidden = true; exchangeError.textContent = '';
+      })));
     const whiteField = form.add('white_point', 'Reference white point', white, {required: true, read: () => ({ok: true, value: white.value})});
     const sourceField = form.add('source', 'Source of values', source, {required: true});
     const save = btn('Save reference values', async () => {
       const v = form.collect();
       if (!v) return;
       try {
-        await put(`/setups/${r.id}/chart-reference`, {patches_lab: v.patches_lab, white_point: v.white_point, observer: '2°', source: v.source});
+        await put(`/setups/${r.id}/chart-reference`, {patches_lab: cells.map((row, i) => row.map((_, j) => v[`patch_${i}_${j}`])), white_point: v.white_point, observer: '2°', source: v.source});
         toast('Reference values saved', 'ok'); reload('rigs');
       } catch (e) { form.fail(e); }
     });
@@ -38,7 +51,8 @@ const SetupForms = (() => {
     return h('details', {}, h('summary', {}, `Chart reference values: ${ref.published ? 'published' : 'custom'} · ${ref.white_point} / ${ref.observer}`),
       h('p', {class: 'muted small'}, 'Source: ' + (ref.published ? 'published ColorChecker Classic values (sRGB, D65), converted to CIELAB D65 / 2°' : ref.source)
         + '. Photos from this setup are corrected using these values; accepted measurements do not change.'),
-      triples,
+      h('p', {class: 'small'}, 'Patch order is left to right, top to bottom (four rows of six); edit L, a, b in each patch.'),
+      grid, exchange,
       h('div', {class: 'grid g2'}, whiteField, sourceField),
       form.error,
       h('div', {class: 'row'}, save, reset));
