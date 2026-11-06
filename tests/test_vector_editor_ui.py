@@ -799,7 +799,7 @@ def test_a_photo_zone_shows_its_picture_and_its_kind_scale_and_powers_change_it(
   const others = byLabel(zone, 'div', 'Шкала серого фотозоны 1').querySelectorAll('button');
   out.others = others.map((b) => [b.textContent, b.getAttribute('aria-pressed'), b.querySelector('div').childNodes.map((x) => x.className)]);
   out.othersOpen = zone.querySelector('details').hasAttribute('open');
-  await zone.querySelectorAll('button').find((b) => b.textContent.startsWith('Джарвис')).dispatch('click'); await tick();
+  await zone.querySelectorAll('button').find((b) => b.textContent.startsWith('Jarvis')).dispatch('click'); await tick();
   await others[0].dispatch('click'); await tick();
   const low = byLabel(zone, 'input', 'Min мощность фотозоны 1, %'); low.value = '5'; await low.dispatch('change'); await tick();
   // ux-save-feedback-p0, REQ-003: a power outside 0..100 % is said beside its box, kept in it, and nothing is saved
@@ -821,14 +821,14 @@ def test_a_photo_zone_shows_its_picture_and_its_kind_scale_and_powers_change_it(
 """)
     assert out["pics"] == [["1", "/api/vector/7/photo/1.png?v=abc", "20", "0", "20", "10"]]
     assert out["fills"] == [["rgb(205,198,182)", "rgb(205,198,182)"], ["rgba(0,0,0,0)", "none"], ["rgba(0,0,0,0)", "none"]]
-    assert out["totals"].startswith("Слоёв 2 из 29 (фотозон 1)") and "Фотозона 1" in out["layerRow"] and "C02 · Градации серого · 2–29 %" in out["layerRow"]
+    assert out["totals"].startswith("Слоёв 2 из 29 (фотозон 1)") and "Фотозона 1" in out["layerRow"] and "C02 · Grayscale · 2–29 %" in out["layerRow"]
     assert out["file"] == ["C00 Чистка (перекрёстная заливка)вся работа · 1 мин 40 с",
-                           "C01 C01 P10-F30-V500-I0.02областей 2 · 2.00 см² · 1 мин 40 с", "C02 Фотозона 1: Градации серогообластей 2 · 2.00 см² · 1 мин 40 с"]
+                           "C01 C01 P10-F30-V500-I0.02областей 2 · 2.00 см² · 1 мин 40 с", "C02 Фотозона 1: Grayscaleобластей 2 · 2.00 см² · 1 мин 40 с"]
     assert "Слоёв цвета: 1, фотозон: 1 из 29" in out["text"] and "1 и фотозон 1 из 29 доступных" in out["text"]
-    assert out["tip"].startswith("Область r3 · исходный цвет № 2 · фотозона 1: C02 · Градации серого · 2–29 %")
+    assert out["tip"].startswith("Область r3 · исходный цвет № 2 · фотозона 1: C02 · Grayscale · 2–29 %")
     assert "20 × 10 мм · 2.00 см² · областей 2" in out["card"] and "Измерено при ширине зоны 20 мм: 1.9–29.1 %." in out["card"]
     assert "серые подобраны под цвета: рисунок сохранён. Как подбирать серые и контуры — в «Открыть»." in out["card"]   # a zone made before 0.23
-    assert out["tiles"] == [["Градации серого", "true"], ["Джарвис ≈", "false"]]
+    assert out["tiles"] == [["Grayscale", "true"], ["Jarvis ≈", "false"]]
     assert out["picked"] == ["1000 мм/с · 60 кГц · 350 нсшаг 0.0212 мм · 1.9–29.1 %", "true"]
     assert out["others"] == [["500 мм/с · 60 кГц · 200 нсшаг 0.0212 мм · 3–40 % · без карты", "false", ["", ""]]] and not out["othersOpen"]
     assert "Другие шкалы этого лазера и титана: 1" in out["card"]
@@ -954,7 +954,7 @@ def test_a_dot_zones_card_picks_its_dots_colour_on_the_colour_map_and_shows_a_co
   out.posted = ctx.requests.filter((r) => r.path === '/api/vector/7/colouring').map((r) => JSON.parse(r.body));
 """)
     assert "Точки с карты цветов: 30 % · 500 мм/с · 60 кГц · 300 нс · шаг 0.02 мм" in out["card"] and out["buttons"] == [True, True]
-    assert "Джарвис · точки 30 % с карты цветов · яркость 20 %, контраст 0 %, гамма 1" in out["card"]
+    assert "Jarvis · точки 30 % с карты цветов · яркость 20 %, контраст 0 %, гамма 1" in out["card"]
     assert out["posted"] == [{"op": "photo_set", "zone": 1, "dot_power": 20}]                       # «На шкалу»: the scale's power puts it back
 
 

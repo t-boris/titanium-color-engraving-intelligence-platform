@@ -1,7 +1,4 @@
-/* Настройки контроллера (EZCAD): таблица по разделам, значения правятся прямо в строках; можно подтвердить, исправить,
-   убрать и добавить настройку. Каждая правка сохраняется сразу (без кнопки): запросы уходят по одному,
-   последний пишет полное состояние таблицы (DEC-039). Измерений правки не касаются.
-   Строки и форма добавления — controller-rows.js. */
+/* EZCAD controller settings are edited and saved in order, with each request writing the complete table (DEC-039). */
 'use strict';
 const DeviceController = (() => {
   const {h, patch, toast, fail, table} = App;
@@ -15,9 +12,9 @@ const DeviceController = (() => {
     const status = h('span', {class: 'small', role: 'status'});
     const show = () => {
       status.className = 'small ' + (state === 'error' ? 'bad' : 'muted');
-      status.textContent = {idle: 'Правки сохраняются сразу', saving: 'Сохраняю…', saved: '✓ Сохранено', error: 'Не сохранено: ' + failure}[state];
+      status.textContent = {idle: 'Changes save immediately', saving: 'Saving…', saved: '✓ Saved', error: 'Not saved: ' + failure}[state];
     };
-    // Запросы выстраиваются в очередь: поздняя правка не обгонит раннюю, а каждый запрос несёт текущее состояние всей таблицы.
+    // Queue requests so later changes cannot overtake earlier ones; each writes the current table.
     const persist = () => {
       state = 'saving'; show();
       chain = chain.then(async () => {
@@ -28,7 +25,7 @@ const DeviceController = (() => {
     };
     const ctx = {help: false, change: () => { draw(); persist(); }};
     const root = h('div', {class: 'card stack'});
-    window.onbeforeunload = () => (state === 'saving' || state === 'error' ? 'Не все правки сохранены' : null);
+    window.onbeforeunload = () => (state === 'saving' || state === 'error' ? 'Some changes have not been saved' : null);
 
     function draw() {
       const all = c.tabs.flatMap((t) => t.fields), unread = all.filter((f) => f.value === UNREAD).length;
@@ -37,14 +34,14 @@ const DeviceController = (() => {
       const tabs = h('div', {class: 'row', role: 'tablist'}, c.tabs.map((t) => h('button', {type: 'button', role: 'tab', 'aria-selected': t.key === section,
         class: 'btn btn-small' + (t.key === section ? ' primary' : ''), onClick: () => { section = t.key; keep(); draw(); }}, `${TAB[t.key]} · ${t.fields.length}`)));
       show();
-      root.replaceChildren(h('h3', {}, `Настройки лазера · программа ${c.software || ''}`),
-        h('p', {class: 'muted small'}, 'Настройки вашего станка из программы управления (EZCAD). Подтверждённые и напечатанные частоты (Min PWM, Max PWM) и размер поля учитываются в расчётах, остальные — справочно. '
-          + 'Исправленное или добавленное вами считается подтверждённым. ✓ — значение сверено с оригиналом, × — убрать из списка. Каждая правка сохраняется сразу.'),
-        h('div', {class: 'row'}, h('span', {class: 'small muted'}, `Всего ${all.length}: напечатано ${count('printed')} · от руки ${count('handwritten')} · подтверждено ${count('confirmed')} · не прочитано ${unread}`),
-          h('span', {class: 'spacer'}), status, state === 'error' ? small('Повторить сохранение', 'Повторить', persist, 'Повторить') : null,
-          photo ? h('a', {href: `/api/devices/${d.id}/documents/${photo.id}`, target: '_blank', rel: 'noopener'}, 'Оригинал на фото') : null,
-          h('label', {class: 'row small'}, h('input', {type: 'checkbox', checked: ctx.help, onChange: (e) => { ctx.help = e.target.checked; draw(); }}), 'Пояснения')),
-        tabs, table(['Настройка', 'Значение', 'Ед.', 'Надёжность', ''], cur.fields.map((f) => row(f, cur.fields, ctx)), 'В этом разделе настроек нет', true), addForm(cur.fields, ctx));
+      root.replaceChildren(h('h3', {}, `Laser settings · software ${c.software || ''}`),
+        h('p', {class: 'muted small'}, 'Machine settings from EZCAD. Confirmed and printed frequencies (Min PWM, Max PWM) and field size are used in calculations; the rest are informational. '
+          + 'Values you correct or add are considered confirmed. ✓ confirms a value against the original; × removes it. Each edit saves immediately.'),
+        h('div', {class: 'row'}, h('span', {class: 'small muted'}, `Total ${all.length}: printed ${count('printed')} · handwritten ${count('handwritten')} · confirmed ${count('confirmed')} · unread ${unread}`),
+          h('span', {class: 'spacer'}), status, state === 'error' ? small('Retry saving', 'Retry', persist, 'Retry') : null,
+          photo ? h('a', {href: `/api/devices/${d.id}/documents/${photo.id}`, target: '_blank', rel: 'noopener'}, 'Original photograph') : null,
+          h('label', {class: 'row small'}, h('input', {type: 'checkbox', checked: ctx.help, onChange: (e) => { ctx.help = e.target.checked; draw(); }}), 'Explanations')),
+        tabs, table(['Setting', 'Value', 'Unit', 'Reliability', ''], cur.fields.map((f) => row(f, cur.fields, ctx)), 'No settings in this section', true), addForm(cur.fields, ctx));
     }
     draw();
     return root;
