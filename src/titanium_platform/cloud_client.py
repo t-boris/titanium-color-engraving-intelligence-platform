@@ -39,6 +39,7 @@ AUTO_CHECK_EVERY_S = 24 * 3600               # an automatic check for updates at
 UPDATE_CHECK_MODES = ("manual", "auto")
 
 _jobs: dict[str, "Job"] = {}
+_reviews: dict[str, dict] = {}
 _lock = threading.Lock()
 _publishing = threading.Lock()               # one publication at a time
 
@@ -191,8 +192,8 @@ def lab(store: Store, lab_id: str) -> dict:
 
 
 # -- connecting a release from the cloud ------------------------------------------------------------------------------------------
-def connect(store: Store, release_id: str, *, wait: bool = False) -> dict:
-    """Download the chunks of ``release_id`` into the importer's staging and connect them as a file is connected; the job to poll."""
+def connect(store: Store, release_id: str, *, wait: bool = False, review_only: bool = False) -> dict:
+    """Download a release and either review it in staging or connect it as a file."""
     if not lf.UUID.fullmatch(str(release_id)):
         raise KeyError("no such release in the cloud")
     shown = _call(store, "GET", f"/releases/{release_id}/manifest", signed=False)
@@ -223,8 +224,73 @@ def connect(store: Store, release_id: str, *, wait: bool = False) -> dict:
         if job.cancel.is_set():
             lab_import.discard(store, token)
             raise Cancelled()
+        if review_only:
+            try:
+                info = lab_import.inspect(store, token)
+                if info["release"]["release_id"] != release_id:
+                    raise CloudError("the downloaded release identity does not match the cloud", code="release_identity")
+                if job.cancel.is_set():
+                    raise Cancelled()
+                info["verified"] = True
+                with _lock:
+                    _reviews[token] = {"directory": str(Path(store.data_dir).resolve()), "url": f"{api}/labs/{release['lab_id']}",
+                                       "file_sha256": release["file_sha256"], "byte_size": release["byte_size"], "cloud": job.cloud}
+                job.result, job.phase = info, "done"
+            except BaseException:
+                lab_import.discard(store, token)
+                raise
+            return
         started = lab_import.start(store, token, origin=ORIGIN, url=f"{api}/labs/{release['lab_id']}", verified=True, wait=wait)
         job.inner = started["id"]
+
+    return job.run(work, wait)
+
+
+def _take_review(store: Store, token: str) -> dict:
+    with _lock:
+        review = _reviews.get(token)
+        if not review or review["directory"] != str(Path(store.data_dir).resolve()):
+            raise KeyError("this cloud release is no longer awaiting review")
+        return _reviews.pop(token)
+
+
+def discard_review(store: Store, token: str) -> None:
+    _take_review(store, token)
+    lab_import.discard(store, token)
+
+
+def connect_review(store: Store, token: str, *, wait: bool = False) -> dict:
+    """Connect a reviewed cloud file, retaining its verified origin and checking its bytes again."""
+    review = _take_review(store, token)
+    job = Job("connect", review["byte_size"], review["cloud"])
+
+    def work():
+        try:
+            path = lab_import._staged(store, token) / lab_import.FILE
+            digest = hashlib.sha256()
+            with path.open("rb") as source:
+                for piece in iter(lambda: source.read(lab_import.CHUNK), b""):
+                    if job.cancel.is_set():
+                        raise Cancelled()
+                    digest.update(piece)
+                    job.read += len(piece)
+            if job.read != review["byte_size"] or digest.hexdigest() != review["file_sha256"]:
+                raise CloudError("the reviewed file changed: nothing was connected", code="file_hash")
+            if job.cancel.is_set():
+                raise Cancelled()
+            started = lab_import.start(store, token, origin=ORIGIN, url=review["url"], verified=True, wait=wait)
+            job.inner = started["id"]
+        except su.ValidationError:
+            # A busy importer has not consumed the staged file; allow the operator to retry this review.
+            with _lock:
+                _reviews[token] = review
+            raise
+        except BaseException:
+            try:
+                lab_import.discard(store, token)
+            except KeyError:
+                pass
+            raise
 
     return job.run(work, wait)
 

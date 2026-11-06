@@ -17,7 +17,7 @@ sys.path.insert(0, str(HERE))
 import labworld  # noqa: E402
 from cloud_fakes import CLOUD_BASE, World  # noqa: E402
 from test_cloud_api import keys, mint, verifier  # noqa: E402,F401  (fixtures)
-from titanium_platform import cloud_client, cloud_http, cloud_session, evidence_source, lab_export, lab_import, outbound, palette  # noqa: E402
+from titanium_platform import cloud_client, cloud_http, cloud_session, evidence_source, lab_export, lab_import, outbound, palette, setup as su  # noqa: E402
 from titanium_platform.cloud_http import CloudError  # noqa: E402
 from titanium_platform.db import Store  # noqa: E402
 
@@ -47,6 +47,16 @@ def reader(tmp_path) -> Store:
     store.close()
 
 
+@pytest.fixture()
+def fresh_author(tmp_path):
+    folder = tmp_path / "fresh-author"
+    store = Store(folder / "lab")
+    ids = labworld.build(store, folder / "lab" / "files")
+    lab_export.set_public_info(store, {"name": "Open titanium lab", "author": "A. Author"})
+    yield {"store": store, "ids": ids, "origin": lab_export.identity(store)["origin_lab_id"]}
+    store.close()
+
+
 def done(job: dict) -> dict:
     assert job["done"] and not job["error"], job
     return job
@@ -61,6 +71,42 @@ def palettes_agree(author: dict, reader: Store, release_id: str) -> int:
     b = sorted(tuple(round(v, 3) for v in e["lab"]) for e in theirs)
     assert a and a == b
     return len(a)
+
+
+def test_cloud_review_does_not_connect_until_confirmed_and_rejects_changed_files(fresh_author, reader, world):
+    author = fresh_author
+    world.sign_in(author["store"], "acc-author", "A. Author")
+    release = done(cloud_client.publish(author["store"], terms=TERMS, visibility="public", wait=True))["result"]["release"]
+    first = done(cloud_client.connect(reader, release["id"], review_only=True, wait=True))["result"]
+    assert first["verified"] and first["release"]["release_id"] == release["id"] and first["equipment"] and first["materials"]
+    assert not lab_import.sources(reader)
+    with pytest.raises(KeyError):
+        cloud_client.connect_review(author["store"], first["token"], wait=True)
+    cloud_client.discard_review(reader, first["token"])
+    assert not lab_import.sources(reader)
+    reviewed = done(cloud_client.connect(reader, release["id"], review_only=True, wait=True))["result"]
+    path = lab_import.staging_dir(reader) / reviewed["token"] / lab_import.FILE
+    with path.open("ab") as stream:
+        stream.write(b"changed")
+    refused = cloud_client.connect_review(reader, reviewed["token"], wait=True)
+    assert refused["done"] and refused["error"]["code"] == "file_hash" and not lab_import.sources(reader)
+    again = done(cloud_client.connect(reader, release["id"], review_only=True, wait=True))["result"]
+    connected = done(cloud_client.connect_review(reader, again["token"], wait=True))
+    assert connected["result"]["release_id"] == release["id"]
+    assert lab_import.sources(reader)[0]["current"]["verified"]
+
+
+def test_review_can_be_retried_when_the_importer_is_busy(fresh_author, reader, world, monkeypatch):
+    author = fresh_author
+    world.sign_in(author["store"], "acc-author", "A. Author")
+    release = done(cloud_client.publish(author["store"], terms=TERMS, visibility="public", wait=True))["result"]["release"]
+    reviewed = done(cloud_client.connect(reader, release["id"], review_only=True, wait=True))["result"]
+    real_start = lab_import.start
+    with monkeypatch.context() as patch:
+        patch.setattr(lab_import, "start", lambda *args, **kwargs: (_ for _ in ()).throw(su.ValidationError("another release is being connected")))
+        failed = cloud_client.connect_review(reader, reviewed["token"], wait=True)
+    assert failed["error"] and not lab_import.sources(reader) and lab_import.start is real_start
+    assert done(cloud_client.connect_review(reader, reviewed["token"], wait=True))["result"]["release_id"] == release["id"]
 
 
 def test_the_author_publishes_and_a_reader_connects_the_release_from_the_cloud_with_the_same_palette(author, reader, world):

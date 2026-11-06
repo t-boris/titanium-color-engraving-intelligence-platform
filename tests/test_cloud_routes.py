@@ -109,7 +109,12 @@ def test_the_whole_flow_over_the_api_publish_connect_invite_check_and_settings(t
         assert listed["signed_in"] is False and listed["labs"][0]["latest_release"]["id"] == release["id"]
         assert reader.get(f"/api/cloud/labs/{own['lab']['id']}").json()["releases"][0]["id"] == release["id"]
         assert reader.get("/api/cloud/labs/not-a-uuid").status_code == 404
-        started = reader.post(f"/api/cloud/releases/{release['id']}/connect")
+        reviewed = finished(reader, reader.post(f"/api/cloud/releases/{release['id']}/review").json())
+        info = reviewed["result"]
+        assert info["release"]["release_id"] == release["id"] and info["verified"] is True
+        assert info["terms"]["id"] == "CC-BY-4.0" and info["terms"]["redistribute"] is True
+        assert info["equipment"] and info["materials"] and reader.get("/api/labs/sources").json() == []
+        started = reader.post(f"/api/cloud/reviews/{info['token']}/connect")
         assert started.status_code == 202 and started.json()["kind"] == "connect"
         connected = finished(reader, started.json())
         assert connected["result"]["release_id"] == release["id"] and connected["cloud"]["lab_name"] == "Open titanium lab"

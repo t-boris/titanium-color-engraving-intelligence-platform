@@ -110,6 +110,23 @@ def connect(request: Request, release_id: str):
     return cloud_client.connect(store_of(request), release_id)
 
 
+@router.post("/releases/{release_id}/review", status_code=202)
+def review_release(request: Request, release_id: str):
+    """Download and inspect a release without connecting it."""
+    return cloud_client.connect(store_of(request), release_id, review_only=True)
+
+
+@router.post("/reviews/{token}/connect", status_code=202)
+def connect_review(request: Request, token: str):
+    return cloud_client.connect_review(store_of(request), token)
+
+
+@router.delete("/reviews/{token}")
+def discard_review(request: Request, token: str):
+    cloud_client.discard_review(store_of(request), token)
+    return {"discarded": token}
+
+
 @router.get("/jobs/{job_id}")
 def job(job_id: str):
     return cloud_client.status(job_id)

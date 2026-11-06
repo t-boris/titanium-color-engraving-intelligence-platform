@@ -10,10 +10,10 @@
   const {h, fill, btn, field, link, pill, get, post, del, toast, fail, confirmBox, facts, table} = App;
   const {short, day, when} = LabSource;
   const ACCOUNT_POLL_MS = 1000;
-  const VISIBILITY = {public: 'открытая', private: 'закрытая'};
-  const STATE = {reserved: 'зарезервирована', exported: 'выпуск записан', uploading: 'передача', finalized: 'опубликована', failed: 'не завершена'};
-  const PUBLISH_PHASE = {waiting: 'ожидание', reserving: 'резервирование в облаке', exporting: 'запись выпуска', uploading: 'передача в облако',
-    finalizing: 'завершение', done: 'опубликовано', failed: 'не опубликовано', cancelled: 'отменено'};
+  const VISIBILITY = {public: 'Public', private: 'Private'};
+  const STATE = {reserved: 'reserved', exported: 'release saved', uploading: 'uploading', finalized: 'published', failed: 'incomplete'};
+  const PUBLISH_PHASE = {waiting: 'waiting', reserving: 'reserving in the cloud', exporting: 'saving release', uploading: 'uploading to the cloud',
+    finalizing: 'finishing', done: 'published', failed: 'not published', cancelled: 'canceled'};
   const UPDATE_CHECKS = {manual: 'по кнопке', auto: 'автоматически (если разрешено на экране «Сеть»)'};
   let shared = null;                 // labs.js: {followJob, previewBody, countsText, termsName, differencesDialog, mb}
   const accountText = (a) => (a ? [a.name, a.email].filter(Boolean).join(' · ') : '');
@@ -24,94 +24,105 @@
 
   // ---- the sign-in ---------------------------------------------------------------------------------------------------------------
 
-  /** «Войти»: the cloud's sign-in page opens in a new window; the screen asks /cloud/account every second until the sign-in arrives. */
+  /** Open the sign-in page and poll for the account while this attempt remains active. */
   function signInButton(done) {
-    const note = h('span', {class: 'small muted cloud-signin-note'});
-    let timer = null, state = null;
+    const note = h('span', {class: 'small muted cloud-signin-note', role: 'status', 'aria-live': 'polite'});
+    let timer = null, state = null, attempt = 0;
     const stop = () => { if (timer) { clearInterval(timer); timer = null; } };
-    const cancel = btn('Отменить вход', async () => {
-      stop(); button.disabled = false; cancel.hidden = true; fill(note);
-      try { await post('/cloud/signin/cancel', {state}); } catch (_) { /* the state is gone already */ }
+    const cancel = btn('Cancel sign-in', async () => {
+      const canceledState = state;
+      state = null;
+      ++attempt;
+      stop(); button.disabled = false; cancel.hidden = true; fill(note, 'Sign-in canceled. Select Sign in to try again.');
+      if (canceledState) try { await post('/cloud/signin/cancel', {state: canceledState}); } catch (_) { /* The pending state may already have expired. */ }
     }, 'btn-small');
     cancel.hidden = true;
-    const button = btn('Войти', async (ev) => {
+    const button = btn('Sign in', async (ev) => {
       const self = ev.currentTarget;
+      const mine = ++attempt;
       self.disabled = true;
+      cancel.hidden = false;
+      fill(note, 'Starting sign-in…');
       try {
         const started = await post('/cloud/signin', {});
+        if (mine !== attempt) { try { await post('/cloud/signin/cancel', {state: started.state}); } catch (_) {} return; }
         state = started.state;
         const opened = window.open(started.url, '_blank', 'noopener');
-        fill(note, 'Войдите в открывшемся окне браузера; после входа окно можно закрыть. ',
-          opened ? null : h('a', {href: started.url, target: '_blank', rel: 'noopener'}, 'Открыть страницу входа'));
-        cancel.hidden = false;
+        fill(note, 'Complete sign-in in your browser, then return here. ',
+          opened ? null : h('a', {href: started.url, target: '_blank', rel: 'noopener'}, 'Open sign-in page'));
         const until = Date.now() + (started.expires_in_s || 600) * 1000;
+        let checking = false;
         timer = setInterval(async () => {
+          if (mine !== attempt || checking) return;
+          checking = true;
           try {
             const account = await get('/cloud/account');
-            if (account.signed_in) { stop(); toast('Вход в облако выполнен', 'ok'); done(account); }
-            else if (Date.now() > until) { stop(); self.disabled = false; cancel.hidden = true; fill(note, 'Вход не завершён: время ожидания вышло. Нажмите «Войти» ещё раз.'); }
-          } catch (e) { stop(); self.disabled = false; cancel.hidden = true; fill(note, e.message); }
+            if (mine !== attempt) return;
+            if (account.signed_in) { ++attempt; stop(); fill(note, 'Signed in. Returning to your task…'); toast('Signed in to the cloud', 'ok'); done(account); }
+            else if (Date.now() > until) { ++attempt; stop(); self.disabled = false; cancel.hidden = true; fill(note, 'Sign-in did not finish before the timeout. Select Sign in to try again.'); }
+          } catch (e) { if (mine !== attempt) return; ++attempt; stop(); self.disabled = false; cancel.hidden = true; fill(note, `Sign-in could not be checked: ${e.message}. Select Sign in to try again.`); }
+          finally { checking = false; }
         }, ACCOUNT_POLL_MS);
-      } catch (e) { self.disabled = false; fail(e); }
+      } catch (e) { if (mine === attempt) { self.disabled = false; cancel.hidden = true; fill(note, `Could not start sign-in: ${e.message}. Select Sign in to try again.`); } }
     }, 'primary');
     return h('span', {class: 'row cloud-signin'}, button, cancel, note);
   }
 
   function accountRow(own, reload) {
-    if (!own.switched_on) return h('p', {class: 'alert warn'}, 'Облако выключено в настройках сети этой мастерской: каталог, публикация и приглашения недоступны. ', link('/network', 'Открыть «Сеть»'));
+    if (!own.switched_on) return h('p', {class: 'alert warn'}, 'Cloud access is disabled in this workshop’s network settings. The catalog, publishing and invitations are unavailable. ', link('/network', 'Open network settings'));
     if (!own.signed_in) {
-      return h('div', {class: 'row'}, h('span', {class: 'small'}, 'Вы не вошли в облако. Вход нужен, чтобы публиковать выпуски, приглашать в закрытую лабораторию и видеть закрытые лаборатории; '
-        + 'каталог открытых лабораторий доступен и без входа.'), h('span', {class: 'spacer'}), signInButton(reload));
+      return h('div', {class: 'row'}, h('span', {class: 'small'}, 'You are signed out. Sign in to publish releases, invite members and access private laboratories. '
+        + 'The public catalog is available without signing in.'), h('span', {class: 'spacer'}), signInButton(reload));
     }
-    const out = btn('Выйти', () => confirmBox('Выйти из облака?', 'Опубликованное останется в облаке; подключённые лаборатории продолжат работать здесь.', 'Выйти',
-      async () => { await post('/cloud/signout', {}); toast('Выход из облака выполнен', 'ok'); reload(); }), 'btn-small');
-    return h('div', {class: 'row'}, h('span', {}, 'Вы вошли как ', h('strong', {class: 'cloud-account'}, accountText(own.account))),
-      h('span', {class: 'small muted'}, `облако: ${own.api_url}`), h('span', {class: 'spacer'}), out);
+    const out = btn('Sign out', () => confirmBox('Sign out of the cloud?', 'Published releases remain in the cloud, and connected laboratories continue to work here.', 'Sign out',
+      async () => { await post('/cloud/signout', {}); toast('Signed out of the cloud', 'ok'); reload(); }), 'btn-small');
+    return h('div', {class: 'row'}, h('span', {}, 'Signed in as ', h('strong', {class: 'cloud-account'}, accountText(own.account))),
+      h('span', {class: 'small muted'}, `Cloud: ${own.api_url}`), h('span', {class: 'spacer'}), out);
   }
 
   // ---- «Облако» on «Моя лаборатория» ----------------------------------------------------------------------------------------------
 
   function publishBlock(own, terms, reload) {
-    const termsSelect = h('select', {}, terms.map((t) => h('option', {value: t.id}, `${shared.termsName(t)} — ${(t.summary && t.summary.ru) || ''}`)));
+    const termsSelect = h('select', {}, terms.map((t) => h('option', {value: t.id}, `${shared.termsName(t)} — ${(t.summary && t.summary.en) || ''}`)));
     const visibility = h('select', {}, Object.entries(VISIBILITY).map(([id, name]) => h('option', {value: id}, name)));
     const out = h('div', {class: 'stack'}), progress = h('div', {class: 'stack', hidden: true});
     let ready = false;
-    const prepare = btn('Подготовка публикации', async (ev) => {
+    const prepare = btn('Prepare publication', async (ev) => {
       const self = ev.currentTarget;
       self.disabled = true;
       try { const p = await post('/labs/own/preview', {selection: null}); ready = p.ready; publish.disabled = !ready; fill(out, shared.previewBody(p)); }
       catch (e) { fill(out, h('p', {class: 'alert bad'}, e.message)); } finally { self.disabled = false; }
     });
-    const publish = btn('Опубликовать в облаке', async (ev) => {
+    const publish = btn('Publish to cloud', async (ev) => {
       const self = ev.currentTarget;
       self.disabled = true; prepare.disabled = true;
       await shared.followJob({start: () => post('/cloud/publish', {terms: termsSelect.value, visibility: visibility.value}), jobs: '/cloud/jobs', box: progress,
-        label: 'Публикация выпуска', phases: PUBLISH_PHASE, success: (job) => `Опубликовано: выпуск № ${job.result.release.number} · ${shared.countsText(job.result.release.counts)}.`,
-        done: (result) => { toast(`Выпуск № ${result.release.number} опубликован в облаке`, 'ok'); reload(); }});
+        label: 'Publishing release', phases: PUBLISH_PHASE, success: (job) => `Published release #${job.result.release.number} · ${shared.countsText(job.result.release.counts)}.`,
+        done: (result) => { toast(`Release #${result.release.number} published to the cloud`, 'ok'); reload(); }});
       prepare.disabled = false; self.disabled = !ready;
     }, 'primary', true);
-    return h('div', {class: 'stack cloud-publish'}, h('h4', {}, 'Публикация в облаке'),
-      h('p', {class: 'small muted'}, 'В облако уходит тот же выпуск .tcelab, что и в файл: сначала посмотрите, что в него войдёт. Файл выпуска остаётся и в «Записанных выпусках». '
-        + (own.lab ? `Лаборатория в облаке ${VISIBILITY[own.lab.visibility] || own.lab.visibility}: видимость выбирается при первой публикации.`
-          : 'Видимость выбирается при первой публикации: открытую лабораторию видят все, закрытую — только приглашённые.')),
-      h('div', {class: 'row'}, prepare, field('Условия использования в облаке', termsSelect, null, {required: true}),
-        own.lab ? null : field('Видимость', visibility, null, {required: true}), publish), out, progress);
+    return h('div', {class: 'stack cloud-publish'}, h('h4', {}, 'Publish to cloud'),
+      h('p', {class: 'small muted'}, 'The same .tcelab release is sent to the cloud and kept locally. Review its contents first. '
+        + (own.lab ? `This laboratory is ${VISIBILITY[own.lab.visibility] || own.lab.visibility}; visibility is selected during the first publication.`
+          : 'Choose visibility during the first publication: public laboratories are visible to everyone, private ones only to invited members.')),
+      h('div', {class: 'row'}, prepare, field('Cloud usage terms', termsSelect, null, {required: true}),
+        own.lab ? null : field('Visibility', visibility, null, {required: true}), publish), out, progress);
   }
 
   function pendingBlock(p, reload) {
     const progress = h('div', {class: 'stack', hidden: true});
-    const retry = btn('Продолжить публикацию', async (ev) => {
+    const retry = btn('Continue publication', async (ev) => {
       const self = ev.currentTarget;
       self.disabled = true;
-      await shared.followJob({start: () => post('/cloud/publish/retry', {}), jobs: '/cloud/jobs', box: progress, label: 'Публикация выпуска', phases: PUBLISH_PHASE,
-        success: (job) => `Опубликовано: выпуск № ${job.result.release.number}.`, done: () => { toast('Выпуск опубликован в облаке', 'ok'); reload(); }});
+      await shared.followJob({start: () => post('/cloud/publish/retry', {}), jobs: '/cloud/jobs', box: progress, label: 'Publishing release', phases: PUBLISH_PHASE,
+        success: (job) => `Published release #${job.result.release.number}.`, done: () => { toast('Release published to the cloud', 'ok'); reload(); }});
       self.disabled = false;
     }, 'primary btn-small');
-    const giveUp = btn('Отказаться', () => confirmBox('Отказаться от публикации?', 'Незавершённая публикация будет помечена неудавшейся; в облаке ничего не появится. '
-      + 'Записанный файл выпуска остаётся на компьютере.', 'Отказаться', async () => { await post('/cloud/publish/abandon', {}); toast('Публикация отменена', 'ok'); reload(); }), 'danger btn-small');
+    const giveUp = btn('Abandon publication', () => confirmBox('Abandon publication?', 'The unfinished publication will be marked failed; nothing will appear in the cloud. '
+      + 'The saved release file remains on this computer.', 'Abandon publication', async () => { await post('/cloud/publish/abandon', {}); toast('Publication canceled', 'ok'); reload(); }), 'danger btn-small');
     return h('div', {class: 'alert warn stack cloud-pending'},
-      h('p', {}, `Публикация от ${when(p.created_at)} не завершена (${STATE[p.state] || p.state}${p.error ? `: ${I18N.tr(p.error)}` : ''}). `
-        + 'Её можно продолжить с того же места: в облаке появится один выпуск, не два.'),
+      h('p', {}, `The publication started ${when(p.created_at)} is incomplete (${STATE[p.state] || p.state}${p.error ? `: ${I18N.tr(p.error)}` : ''}). `
+        + 'Continue from the same point; this will not create a duplicate release.'),
       h('div', {class: 'row'}, retry, giveUp), progress);
   }
 
@@ -171,13 +182,15 @@
 
   /** The «Облако» card of «Моя лаборатория»: /cloud/own is asked here, apart from /labs/own, so that the cloud's silence never hides the rest. */
   async function ownCard(terms, reload) {
-    const el = h('div', {class: 'card stack cloud-own'}, h('h3', {}, 'Облако'));
+    const el = h('div', {class: 'card stack cloud-own'}, h('h3', {}, 'Laboratory cloud'));
     let own;
-    try { own = await get('/cloud/own'); } catch (e) { return fill(el, h('h3', {}, 'Облако'), h('p', {class: 'alert bad', role: 'alert'}, e.message)); }
-    const parts = [h('h3', {}, 'Облако'),
-      h('p', {class: 'small muted'}, 'Облако лабораторий — каталог выпусков: опубликованный выпуск другие мастерские подключают оттуда, а не из файла, и узнают о новых выпусках. '
-        + 'Приложение обращается к облаку только когда вы входите, публикуете или проверяете обновления.'),
+    try { own = await get('/cloud/own'); } catch (e) { return fill(el, h('h3', {}, 'Laboratory cloud'), h('p', {class: 'alert bad', role: 'alert'}, e.message)); }
+    const parts = [h('h3', {}, 'Laboratory cloud'),
+      h('p', {class: 'small muted'}, 'The cloud catalog lets workshops connect published laboratory releases and discover updates. '
+        + 'The application contacts it when you sign in, publish or check for updates.'),
       accountRow(own, reload)];
+    if (!own.signed_in && own.pending) parts.push(h('p', {class: 'alert warn cloud-pending-signed-out'},
+      `A publication is unfinished. ${own.switched_on ? 'Sign in' : 'Enable cloud access and sign in'} to continue the same publication; no new release will be created automatically.`));
     if (own.signed_in && own.switched_on) {
       if (own.pending) parts.push(pendingBlock(own.pending, reload));
       else parts.push(publishBlock(own, terms, reload));
@@ -193,8 +206,15 @@
     return btn(label, async (ev) => {
       const self = ev.currentTarget;
       self.disabled = true;
-      await shared.followJob({start: () => post(`/cloud/releases/${encodeURIComponent(latest.id)}/connect`, {}), jobs: '/cloud/jobs', box: progress,
-        done: (result) => { if (connected && result && result.current && !result.unchanged) shared.differencesDialog(result.current); reload(); }});
+      await shared.followJob({start: () => post(`/cloud/releases/${encodeURIComponent(latest.id)}/review`, {}), jobs: '/cloud/jobs', box: progress,
+        label: 'Reviewing release', success: () => 'Release ready for review.', done: (info) => {
+          const token = encodeURIComponent(info.token);
+          fill(progress, shared.inspectCard(info, (result) => {
+            if (connected && result && result.current && !result.unchanged) shared.differencesDialog(result.current);
+            reload();
+          }, {start: () => post(`/cloud/reviews/${token}/connect`, {}), jobs: '/cloud/jobs',
+            discard: () => del(`/cloud/reviews/${token}`)}));
+        }});
       self.disabled = false;
     }, 'primary btn-small');
   }
@@ -224,7 +244,7 @@
       actions: (lab) => {
         const latest = lab.latest_release, c = lab.connected;
         if (!latest || lab.own) return [];
-        return [connectButton(latest, c, c ? (c.newer ? `Подключить выпуск № ${latest.number}` : 'Подключить снова') : 'Подключить', progress, reload),
+        return [connectButton(latest, c, c ? (c.newer ? `Review release #${latest.number}` : 'Review release again') : 'Review release', progress, reload),
           c ? btn('Открыть', () => App.go(`/labs?tab=sources&source=${c.source_id}`), 'btn-small') : null];
       },
       search: (lab) => [lab.name, lab.author, lab.description].filter(Boolean).join(' '),
@@ -281,7 +301,7 @@
         : r.newer ? `новый выпуск № ${r.latest.number} от ${day(r.latest.created_at)} · ${shared.countsText(r.latest.counts)}`
           : `новее нет${r.current_release_number == null ? '' : ` (текущий № ${r.current_release_number})`}`;
       return h('li', {class: 'stack'}, h('div', {class: 'row'}, h('span', {class: 'lab-name'}, r.name), ' — ', text,
-        r.newer ? connectButton(r.latest, {source_id: r.source_id}, 'Подключить', progress, reload) : null), progress);
+        r.newer ? connectButton(r.latest, {source_id: r.source_id}, 'Review release', progress, reload) : null), progress);
     }));
   }
 
@@ -310,7 +330,7 @@
     return newer.length ? h('div', {class: 'alert stack cloud-auto'}, newer.map((r) => {
       const progress = h('div', {class: 'stack', hidden: true});
       return h('div', {class: 'stack'}, h('div', {class: 'row'}, h('span', {}, 'В облаке вышел новый выпуск лаборатории «', h('span', {class: 'lab-name'}, r.name), `»: № ${r.latest.number} от ${day(r.latest.created_at)}.`),
-        connectButton(r.latest, {source_id: r.source_id}, 'Подключить', progress, reload)), progress);
+        connectButton(r.latest, {source_id: r.source_id}, 'Review release', progress, reload)), progress);
     })) : null;
   }
 

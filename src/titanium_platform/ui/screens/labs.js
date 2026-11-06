@@ -22,7 +22,7 @@
   const PHASE = {waiting: 'ожидание', downloading: 'загрузка из облака', checking: 'проверка файла', building: 'сборка снимка', activating: 'подключение',
     done: 'подключено', unchanged: 'уже подключено', failed: 'не подключено', cancelled: 'отменено'};
   const STATUS = {connected: ['подключена', 'ok'], disconnected: ['отключена', 'warn']};
-  const termsName = (t) => (t ? (t.name && t.name.ru) || t.id || '—' : '—');
+  const termsName = (t) => (t ? (t.name && t.name.en) || t.id || '—' : '—');
   const termsOf = (list, id) => list.find((t) => t.id === id) || {id};
   const verifiedPill = (v) => (v ? pill('подпись проверена', 'ok') : pill('подпись не проверена', 'warn'));
   const recipeText = (r) => (r ? [`${num(r.power, 1)} %`, `${num(r.frequency, 1)} кГц`, `${num(r.speed, 0)} мм/с`, r.pulse_width == null ? null : `${num(r.pulse_width, 0)} нс`,
@@ -97,7 +97,7 @@
 
   function previewCard(terms, exports, written) {
     const out = h('div', {class: 'stack'});
-    const termsSelect = h('select', {'aria-label': 'Условия использования'}, terms.map((t) => h('option', {value: t.id}, `${termsName(t)} — ${(t.summary && t.summary.ru) || ''}`)));
+    const termsSelect = h('select', {'aria-label': 'Условия использования'}, terms.map((t) => h('option', {value: t.id}, `${termsName(t)} — ${(t.summary && t.summary.en) || ''}`)));
     const result = h('div', {class: 'stack'});
     let ready = false;
     const prepare = btn('Подготовка публикации', async (ev) => {
@@ -181,28 +181,46 @@
   // ---- «Подключённые лаборатории»: a file --------------------------------------------------------------------------------------------
 
   /** What a chosen file declares, before anything is connected; «Подключить» starts the job, «Не подключать» forgets the file. */
-  function inspectCard(info, done) {
+  function inspectCard(info, done, options = {}) {
     const lab = info.lab || {}, a = info.attribution || {}, r = info.release || {}, c = info.compatibility || {};
+    const terms = info.terms || {};
+    const permission = (key) => terms[key] === true ? 'Allowed' : terms[key] === false ? 'Not allowed' : 'Not specified';
+    const counts = Object.entries(r.counts || {}).map(([key, count]) => `${key.replace(/_/g, ' ')}: ${count}`).join(' · ') || 'No contents listed';
+    const equipment = (info.equipment || []).map((e) => [e.laser, e.manufacturer, e.model,
+      e.rated_power_w == null ? null : `${e.rated_power_w} W`, e.wavelength_nm == null ? null : `${e.wavelength_nm} nm`,
+      e.focal_length_mm == null ? null : `${e.focal_length_mm} mm lens`].filter(Boolean).join(' · ')).join('; ') || 'None listed';
+    const materials = (info.materials || []).map((m) => [m.family, m.grade, m.thickness_mm == null ? null : `${m.thickness_mm} mm`].filter(Boolean).join(' · ')).join('; ') || 'None listed';
     const el = h('div', {class: 'card stack lab-inspect'});
     const progress = h('div', {class: 'stack', hidden: true});
-    const connect = btn('Подключить', async () => {
+    const connect = btn('Connect laboratory', async () => {
       connect.disabled = true; forget.disabled = true;
-      try { await connectJob(info.token, progress, done); } catch (e) { fail(e); } finally { connect.disabled = false; forget.disabled = false; }
+      try {
+        if (options.start) await followJob({start: options.start, jobs: options.jobs, box: progress, done});
+        else await connectJob(info.token, progress, done);
+      } catch (e) { fail(e); } finally { connect.disabled = false; forget.disabled = false; }
     }, 'primary');
-    const forget = btn('Не подключать', async () => {
-      try { await del(`/labs/files/${encodeURIComponent(info.token)}`); el.remove(); } catch (e) { fail(e); }
+    const forget = btn('Do not connect', async () => {
+      try { if (options.discard) await options.discard(); else await del(`/labs/files/${encodeURIComponent(info.token)}`); el.remove(); } catch (e) { fail(e); }
     });
-    return fill(el, h('h3', {}, 'Файл выпуска: ', h('span', {class: 'lab-name'}, lab.name || 'лаборатория без названия'), verifiedPill(info.verified)),
-      facts([['Описание', lab.description], ['Ссылка', safeLink(lab.url)], ['Автор', [a.name, a.organization].filter(Boolean).join(', ') || null], ['Ссылка автора', safeLink(a.url)],
-        ['Выпуск', `${r.release_number != null ? `№ ${r.release_number} · ` : ''}от ${day(r.created_at)} · ${short(r.content_sha256)}`],
-        ['Содержимое', countsText(r.counts)], ['Размер', mb(info.bytes || 0)], ['Условия', termsName(info.terms)],
-        ['Совместимость', c.newer_minor ? `выпуск новее этой версии (схема ${c.schema_version}): неизвестные поля сохраняются и не используются`
-          : `читается полностью (схема ${c.schema_version || '—'})`],
-        ['Установки', (info.equipment || []).map((e) => `${e.laser}${e.focal_length_mm == null ? '' : ` · линза ${+e.focal_length_mm} мм`}`).join('; ') || 'нет'],
-        ['Титан', (info.materials || []).map(materialName).join('; ') || 'нет']]),
-      info.own ? h('p', {class: 'alert warn'}, 'Это выпуск собственной лаборатории этой мастерской: её результаты уже здесь.') : null,
-      info.connected ? h('p', {class: 'alert'}, info.connected.same ? 'Этот выпуск уже подключён: тот же файл.' : 'Выпуск с этим идентификатором уже подключён, но содержимое другое.') : null,
-      h('p', {class: 'small muted'}, 'Пока ничего не подключено: файл только прочитан. Подключение проверяет каждую запись файла, идёт в фоне и его можно отменить.'),
+    return fill(el, h('h3', {}, 'Release file: ', h('span', {class: 'lab-name'}, lab.name || 'Unnamed laboratory'),
+      info.verified ? pill('Verified cloud source', 'ok') : pill('Source not verified', 'warn')),
+      facts([['Description', lab.description], ['Laboratory URL', safeLink(lab.url)], ['Author', [a.name, a.organization].filter(Boolean).join(', ') || null], ['Author URL', safeLink(a.url)],
+        ['Release', `${r.release_number != null ? `#${r.release_number} · ` : ''}${day(r.created_at)} · ${short(r.content_sha256)}`],
+        ['Available measurements', counts], ['Size', `${(Number(info.bytes || 0) / 1024 / 1024).toFixed(1)} MB`], ['Usage terms', termsName(terms)],
+        ['Format compatibility', c.newer_minor ? `Newer format version (${c.schema_version}): unknown fields are retained but not used.`
+          : `Readable format (schema ${c.schema_version || '—'}).`], ['Equipment', equipment], ['Material', materials]]),
+      h('p', {class: 'small muted'}, 'Compare the listed equipment and material with your workshop. Format compatibility does not establish that a recipe is suitable for your machine.'),
+      h('div', {class: 'lab-terms stack'}, h('strong', {}, 'Usage permissions'),
+        h('p', {class: 'small'}, (terms.summary && terms.summary.en) || 'See the terms and permissions below.'),
+        facts([['Commercial use', permission('commercial')], ['Modification', permission('modify')], ['Redistribution', permission('redistribute')],
+          ['Attribution', [a.name, a.organization].filter(Boolean).join(', ') || 'Not specified'], ['Terms URL', safeLink(terms.url)]])),
+      h('details', {class: 'lab-release-details'}, h('summary', {}, 'Full release details'),
+        facts([['Content SHA-256', r.content_sha256 || 'Not supplied'], ['Release ID', r.release_id || 'Not supplied'], ['Full contents', counts],
+          ['Capabilities', r.capabilities ? JSON.stringify(r.capabilities) : 'Not supplied'],
+          ['Algorithm versions', r.algorithm_versions ? JSON.stringify(r.algorithm_versions) : 'Not supplied']])),
+      info.own ? h('p', {class: 'alert warn'}, 'This is a release of this workshop’s own laboratory; its results are already here.') : null,
+      info.connected ? h('p', {class: 'alert'}, info.connected.same ? 'This exact release is already connected.' : 'A release with this identifier is connected, but its contents differ.') : null,
+      h('p', {class: 'small muted'}, 'Nothing is connected yet. Connecting checks each record in the background and can be canceled.'),
       h('div', {class: 'row'}, connect, forget), progress);
   }
 
@@ -253,11 +271,11 @@
   const connectJob = (token, box, done) => followJob({start: () => post(`/labs/files/${encodeURIComponent(token)}/connect`, {}), box, done});
 
   function fileCard(connected) {
-    const input = h('input', {type: 'file', accept: '.tcelab', 'aria-label': 'Файл выпуска лаборатории'});
+    const input = h('input', {type: 'file', accept: '.tcelab', 'aria-label': 'Laboratory release file'});
     const shown = h('div', {});
-    const read = btn('Прочитать файл', async (ev) => {
+    const read = btn('Read release file', async (ev) => {
       const file = input.files && input.files[0];
-      if (!file) return fail(new Error('Выберите файл выпуска лаборатории (.tcelab)'));
+      if (!file) return fail(new Error('Choose a laboratory release file (.tcelab).'));
       const self = ev.currentTarget;
       self.disabled = true;
       try {
@@ -266,10 +284,9 @@
         fill(shown, inspectCard(await form('/labs/files', fd), connected));
       } catch (e) { fill(shown, h('p', {class: 'alert bad', role: 'alert'}, e.message)); } finally { self.disabled = false; }
     }, 'primary');
-    return h('div', {class: 'stack'}, h('div', {class: 'card stack'}, h('h3', {}, 'Подключить лабораторию из файла'),
-      h('p', {class: 'small muted'}, 'Выпуск другой лаборатории — файл .tcelab. Сначала он читается и показывается: кто автор, какой выпуск, какие установки и титан, '
-        + 'на каких условиях. Подключается только после вашего «Подключить».'),
-      h('div', {class: 'row'}, App.filePick(input, 'Выбрать файл .tcelab'), read)), shown);
+    return h('div', {class: 'stack'}, h('div', {class: 'card stack'}, h('h3', {}, 'Connect a laboratory from a file'),
+      h('p', {class: 'small muted'}, 'Read a .tcelab release to review its author, equipment, materials and usage terms before connecting it.'),
+      h('div', {class: 'row'}, App.filePick(input, 'Choose .tcelab file'), read)), shown);
   }
 
   // ---- the connected laboratories ------------------------------------------------------------------------------------------------
@@ -497,5 +514,5 @@
       tabs.list, h('div', {class: 'labs-panels'}, tabs.panels));
   }});
 
-  LabsCloud.install({followJob, previewBody, countsText, termsName, differencesDialog, mb});
+  LabsCloud.install({followJob, previewBody, countsText, termsName, differencesDialog, inspectCard, mb});
 })();
