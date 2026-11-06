@@ -120,8 +120,8 @@ def test_an_experiment_with_a_matrix_is_one_screen_with_the_photo_on_the_left_an
     out = run(tmp_path, routes_for(MATRIX), "eng-abc", """
   out.root = tree.className;
   out.head = tree.querySelectorAll('header')[0].textContent;
-  out.back = tree.querySelectorAll('a').find((a) => a.textContent === '← Эксперименты').getAttribute('href');
-  out.addPhoto = tree.querySelectorAll('a').find((a) => a.textContent === 'Добавить фото').getAttribute('href');
+  out.back = tree.querySelectorAll('a').find((a) => a.textContent === '← Experiments').getAttribute('href');
+  out.addPhoto = tree.querySelectorAll('a').find((a) => a.textContent === 'Add photo').getAttribute('href');
   out.tabs = tabButtons(tree).map((b) => [b.textContent, b.hidden]);
   out.shown = shownPanels(tree);
   const photo = tree.querySelectorAll('section').find((s) => has(s, 'ep-photo-col'));
@@ -137,11 +137,11 @@ def test_an_experiment_with_a_matrix_is_one_screen_with_the_photo_on_the_left_an
 """)
     assert out["root"] == "os experiment" and "Тест материала" in out["head"] and "Принят" in out["head"] and "Fill" in out["head"]   # task pill beside the title
     assert out["back"] == "#/experiments" and out["addPhoto"] == "#/ingest?rephoto=59"
-    assert out["tabs"] == [["Результат", False], ["Матрица", False], ["Проверки (1)", False], ["Работа", False]] and out["shown"] == ["ep-tab-panel-result"]
-    assert out["photoTools"] == ["Скрыть контуры", "Поднять яркость", "Перемерить заново"] and out["legend"] == ["Что означают линии"]
+    assert out["tabs"] == [["Result", False], ["Matrix", False], ["Reviews (1)", False], ["Work", False]] and out["shown"] == ["ep-tab-panel-result"]
+    assert out["photoTools"] == ["Hide outlines", "Increase brightness", "Re-measure"] and out["legend"] == ["What the lines mean"]
     assert out["img"].startswith("/api/pairs/59/overlay.png?corrected=true&visibility=normal&full=false") and "full=true" in out["full"]     # overlay first, the corrected photograph as it is
-    assert "проверка №59" in out["caption"] and "цвет по эталонной карте" in out["caption"]
-    assert out["layers"] == 10 and out["layersHeading"][0] == "Измеренные слои · 10" and "Матрица параметров 1 × 10" in out["layersHeading"]
+    assert "review #59" in out["caption"] and "color using reference chart" in out["caption"]
+    assert out["layers"] == 10 and out["layersHeading"][0] == "Measured layers · 10" and "Parameter matrix 1 × 10" in out["layersHeading"]
     assert len(out["alerts"]) == 1
 
 
@@ -183,16 +183,16 @@ def test_the_measured_layers_of_a_matrix_are_a_short_list_worst_first_a_page_at_
   const again = await screen(data.key);
   out.kept = keys(again.querySelectorAll('aside').find((s) => has(s, 'ep-side')).querySelector('.lst')).slice(0, 3);
 """)
-    assert out["heading"] == "Измеренные слои · 25"
+    assert out["heading"] == "Measured layers · 25"
     assert len(out["keys"]) == 20 and out["count"] == "showing 20 of 25" and out["more"] == "Show 5 more"
     # not comparable, then noted, then the most uneven sample first: cells 7 (±2.4), 14 (±2.3), 21 (±2.2), 10 (±2.0), …
     assert out["keys"][:6] == ["3", "5", "7", "14", "21", "10"]
-    assert "не сопоставим" in out["lines"][0] and "замечаний: 1" in out["lines"][1] and "±2.4 L*" in out["lines"][2]
+    assert "not comparable" in out["lines"][0] and "notes: 1" in out["lines"][1] and "±2.4 L*" in out["lines"][2]
     assert "L 40.5 · a 21.0 · b -21.0" in out["lines"][2] and out["swatches"] == 20               # the colour of each line
-    assert out["chips"] == ["All · 25", "Не сопоставимы · 1", "С замечаниями · 1", "Без замечаний · 23"]
+    assert out["chips"] == ["All · 25", "Not comparable · 1", "With issues · 1", "No issues · 23"]
     assert out["openBefore"] == 0 and len(out["open"]) == 1
     card = out["open"][0]
-    assert "Fill · from the LightBurn layer" in card and "1950 кГц" in card and "Color variation in the sample: L* ±2.4" in card
+    assert "Fill · from the LightBurn layer" in card and "1950 kHz" in card and "Color variation in the sample: L* ±2.4" in card
     assert out["ordered"] == ["0", "1", "2"] and out["kept"] == ["0", "1", "2"]
 
 
@@ -242,7 +242,7 @@ def test_the_composition_of_a_hundred_layer_file_is_a_short_list_with_what_a_pic
 def test_the_tabs_switch_panels_remember_the_open_one_and_the_matrix_tab_is_hidden_when_the_check_has_none(tmp_path):
     out = run(tmp_path, routes_for(MATRIX, WORK), "eng-abc", """
   out.first = shownPanels(tree);
-  await byText(tree, 'button', 'Матрица').dispatch('click');
+  await byText(tree, 'button', 'Matrix').dispatch('click');
   out.afterClick = shownPanels(tree); out.saved = ctx.__local['ep.tab'];
   const again = await screen('eng-abc');
   out.restored = shownPanels(again);
@@ -254,7 +254,7 @@ def test_the_tabs_switch_panels_remember_the_open_one_and_the_matrix_tab_is_hidd
   out.workArrow = shownPanels(work);                     // the arrow skips the hidden matrix tab
 """)
     assert out["first"] == ["ep-tab-panel-result"] and out["afterClick"] == ["ep-tab-panel-matrix"] and out["saved"] == "matrix" and out["restored"] == ["ep-tab-panel-matrix"]
-    assert out["workTabs"] == [["Результат", False], ["Матрица", True], ["Проверки (1)", False], ["Работа", False]] and out["workShown"] == ["ep-tab-panel-result"]
+    assert out["workTabs"] == [["Result", False], ["Matrix", True], ["Reviews (1)", False], ["Work", False]] and out["workShown"] == ["ep-tab-panel-result"]
     assert out["workArrow"] == ["ep-tab-panel-checks"]
 
 
@@ -262,14 +262,14 @@ def test_the_tabs_switch_panels_remember_the_open_one_and_the_matrix_tab_is_hidd
 def test_the_overlay_and_brightness_buttons_redraw_the_photo_and_are_remembered_for_the_session(tmp_path):
     out = run(tmp_path, routes_for(MATRIX), "eng-abc", """
   const photo = tree.querySelectorAll('section').find((s) => has(s, 'ep-photo-col'));
-  await byText(photo, 'button', 'Скрыть контуры').dispatch('click'); await tick();
+  await byText(photo, 'button', 'Hide outlines').dispatch('click'); await tick();
   out.noContours = photo.querySelector('img').getAttribute('src'); out.stored = ctx.__session['experiment-contours'];
-  await byText(photo, 'button', 'Поднять яркость').dispatch('click'); await tick();
+  await byText(photo, 'button', 'Increase brightness').dispatch('click'); await tick();
   out.normal = photo.querySelector('img').getAttribute('src'); out.light = ctx.__session['experiment-lifted'];
   out.buttons = photo.querySelectorAll('button').map((b) => b.textContent);
 """)
     assert out["noContours"].startswith("/api/pairs/59/photo.png?corrected=true&visibility=normal") and out["stored"] == "0"
-    assert "visibility=lifted" in out["normal"] and out["light"] == "1" and out["buttons"] == ["Показать контуры", "Обычная яркость", "Перемерить заново"]
+    assert "visibility=lifted" in out["normal"] and out["light"] == "1" and out["buttons"] == ["Show outlines", "Normal brightness", "Re-measure"]
 
 
 @node
@@ -281,15 +281,15 @@ def test_a_plate_without_photos_shows_its_picture_slot_the_plate_and_its_actions
   const side = tree.querySelectorAll('aside').find((s) => has(s, 'ep-side'));
   out.plate = side.textContent;
   out.links = side.querySelectorAll('a').map((a) => [a.textContent, a.getAttribute('href')]);
-  out.head = tree.querySelectorAll('a').filter((a) => a.textContent === 'Добавить фото').map((a) => a.getAttribute('href'));
+  out.head = tree.querySelectorAll('a').filter((a) => a.textContent === 'Add photo').map((a) => a.getAttribute('href'));
 """)
-    assert out["tabs"] == ["Плата"] and out["shown"] == ["ep-tab-panel-plate"]
-    assert "Фото ещё нет" in out["nophoto"] and out["nophotoLink"] == ["#/ingest?plan=22"]
+    assert out["tabs"] == ["Plate"] and out["shown"] == ["ep-tab-panel-plate"]
+    assert "No photo yet" in out["nophoto"] and out["nophotoLink"] == ["#/ingest?plan=22"]
     assert out["head"] == ["#/ingest?plan=22", "#/ingest?plan=22"]                                  # the title row and the empty picture slot both offer it
-    assert "Imma + Boris" in out["plate"] and "Описание платы" in out["plate"] and "16 слоёв" in out["plate"] and "Задача:" in out["plate"]
+    assert "Imma + Boris" in out["plate"] and "Описание платы" in out["plate"] and "16 layers" in out["plate"] and "Task:" in out["plate"]
     links = dict((text, href) for text, href in out["links"])
-    assert links["Открыть и изменить плату"] == "#/plans/22" and "Скачать .lbrn2" not in links      # the file is a button now, one for every plan
-    assert links["Open AI researcher"] == "#/research" and links["предложению планировщика № 3"].startswith("#/designer?device=1&lens=")
+    assert links["Open and edit plate"] == "#/plans/22" and "Скачать .lbrn2" not in links      # the file is a button now, one for every plan
+    assert links["Open AI researcher"] == "#/research" and links["planner proposal #3"].startswith("#/designer?device=1&lens=")
 
 
 @node
@@ -378,7 +378,7 @@ def test_a_plate_whose_path_cannot_be_read_is_still_shown_with_its_other_actions
   out.links = side.querySelectorAll('a').map((a) => a.textContent);
   out.side = side.textContent;
 """)
-    assert out["chains"] == 0 and "Открыть и изменить плату" in out["links"] and "Файл LightBurn:" not in out["side"]
+    assert out["chains"] == 0 and "Open and edit plate" in out["links"] and "Файл LightBurn:" not in out["side"]
 
 
 @node
@@ -408,11 +408,11 @@ def test_a_photo_work_is_shown_as_the_work_opened_and_exported_on_its_own_screen
   out.side = side.textContent;
   out.links = side.querySelectorAll('a').map((a) => [a.textContent, a.getAttribute('href')]);
 """)
-    assert out["tabs"][-1] == "Работа фотогравировки" and "Плата" not in out["tabs"]
-    assert "Inna Portrait" in out["side"] and "TCE-P-41F96DBB" in out["side"] and "слоёв" not in out["side"]
+    assert out["tabs"][-1] == "Photo engraving work" and "Plate" not in out["tabs"]
+    assert "Inna Portrait" in out["side"] and "TCE-P-41F96DBB" in out["side"] and "layers" not in out["side"].split("Photo engraving work")[-1]
     links = dict(out["links"])
-    assert links["Открыть работу"] == "#/photo-engraving?work=28" and "Скачать .lbrn2" not in links
-    assert "Открыть и изменить плату" not in links and "Open AI researcher" not in links
+    assert links["Open work"] == "#/photo-engraving?work=28" and "Скачать .lbrn2" not in links
+    assert "Open and edit plate" not in links and "Open AI researcher" not in links
 
 
 @node
@@ -424,31 +424,31 @@ def test_checks_conclusions_and_the_two_deletions_keep_their_actions(tmp_path):
     out = run(tmp_path, routes, "plan-5", """
   out.tabs = tabButtons(tree).map((b) => b.textContent); out.shown = shownPanels(tree);
   const side = tree.querySelectorAll('aside').find((s) => has(s, 'ep-side'));
-  await byText(side, 'button', 'Проверки (2)').dispatch('click');
+  await byText(side, 'button', 'Reviews (2)').dispatch('click');
   const rows = side.querySelectorAll('div').filter((d) => has(d, 'ep-check'));
   out.checks = rows.map((r) => [r.textContent, has(r, 'is-current')]);
-  out.links = side.querySelectorAll('a').filter((a) => ['Разбор', 'Проверить и принять'].includes(a.textContent)).map((a) => [a.textContent, a.getAttribute('href')]);
+  out.links = side.querySelectorAll('a').filter((a) => ['Analysis', 'Review and accept'].includes(a.textContent)).map((a) => [a.textContent, a.getAttribute('href')]);
   const photo = tree.querySelectorAll('section').find((s) => has(s, 'ep-photo-col'));
   out.before = photo.querySelector('img').getAttribute('src').split('?')[0];
-  await byText(side, 'button', 'Проверка №71').dispatch('click'); await tick();
+  await byText(side, 'button', 'Review #71').dispatch('click'); await tick();
   out.after = photo.querySelector('img').getAttribute('src').split('?')[0];
   out.current = side.querySelectorAll('div').filter((d) => has(d, 'is-current')).map((d) => d.textContent.slice(0, 12));
-  await byText(side, 'button', 'Выводы (1)').dispatch('click');
+  await byText(side, 'button', 'Findings (1)').dispatch('click');
   out.findings = side.querySelectorAll('div').filter((d) => d.getAttribute('role') === 'tabpanel' && !d.hidden).map((d) => d.textContent)[0];
-  await byText(tree, 'button', 'Удалить эксперимент').dispatch('click');
+  await byText(tree, 'button', 'Delete experiment').dispatch('click');
   const dialog = ctx.document.body.querySelector('.modal');
   out.question = dialog.textContent;
   out.deletedBefore = ctx.requests.filter((r) => r.method === 'DELETE').length;
-  await byText(dialog, 'button', 'Удалить').dispatch('click'); await tick(); await tick();
+  await byText(dialog, 'button', 'Delete').dispatch('click'); await tick(); await tick();
   out.deleted = ctx.requests.filter((r) => r.method === 'DELETE').map((r) => r.path);
   out.route = ctx.location ? null : null;
 """)
-    assert out["tabs"] == ["Результат", "Матрица", "Проверки (2)", "Плата", "Выводы (1)"] and out["shown"] == ["ep-tab-panel-result"]
-    assert [row[0].split("IMG")[0] for row in out["checks"]] == ["Проверка №71", "Проверка №70"] and out["checks"][0][1] is False and out["checks"][1][1] is True   # newest first, the main one is shown
-    assert out["links"] == [["Разбор", "#/analysis/71"], ["Проверить и принять", "#/ingest?pair=70"]]
-    assert out["before"] == "/api/pairs/70/overlay.png" and out["after"] == "/api/pairs/71/overlay.png" and out["current"] == ["Проверка №71"]
-    assert "Цвет найден" in out["findings"] and "Прежние версии вывода: 1" in out["findings"] and "Кандидат" in out["findings"]
-    assert "все проверки (2)" in out["question"] and out["deletedBefore"] == 0                      # asked first
+    assert out["tabs"] == ["Result", "Matrix", "Reviews (2)", "Plate", "Findings (1)"] and out["shown"] == ["ep-tab-panel-result"]
+    assert [row[0].split("IMG")[0] for row in out["checks"]] == ["Review #71", "Review #70"] and out["checks"][0][1] is False and out["checks"][1][1] is True   # newest first, the main one is shown
+    assert out["links"] == [["Analysis", "#/analysis/71"], ["Review and accept", "#/ingest?pair=70"]]
+    assert out["before"] == "/api/pairs/70/overlay.png" and out["after"] == "/api/pairs/71/overlay.png" and out["current"][0].startswith("Review #71")
+    assert "Цвет найден" in out["findings"] and "Previous finding versions: 1" in out["findings"] and "Candidate" in out["findings"]
+    assert "all reviews (2)" in out["question"] and out["deletedBefore"] == 0                      # asked first
     assert out["deleted"] == ["/api/pairs/70", "/api/pairs/71", "/api/plans/5"]                    # each check on its own, then the plate
 
 
@@ -478,7 +478,7 @@ REVIEW = {"pair_id": 111, "photo": "IMG_3378.DNG", "accepted": True, "tolerance_
          "same_surface": [{"pair_id": 108, "photo": "IMG_3376.DNG", "L": 79.4, "how": "witness"}], "dL_used": 15.0, "dL_same": 11.8, "differs": True}]}]}
 OVERALL = {"tolerance_de": 5.0, "all": {"layers": 3, "engravings": 3, "tones": 47, "median_de": 13.8, "within": 0.213},
            "size_measured": {"layers": 1, "engravings": 1, "tones": 15, "median_de": 10.2, "within": 0.4}, "layers": []}
-PORTRAIT = experiment("plan-32", kind="Работа фотогравировки", plan_id=32, engraving_id=None, main_pair_id=111,
+PORTRAIT = experiment("plan-32", kind="Photo engraving work", plan_id=32, engraving_id=None, main_pair_id=111,
                       pairs=[pair_summary(111, alignment="picture", name="IMG_3378.DNG", grayscale_image=True)])
 
 
@@ -497,7 +497,7 @@ def test_an_accepted_photo_engraving_shows_what_was_predicted_before_it_beside_w
   out.summary = card.querySelectorAll('summary').map((x) => x.textContent);
   out.asked = ctx.requests.map((r) => r.path).filter((x) => x.includes('review'));
 """)
-    assert out["order"][:2] == ["Prediction and result", "Измеренные слои · 1"]                    # before the measured layers
+    assert out["order"][:2] == ["Prediction and result", "Measured layers · 1"]                    # before the measured layers
     assert out["asked"] == ["/api/pairs/111/prediction-review", "/api/prediction-reviews"]
     assert "Prediction based on 1 previously accepted engraving" in out["text"] and ["median 18.7 ΔE", "pill warn"] in out["pills"]
     assert "Tones compared: 16 · maximum 59.5 ΔE · within 5 ΔE: 13 %. Result: lighter than predicted by 17.1 L* (medians across tones)." in out["text"]

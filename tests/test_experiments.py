@@ -189,10 +189,10 @@ def test_opening_an_experiment_shows_its_photograph_with_the_overlay_first_witho
 
 def test_the_experiment_screen_offers_check_selection_brightness_and_contours_and_holds_files_layers_and_conclusions():
     page = screen("experiment.js")
-    assert "btn(`Проверка №${p.id}`, () => { current = p; refreshAll(); }, 'btn-small')" in page          # every check, selectable
-    assert "btn(isLifted(current) ? 'Обычная яркость' : 'Поднять яркость'" in page
-    assert "btn(contours ? 'Скрыть контуры' : 'Показать контуры'" in page
-    for part in ("'Скачать LightBurn'", "'Скачать файл этой гравировки'", "Lifecycle.chain(lifecycle, {onAction", "`Измеренные слои · ${layers.length}`", "'Выводы по этому эксперименту'",
+    assert "btn(`Review #${p.id}`, () => { current = p; refreshAll(); }, 'btn-small')" in page          # every check, selectable
+    assert "btn(isLifted(current) ? 'Normal brightness' : 'Increase brightness'" in page
+    assert "btn(contours ? 'Hide outlines' : 'Show outlines'" in page
+    for part in ("'Download LightBurn'", "'Download this engraving file'", "Lifecycle.chain(lifecycle, {onAction", "`Measured layers · ${layers.length}`", "'Findings for this experiment'",
                  "IngestReview.hiddenMargins(check.alignment)"):
         assert part in page, part
 
