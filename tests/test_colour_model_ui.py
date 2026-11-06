@@ -1,6 +1,6 @@
 """The colour model of one laser and lens and the knowledge page of one colour on one screen (REQ-044, DEC-080): the sets on the left, the
 map of the selected set with its cautions in the middle, its tables in tabs on the right, the remembered choice, the empty states; the
-knowledge page as two columns. The model and the RAW «Все слои» are short lists (REQ-005, DEC-090): one line each, a page of 20, search,
+knowledge page as two columns. The model and the RAW «All layers» are short lists (REQ-005, DEC-090): one line each, a page of 20, search,
 filters and sorts, the figures under a line on a click. Run in node over the small DOM of the other screen tests, with answers shaped like
 the server's."""
 import json
@@ -116,27 +116,27 @@ def test_the_model_page_is_one_screen_with_the_sets_on_the_left_the_map_in_the_m
   out.opened = right.querySelectorAll('.lst-det').filter((d) => !d.hidden).map((d) => d.textContent);
   const det = right.querySelectorAll('.lst-det').find((d) => !d.hidden);
   out.signals = det.querySelectorAll('.ev-signal').map((p) => p.textContent);
-  out.fold = det.querySelectorAll('details').map((d) => [d.hasAttribute('open'), d.querySelector('summary').textContent, d.textContent.includes('стабильность variance 1.50')]);
-  await byText(tree, 'button', 'Целевой цвет').dispatch('click');
+  out.fold = det.querySelectorAll('details').map((d) => [d.hasAttribute('open'), d.querySelector('summary').textContent, d.textContent.includes('stability variance 1.50')]);
+  await byText(tree, 'button', 'Target color').dispatch('click');
   out.dialog = ctx.document.body.querySelector('.modal').getAttribute('aria-label');
 """)
     assert out["root"].split() == ["os", "lm"]                                                           # the page frame; the section rail stays (DEC-081)
-    assert "Карта цветов и подбор параметров" in out["head"] and "Данные разных лазеров и линз" in out["head"]
-    assert ["← Карта цветов", "#/colors"] in out["links"] and ["Спланировать эксперимент", "#/designer?device=1&lens=2"] in out["links"]
-    assert out["selects"] == ["Laser", "Lens"] and out["dialog"] == "Целевой цвет"                         # the pickers and the target-colour dialog stay
-    assert [name for name, _ in out["sets"]] == ["Калиброванные наблюдения | измеренных цветов 3 · в модели 4", "Предварительно · пара 7 | IMG_7.DNG · слоёв 2 · вариантов 1",
-                                                 "пара 5 | IMG_5.DNG · слоёв 2 · вариантов 1"]
+    assert "Color map and parameter selection" in out["head"] and "Data from different lasers and lenses" in out["head"]
+    assert ["← Color map", "#/colors"] in out["links"] and ["Plan experiment", "#/designer?device=1&lens=2"] in out["links"]
+    assert out["selects"] == ["Laser", "Lens"] and out["dialog"] == "Target color"                         # the pickers and the target-colour dialog stay
+    assert [name for name, _ in out["sets"]] == ["Calibrated observations | measured colors 3 · in model 4", "Provisional · pair 7 | IMG_7.DNG · layers 2 · variants 1",
+                                                 "pair 5 | IMG_5.DNG · layers 2 · variants 1"]
     assert [pressed for _, pressed in out["sets"]] == ["true", "false", "false"]                          # the calibrated observations come first
     assert out["columns"] == ["os-col lm-left", "os-col lm-centre", "os-col lm-right"]
-    assert "Калиброванные наблюдения для прогноза" in out["centre"] and "Пунктир — наборы без оценок повторяемости" in out["centre"]
+    assert "Calibrated observations for prediction" in out["centre"] and "Dashed marks indicate sets without repeatability estimates" in out["centre"]
     assert out["plot"] == 1 and out["circles"] == 3                                                       # one map, a circle for every measured colour
-    assert "Модель цветовых параметров" in out["right"] and out["rows"] == 4
-    assert out["knowledgeLinks"] == [["Открыть", f"#/knowledge/{k}"] for k in (1, 2, 3, 4)]               # every line opens its entry's page
+    assert "Color parameter model" in out["right"] and out["rows"] == 4
+    assert out["knowledgeLinks"] == [["Open", f"#/knowledge/{k}"] for k in (1, 2, 3, 4)]               # every line opens its entry's page
     assert "31.0 % · 300 kHz · 1000 mm/s · L 41.0 · a 2.0 · b -3.0Measured" in out["right"]                   # one line: settings, colour, stage
-    assert len(out["opened"]) == 1 and "31.0 % · 300 kHz · 1000 mm/s · Q-Pulse 4 нс · шаг 0.003 мм · 1 проход(а)" in out["opened"][0]
-    assert "независимых 1" in out["opened"][0] and "уверенность —" in out["opened"][0] and "стабильность variance 1.50" in out["opened"][0]
+    assert len(out["opened"]) == 1 and "31.0 % · 300 kHz · 1000 mm/s · Q-Pulse 4 ns · interval 0.003 mm · 1 passes" in out["opened"][0]
+    assert "independent 1" in out["opened"][0] and "confidence —" in out["opened"][0] and "stability variance 1.50" in out["opened"][0]
     assert out["signals"][0] == "reference chart corrected" and out["signals"][-1] == "1 independent engraving"       # the signals first (REQ-001) ...
-    assert out["fold"] == [[False, "Цифры: цвет Lab, уверенность, ошибка ΔE, стабильность", True]]          # ... the figures in a closed fold
+    assert out["fold"] == [[False, "Numbers: Lab color, confidence, ΔE error, stability", True]]          # ... the figures in a closed fold
     assert out["tabs"] == 0                                                                               # the model is a single list, no tabs
 
 
@@ -171,21 +171,21 @@ def test_a_raw_set_shows_its_map_cautions_and_three_tabs_and_every_old_table_is_
   out.noIngest = tree.querySelector('.lm-centre').querySelectorAll('a').length;
 """)
     assert out["pressed"] == ["false", "true", "false"] and out["circles"] == 2
-    assert "Предварительные RAW-наблюдения · пара 7" in out["centre"] and "IMG_7.DNG · work7.lbrn2 · Plate · Grade 5 · партия B7" in out["centre"]
-    assert "Относительная карта a* × b*" in out["centre"]
-    assert len(out["alerts"]) == 3 and "ещё не приняты: нужно проверить наложение масок; состояние пары — готова к принятию" in out["alerts"][0]
-    assert "a warning of the pair" in out["alerts"][1] and "относительно данного RAW-снимка" in out["alerts"][2]      # no caution is hidden
-    assert out["ingest"] == [["Открыть проверку слоёв и принять пару", "#/ingest?pair=7"]]
-    assert out["tabs"] == ["Что видно (2)", "Варианты (3)", "Все слои (2)"] and out["first"] == ["lm-tab-panel-seen"] and out["second"] == ["lm-tab-panel-variants"]
-    assert "Что видно в этой паре" in out["seen"] and "Finding 0 · C00" in out["seen"] and "ΔE от чистой поверхности 4.20" in out["seen"]
-    assert len(out["variants"]) == 3 and "V0" in out["variants"][0] and "ΔE 12.3" in out["variants"][0] and "настройки неполные" in out["variants"][1]
-    assert len(out["variantOpen"]) == 1 and "Отличие от очищенного фона на этом снимке" in out["variantOpen"][0]   # one line each, details on click
+    assert "Provisional RAW observations · pair 7" in out["centre"] and "IMG_7.DNG · work7.lbrn2 · Plate · Grade 5 · batch B7" in out["centre"]
+    assert "Relative a* × b* map" in out["centre"]
+    assert len(out["alerts"]) == 3 and "not yet accepted: mask overlay needs review; pair status: ready to accept" in out["alerts"][0]
+    assert "a warning of the pair" in out["alerts"][1] and "relative to this RAW photo" in out["alerts"][2]      # no caution is hidden
+    assert out["ingest"] == [["Review layers and accept pair", "#/ingest?pair=7"]]
+    assert out["tabs"] == ["What is visible (2)", "Variants (3)", "All layers (2)"] and out["first"] == ["lm-tab-panel-seen"] and out["second"] == ["lm-tab-panel-variants"]
+    assert "What is visible in this pair" in out["seen"] and "Finding 0 · C00" in out["seen"] and "ΔE from cleaned surface 4.20" in out["seen"]
+    assert len(out["variants"]) == 3 and "V0" in out["variants"][0] and "ΔE 12.3" in out["variants"][0] and "incomplete settings" in out["variants"][1]
+    assert len(out["variantOpen"]) == 1 and "Difference from the cleaned background in this photo" in out["variantOpen"][0]   # one line each, details on click
     assert out["variantLinks"] == ["#/analysis/7"]
-    assert out["layerRows"] == ["C00 · тёмный на этом фотоΔE 7.5частей 1", "C01 · тёмный на этом фотоΔE 7.5"]          # one line per layer
-    assert len(out["layerOpen"]) == 1 and "Тестовый участок" in out["layerOpen"][0] and "пикселей 1200" in out["layerOpen"][0]
+    assert out["layerRows"] == ["C00 · тёмный на этом фотоΔE 7.5parts 1", "C01 · тёмный на этом фотоΔE 7.5"]          # one line per layer
+    assert len(out["layerOpen"]) == 1 and "Test area" in out["layerOpen"][0] and "pixels 1200" in out["layerOpen"][0]
     assert "a note of the layer" in out["layerOpen"][0] and "L 20.0 · a 1.0 · b 0.0" in out["layerOpen"][0]
-    assert len(out["parts"]) == 1 and "C00 / sub1" in out["parts"][0] and "Часть слоя" in out["parts"][0]   # the measured part opens with its layer
-    assert "Нет данных" in out["empty"] and out["pairTitle"] == "RAW-наблюдения · пара 5" and out["noIngest"] == 0
+    assert len(out["parts"]) == 1 and "C00 / sub1" in out["parts"][0] and "Layer part" in out["parts"][0]   # the measured part opens with its layer
+    assert "No data" in out["empty"] and out["pairTitle"] == "RAW observations · pair 5" and out["noIngest"] == 0
 
 
 @node
@@ -206,10 +206,10 @@ def test_the_chosen_set_and_tab_are_remembered_and_a_stale_or_missing_memory_ope
   await bare.querySelectorAll('button').filter((b) => has(b, 'lm-set'))[1].dispatch('click');
   out.bareAfter = active(bare);
 """)
-    assert out["initial"] == ["Калиброванные наблюдения"] and out["storedAtStart"]["lm.set"] == "calibrated"
+    assert out["initial"] == ["Calibrated observations"] and out["storedAtStart"]["lm.set"] == "calibrated"
     assert out["stored"]["lm.set"] == "pair-5" and out["stored"]["lm.tab"] == "variants"
-    assert out["restored"] == ["пара 5"] and out["restoredTab"] == ["lm-tab-panel-variants"]
-    assert out["stale"] == ["Калиброванные наблюдения"] and out["bare"] == ["Калиброванные наблюдения"] and out["bareAfter"] == ["пара 7"]
+    assert out["restored"] == ["pair 5"] and out["restoredTab"] == ["lm-tab-panel-variants"]
+    assert out["stale"] == ["Calibrated observations"] and out["bare"] == ["Calibrated observations"] and out["bareAfter"] == ["pair 7"]
 
 
 @node
@@ -224,18 +224,18 @@ def test_a_laser_with_many_raw_pairs_lists_twenty_sets_with_a_search_and_keeps_t
   ctx.__store['lm.set'] = 'pair-44';
   const again = await screen(data.arg);
   const box = again.querySelector('.lm-left');
-  out.beyond = {rows: lines(box).length, note: box.querySelector('.lst-pin-note').textContent.trim().split('.')[0], pinned: pressed(box), title: again.querySelector('.lm-centre').textContent.includes('пара 44')};
+  out.beyond = {rows: lines(box).length, note: box.querySelector('.lst-pin-note').textContent.trim().split('.')[0], pinned: pressed(box), title: again.querySelector('.lm-centre').textContent.includes('pair 44')};
   const search = box.querySelector('.lst-search');
-  search.value = 'пара 30';
+  search.value = 'pair 30';
   await search.dispatch('input'); await tick();
   out.found = {rows: lines(box).map((r) => r.querySelector('strong').textContent), count: box.querySelector('.lst-count').textContent, note: box.querySelector('.lst-pin-note').textContent.trim().split('.')[0]};
   await lines(box)[0].querySelector('button').dispatch('click');
-  out.chosen = {pressed: pressed(box), title: again.querySelector('.lm-centre').textContent.includes('пара 30'), stored: ctx.__store['lm.set']};
+  out.chosen = {pressed: pressed(box), title: again.querySelector('.lm-centre').textContent.includes('pair 30'), stored: ctx.__store['lm.set']};
 """)
-    assert out["first"] == {"rows": 20, "count": "showing 20 of 46", "pressed": ["Калиброванные наблюдения"], "head": "Наборы46"}
-    assert out["beyond"] == {"rows": 20, "note": "The selected row is beyond the displayed portion of the list", "pinned": ["пара 44"], "title": True}
-    assert out["found"] == {"rows": ["пара 30"], "count": "showing 1 of 1", "note": "The selected row is hidden by the search or filters"}
-    assert out["chosen"] == {"pressed": ["пара 30"], "title": True, "stored": "pair-30"}
+    assert out["first"] == {"rows": 20, "count": "showing 20 of 46", "pressed": ["Calibrated observations"], "head": "Sets46"}
+    assert out["beyond"] == {"rows": 20, "note": "The selected row is beyond the displayed portion of the list", "pinned": ["pair 44"], "title": True}
+    assert out["found"] == {"rows": ["pair 30"], "count": "showing 1 of 1", "note": "The selected row is hidden by the search or filters"}
+    assert out["chosen"] == {"pressed": ["pair 30"], "title": True, "stored": "pair-30"}
 
 
 @node
@@ -245,7 +245,7 @@ def test_unstable_sets_stay_visible_and_a_page_with_only_raw_sets_opens_on_the_f
   out.sets = tree.querySelectorAll('button').filter((b) => has(b, 'lm-set')).map((b) => b.getAttribute('aria-pressed'));
   out.tabs = tabsOf(tree).length; out.columns = tree.querySelectorAll('section').map((s) => s.className);
 """)
-    assert out["alert"] == ["Нестабильные наборы: 40/330/833"] and out["sets"] == ["true"] and out["tabs"] == 3
+    assert out["alert"] == ["Unstable sets: 40/330/833"] and out["sets"] == ["true"] and out["tabs"] == 3
     assert out["columns"] == ["os-col lm-left", "os-col lm-centre", "os-col lm-right"]
 
 
@@ -254,13 +254,13 @@ def test_the_empty_states_keep_their_words_and_their_links(tmp_path):
     none = run(tmp_path, {**routes_for(samples=0, pairs=[]), "/api/devices": {"status": 200, "json": []}}, {"query": QUERY}, """
   out.text = tree.textContent; out.hrefs = tree.querySelectorAll('a').map((a) => a.getAttribute('href')); out.root = tree.className;
 """)
-    assert "Нет измеренных цветов" in none["text"] and none["hrefs"] == ["#/devices", "#/ingest"]
+    assert "No measured colors" in none["text"] and none["hrefs"] == ["#/devices", "#/ingest"]
     empty = run(tmp_path, routes_for(samples=0, pairs=[], knowledge=0), {"query": QUERY}, """
   out.root = tree.className; out.text = tree.textContent; out.hrefs = tree.querySelectorAll('a').map((a) => a.getAttribute('href'));
   out.sets = tree.querySelectorAll('button').filter((b) => has(b, 'lm-set')).length;
 """)
-    assert empty["root"].split() == ["os", "lm"] and "Для этого лазера с этой линзой пока нет проверенных измерений" in empty["text"]
-    assert "#/ingest" in empty["hrefs"] and "#/colors" in empty["hrefs"] and empty["sets"] == 0 and "Целевой цвет" in empty["text"]      # the header and the pickers stay
+    assert empty["root"].split() == ["os", "lm"] and "No reviewed measurements for this laser and lens yet" in empty["text"]
+    assert "#/ingest" in empty["hrefs"] and "#/colors" in empty["hrefs"] and empty["sets"] == 0 and "Target color" in empty["text"]      # the header and the pickers stay
 
 
 def many_known() -> list:
@@ -301,26 +301,26 @@ def test_the_model_shows_one_page_of_its_entries_with_the_stage_doubt_and_task_f
   out.bare = right.querySelectorAll('.lst-main')[4].textContent;
   await chip('Production'); out.production = [count(), ids()];
   await chip('All');
-  await choose('Под вопросом', 'yes'); out.questioned = [count(), ids()];
+  await choose('Questioned', 'yes'); out.questioned = [count(), ids()];
   await right.querySelectorAll('.lst-main')[0].dispatch('click'); await tick(); out.doubt = opened();
-  await choose('Под вопросом', ''); await choose('Задача', 'text'); out.text = [count(), more()];
-  await choose('Задача', ''); await choose('Sort order', 'error'); out.error = ids().slice(0, 3);
+  await choose('Questioned', ''); await choose('Task', 'text'); out.text = [count(), more()];
+  await choose('Task', ''); await choose('Sort order', 'error'); out.error = ids().slice(0, 3);
   await choose('Sort order', 'light'); out.light = ids().slice(0, 2);
   await choose('Sort order', 'newest'); out.newest = ids().slice(0, 2);
   await right.querySelector('.lst-foot').querySelector('button').dispatch('click'); await tick(); out.second = [count(), more()];
   const search = right.querySelector('.lst-search'); search.value = '75.0 %'; await search.dispatch('input'); await tick(); await tick();
   out.searched = [count(), ids()];
 """)
-    assert out["head"] == "Модель цветовых параметров45"                                                  # the count of the whole model
+    assert out["head"] == "Color parameter model45"                                                  # the count of the whole model
     first = out["first"]
     assert first["rows"] == 20 and first["count"] == "showing 20 of 45" and first["more"] == "Show 20 more"     # one page, not 45 lines
     assert first["chips"] == ["All · 45", "Measured · 32", "Validated · 8", "Production · 5"]          # a stage with no entry is not offered
-    assert first["selects"] == ["Под вопросом", "Задача", "Sort order"]
+    assert first["selects"] == ["Questioned", "Task", "Sort order"]
     assert first["ids"][:13] == [9, 18, 27, 36, 45, 5, 10, 15, 20, 25, 30, 35, 40]                           # the further an entry got, the higher
     assert out["bare"] == "75.0 % · 300 kHz · 1000 mm/sProduction"                                     # an entry without evidence: no colour
     assert out["production"] == ["showing 5 of 5", [9, 18, 27, 36, 45]]
     assert out["questioned"] == ["showing 6 of 6", [35, 7, 14, 21, 28, 42]]
-    assert len(out["doubt"]) == 1 and "Под вопросом. a doubt" in out["doubt"][0] and "Задача: Fill" in out["doubt"][0]
+    assert len(out["doubt"]) == 1 and "Questioned. a doubt" in out["doubt"][0] and "Task: Fill" in out["doubt"][0]
     assert out["text"] == ["showing 20 of 22", "Show 2 more"]
     assert out["error"] == [1, 2, 4]                                                                          # no estimate of the error: last
     assert out["light"] == [44, 43] and out["newest"] == [45, 44]
@@ -337,12 +337,12 @@ def test_the_raw_layers_are_one_page_with_the_role_filter_and_the_sorts(tmp_path
     raw["samples"][25]["role"] = "pre-test cleaning witness"
     del raw["samples"][25]["delta_e_from_clean_witness"]
     out = run(tmp_path, routes_for(samples=0, pairs=[raw], knowledge=0), {"query": QUERY}, LIST + """
-  await tabsOf(right).find((b) => b.textContent.startsWith('Все слои')).dispatch('click');
+  await tabsOf(right).find((b) => b.textContent.startsWith('All layers')).dispatch('click');
   const layers = right.querySelectorAll('div').find((d) => d.getAttribute('id') === 'lm-tab-panel-layers');
   const rows = () => layers.querySelectorAll('.lst-main').map((m) => m.textContent);
   out.tab = tabsOf(right).map((b) => b.textContent)[2];
   out.first = {rows: rows().length, count: layers.querySelector('.lst-count').textContent, chips: layers.querySelectorAll('.lst-chip').map((c) => c.textContent)};
-  await layers.querySelectorAll('.lst-chip').find((c) => c.textContent.startsWith('Свидетель чистки')).dispatch('click'); await tick();
+  await layers.querySelectorAll('.lst-chip').find((c) => c.textContent.startsWith('Cleaning witness')).dispatch('click'); await tick();
   out.witness = rows();
   await layers.querySelectorAll('.lst-chip').find((c) => c.textContent.startsWith('All')).dispatch('click'); await tick();
   const sort = layers.querySelector('select'); sort.value = 'contrast'; await sort.dispatch('change'); await tick();
@@ -350,11 +350,11 @@ def test_the_raw_layers_are_one_page_with_the_role_filter_and_the_sorts(tmp_path
   sort.value = 'light'; await sort.dispatch('change'); await tick();
   out.light = rows()[0];
 """)
-    assert out["tab"] == "Все слои (26)"
+    assert out["tab"] == "All layers (26)"
     assert out["first"]["rows"] == 20 and out["first"]["count"] == "showing 20 of 26"
-    assert out["first"]["chips"] == ["All · 26", "Тестовый участок · 24", "Свидетель чистки · 1", "Метки и подписи · 1"]
-    assert out["witness"] == ["C025 · тёмный на этом фотоСвидетель чистки"]                                   # the witness has no ΔE of its own
-    assert out["contrast"] == ["C024 · тёмный на этом фотоМетки и подписиΔE 12.0", "C023 · тёмный на этом фотоΔE 11.5"]
+    assert out["first"]["chips"] == ["All · 26", "Test area · 24", "Cleaning witness · 1", "Markers and labels · 1"]
+    assert out["witness"] == ["C025 · тёмный на этом фотоCleaning witness"]                                   # the witness has no ΔE of its own
+    assert out["contrast"] == ["C024 · тёмный на этом фотоMarkers and labelsΔE 12.0", "C023 · тёмный на этом фотоΔE 11.5"]
     assert out["light"].startswith("C025 · ")                                                                 # L 45: the lightest layer
 
 
