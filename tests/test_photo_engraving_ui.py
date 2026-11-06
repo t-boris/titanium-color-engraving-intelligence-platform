@@ -703,8 +703,8 @@ def test_the_kind_button_of_a_work_shows_its_picture_in_each_kind_and_a_dot_kind
   out.tiles = tiles().map((b) => b.querySelector('strong').textContent);
   out.pictures = tiles().map((b) => b.querySelector('img').getAttribute('src'));
   out.current = tiles().filter((b) => b.getAttribute('aria-pressed') === 'true').map((b) => b.querySelector('strong').textContent + ' ' + b.querySelector('.pill').textContent);
-  out.estimates = tiles().map((b) => b.textContent.includes('оценка'));
-  out.keep = !!button(box, 'Закрыть');
+  out.estimates = tiles().map((b) => b.textContent.includes('estimate'));
+  out.keep = !!button(box, 'Close');
   await tiles().find((b) => b.querySelector('strong').textContent === 'Jarvis').dispatch('click'); await settle();
   out.closed = !dialog();
   out.kind = tree.querySelectorAll('button').find((b) => b.textContent.startsWith('Mode:')).textContent;
@@ -720,10 +720,10 @@ def test_the_kind_button_of_a_work_shows_its_picture_in_each_kind_and_a_dot_kind
   out.undone = tree.querySelectorAll('button').find((b) => b.textContent.startsWith('Mode:')).textContent;
   out.saved = saves();
 """)
-    assert not out["before"] and out["title"] == "Какая гравировка?"                     # an existing work asks only when the button is clicked
+    assert not out["before"] and out["title"] == "Which engraving mode?"                     # an existing work asks only when the button is clicked
     assert out["tiles"] == ["Grayscale", "Threshold", "Ordered (Bayer)", "Atkinson", "Dither (Floyd–Steinberg)", "Stucki", "Jarvis",
                             "Newsprint", "Halftone", "Sketch"]
-    assert out["pictures"][6] == "/api/photo-works/7/kinds/jarvis.png?v=1" and out["current"] == ["Grayscale сейчас"] and out["keep"]
+    assert out["pictures"][6] == "/api/photo-works/7/kinds/jarvis.png?v=1" and out["current"] == ["Grayscale current"] and out["keep"]
     assert out["estimates"] == [False] + [True] * 9                                       # grayscale is measured, the dot kinds estimated
     assert out["closed"] and out["kind"] == "Mode: Jarvis" and not out["minMax"] and out["dot"] == "12.5"
     assert out["byColour"] and out["closeup"] and out["says"] == [True, True, True] and out["ramp"]

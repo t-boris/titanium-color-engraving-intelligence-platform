@@ -930,19 +930,19 @@ const PhotoPanels = (() => {
   }
 
   const KIND_ABOUT = {
-    power: (k) => `Многоцветная: серый задаёт мощность от Min ${value(k.min_power, 1)} % до Max ${value(k.max_power, 1)} %, мощность на титане — цвет. По измеренной шкале.`,
-    dots: (k) => `Точки одного цвета на очищенном титане, тон — сколько точек. Точки ${value(k.power, 1)} %.`,
-    edges: (k) => `Точки по краям рисунка, ровные места остаются титаном. Точки ${value(k.power, 1)} %.`};
+    power: (k) => `Multicolor: grayscale sets power from Min ${value(k.min_power, 1)} % to Max ${value(k.max_power, 1)} %, producing color on titanium. Based on a measured scale.`,
+    dots: (k) => `Single-color dots on cleaned titanium; tone depends on dot coverage. Dot power: ${value(k.power, 1)} %.`,
+    edges: (k) => `Dots follow image edges, leaving flat areas as titanium. Dot power: ${value(k.power, 1)} %.`};
 
-  const KINDS_ABOUT = 'Градации серого измерены вашими шкалами; виды точками показаны оценкой: точка — цвет шкалы при мощности точек, между точками — '
-    + 'очищенный титан. Вид можно поменять в работе в любой момент.';
+  const KINDS_ABOUT = 'Grayscale is based on your measured scales. Dot modes are estimates: each dot uses the scale color at its power, with '
+    + 'cleaned titanium between dots. You can change the mode at any time.';
 
-  /** The tiles of «Какая гравировка?»: every kind that colours titanium, each with the work's picture as it would come out in it (a dot kind
+  /** The tiles of “Which engraving mode?”: every kind that colours titanium, each with the work's picture as it would come out in it (a dot kind
       is an estimate from the scale). The tile of ``current`` is marked with ``tag``; a click on a tile calls ``pick`` with its kind, and
-      ``mark(key)`` moves the mark. Shared by the second step of «Новая работа», the «Вид» button of a work and of a photo zone; ``base`` is the
+      ``mark(key)`` moves the mark. Shared by the second step of “New work”, the “Mode” button of a work and of a photo zone; ``base`` is the
       API address of the work or the zone. */
   function kindTiles(base, current, pick, tag) {
-    const grid = h('div', {class: 'ge-kinds'}, h('p', {class: 'muted'}, 'Считаем, как картинка выйдет в каждом виде…'));
+    const grid = h('div', {class: 'ge-kinds'}, h('p', {class: 'muted'}, 'Calculating how the image will look in each mode…'));
     let tiles = [];
     const mark = (key) => {
       current = key;
@@ -960,10 +960,10 @@ const PhotoPanels = (() => {
         const about = (KIND_ABOUT[k.family] || KIND_ABOUT.dots)(k);
         const slot = h('span', {});
         const el = h('button', {type: 'button', class: 'ge-kind', onClick: () => pick(k.key)},
-          h('img', {src: k.picture, alt: `Картинка в виде «${name}»`, loading: 'lazy'}),
+          h('img', {src: k.picture, alt: `Image in ${name} mode`, loading: 'lazy'}),
           h('span', {class: 'ge-kind-head'}, h('strong', {}, name), slot),
           h('span', {class: 'small'}, k.hex ? hexChip(k.hex) : null, k.hex ? ' ' : null, about),
-          k.estimate ? h('span', {class: 'small muted'}, k.basis === 'inferred' ? 'оценка; узор LightBurn не опубликован — показан похожий' : 'оценка: этот вид ещё не гравировался') : null);
+          k.estimate ? h('span', {class: 'small muted'}, k.basis === 'inferred' ? 'estimate; the LightBurn pattern is unpublished, so a similar pattern is shown' : 'estimate: this mode has not been engraved') : null);
         return {key: k.key, el, tag: slot};
       });
       fill(grid, tiles.map((t) => t.el));
@@ -972,13 +972,13 @@ const PhotoPanels = (() => {
     return {el: grid, mark};
   }
 
-  /** «Вид» of a work: «Какая гравировка?» with the work's picture in each kind and its kind marked; a click on another kind switches the
-      work to it («Отменить» takes it back). */
+  /** “Mode” of a work: “Which engraving mode?” with the work's picture in each kind and its kind marked; a click on another kind switches the
+      work to it (“Undo” takes it back). */
   function kindChooser(base, current, choose) {
-    const tiles = kindTiles(base, current, (key) => { dialog.close(); if (key !== current) choose(key); }, 'сейчас');
-    const dialog = modal('Какая гравировка?', h('div', {class: 'stack'},
-      h('p', {class: 'small'}, 'Под каждым видом — картинка работы, какой она выйдет на титане на её шкале. ' + KINDS_ABOUT), tiles.el),
-      [{label: 'Закрыть', run: (m) => m.close()}]);
+    const tiles = kindTiles(base, current, (key) => { dialog.close(); if (key !== current) choose(key); }, 'current');
+    const dialog = modal('Which engraving mode?', h('div', {class: 'stack'},
+      h('p', {class: 'small'}, 'Each mode shows how the work image would appear on titanium using its scale. ' + KINDS_ABOUT), tiles.el),
+      [{label: 'Close', run: (m) => m.close()}]);
     return dialog;
   }
 
