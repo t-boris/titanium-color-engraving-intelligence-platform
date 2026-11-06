@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<title>Доступ приложения к облаку лабораторий</title>
+<title>App access to the laboratory cloud</title>
 <style>
   :root { color-scheme: light dark; --ink: #1b1f23; --muted: #5f6b76; --line: #d5dbe1; --accent: #1f6feb; --bad: #b42318; --card: #fff; --bg: #f3f5f7; }
   @media (prefers-color-scheme: dark) { :root { --ink: #e6edf3; --muted: #9aa7b4; --line: #3a434d; --accent: #58a6ff; --bad: #ff7b72; --card: #161b22; --bg: #0d1117; } }
@@ -27,17 +27,17 @@
 <body>
 <main>
   <div class="card">
-    <h1>Разрешить доступ приложению?</h1>
-    <div id="busy" class="alert" hidden>Проверяем запрос…</div>
+    <h1>Allow app access?</h1>
+    <div id="busy" class="alert" hidden>Checking request…</div>
     <div id="error" class="alert bad" role="alert" hidden></div>
-    <div id="orphan" class="alert" hidden>Эта страница открывается из приложения «Титан» после входа: нажмите «Войти» на экране «Лаборатории».</div>
+    <div id="orphan" class="alert" hidden>Open this page from Titan after signing in: select “Sign in” on the Laboratories screen.</div>
     <section id="ask" hidden>
-      <p>Приложение <strong id="client-name">…</strong> на вашем компьютере просит от вашего имени:</p>
+      <p>The <strong id="client-name">…</strong> app on your computer requests permission to:</p>
       <ul id="scopes"></ul>
-      <p class="muted">Доступ выдаётся к <span id="resource"></span>; после согласия браузер вернёт вас в приложение через <span id="return-host"></span>. Отозвать доступ можно, выйдя из облака в приложении.</p>
+      <p class="muted">Access is granted to <span id="resource"></span>; after you consent, your browser returns you to the app through <span id="return-host"></span>. Revoke access by signing out of the cloud in the app.</p>
       <div class="row">
-        <button type="button" class="primary" id="accept">Разрешить</button>
-        <button type="button" id="deny">Отклонить</button>
+        <button type="button" class="primary" id="accept">Allow</button>
+        <button type="button" id="deny">Deny</button>
       </div>
     </section>
   </div>
@@ -48,8 +48,8 @@
   'use strict';
   const cfg = JSON.parse(document.getElementById('config').textContent);
   const $ = (id) => document.getElementById(id);
-  const SCOPES = {openid: 'знать, кто вы (идентификатор аккаунта)', profile: 'ваше имя', email: 'вашу электронную почту',
-                  offline_access: 'оставаться в системе без повторного входа (до выхода из приложения)'};
+  const SCOPES = {openid: 'identify you (account identifier)', profile: 'access your name', email: 'access your email address',
+                  offline_access: 'stay signed in without signing in again (until you sign out of the app)'};
   const oauthQuery = location.search.slice(1);
   const params = new URLSearchParams(oauthQuery);
   const inFlow = params.has('client_id') && params.has('state') && params.has('redirect_uri');
@@ -65,7 +65,7 @@
       headers: body ? {'Content-Type': 'application/json'} : {}, body: body ? JSON.stringify(body) : undefined});
     let data = null;
     try { data = await response.json(); } catch (e) { data = null; }
-    if (!response.ok) throw new Error(message(data, 'служба входа ответила ошибкой ' + response.status));
+    if (!response.ok) throw new Error(message(data, 'sign-in service returned an error: ' + response.status));
     return data;
   }
 
@@ -75,7 +75,7 @@
     try {
       const data = await auth('/oauth2/consent', {accept, oauth_query: oauthQuery});
       if (data && data.url) location.assign(data.url);
-      else throw new Error('служба входа не дала адрес возврата');
+      else throw new Error('sign-in service did not provide a return URL');
     } catch (e) { error(e.message); busy(false); }
   }
   $('accept').addEventListener('click', () => answer(true));
@@ -94,10 +94,10 @@
     try {
       const data = await auth('/oauth2/public-client?client_id=' + encodeURIComponent(params.get('client_id')), null, 'GET');
       $('client-name').textContent = (data && data.client_name) || params.get('client_id');
-      if (params.get('client_id') !== cfg.client_id) error('Это не приложение «Титан»: запрос пришёл от другого клиента. Разрешайте доступ, только если знаете его.');
+      if (params.get('client_id') !== cfg.client_id) error('This is not the Titan app: the request came from another client. Allow access only if you recognize it.');
     } catch (e) {
       $('client-name').textContent = params.get('client_id');
-      error('Сеанс не найден: вернитесь к входу и войдите снова.');
+      error('Session not found: return to sign-in and sign in again.');
     }
     busy(false);
     show('ask', true);

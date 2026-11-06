@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<title>Вход в облако лабораторий</title>
+<title>Sign in to the laboratory cloud</title>
 <style>
   :root { color-scheme: light dark; --ink: #1b1f23; --muted: #5f6b76; --line: #d5dbe1; --accent: #1f6feb; --bad: #b42318; --ok: #1a7f37; --card: #fff; --bg: #f3f5f7; }
   @media (prefers-color-scheme: dark) { :root { --ink: #e6edf3; --muted: #9aa7b4; --line: #3a434d; --accent: #58a6ff; --bad: #ff7b72; --ok: #56d364; --card: #161b22; --bg: #0d1117; } }
@@ -29,39 +29,39 @@
 <body>
 <main>
   <div class="card">
-    <h1>Вход в облако лабораторий</h1>
-    <p class="muted">Приложение «Титан» ждёт вас на этом компьютере. Войдите здесь, затем разрешите приложению доступ, и браузер вернёт вас в приложение; пароль приложению не передаётся.</p>
+    <h1>Sign in to the laboratory cloud</h1>
+    <p class="muted">Titan is waiting on this computer. Sign in here, then grant the app access; your browser will return you to the app. Your password is not shared with the app.</p>
 
-    <div id="busy" class="alert" hidden>Проверяем вход…</div>
+    <div id="busy" class="alert" hidden>Checking sign-in…</div>
     <div id="error" class="alert bad" role="alert" hidden></div>
-    <div id="orphan" class="alert" hidden>Эта страница открывается из приложения «Титан»: нажмите «Войти» на экране «Лаборатории», и приложение откроет её само.</div>
+    <div id="orphan" class="alert" hidden>Open this page from Titan: select “Sign in” on the Laboratories screen and the app will open it.</div>
 
     <section id="known" hidden>
-      <p>Вы уже вошли как <strong id="known-name"></strong>.</p>
+      <p>You are already signed in as <strong id="known-name"></strong>.</p>
       <div class="row">
-        <button type="button" class="primary" id="continue">Продолжить в приложении</button>
-        <button type="button" id="other">Войти под другим аккаунтом</button>
+        <button type="button" class="primary" id="continue">Continue in the app</button>
+        <button type="button" id="other">Sign in with another account</button>
       </div>
     </section>
 
     <section id="forms" hidden>
       <div id="social" class="row" hidden></div>
-      <div id="social-divider" class="divider" hidden>или по электронной почте</div>
+      <div id="social-divider" class="divider" hidden>or use email</div>
       <form id="email-form" autocomplete="on">
-        <label for="name" id="name-label" hidden>Имя (как подписывать выпуски)</label>
+        <label for="name" id="name-label" hidden>Name (for release attribution)</label>
         <input id="name" name="name" autocomplete="name" maxlength="100" hidden>
-        <label for="email">Электронная почта</label>
+        <label for="email">Email</label>
         <input id="email" name="email" type="email" autocomplete="username" required>
-        <label for="password">Пароль</label>
+        <label for="password">Password</label>
         <input id="password" name="password" type="password" autocomplete="current-password" minlength="8" required>
         <div class="row">
-          <button type="submit" class="primary" id="signin">Войти</button>
-          <button type="button" id="signup">Создать аккаунт</button>
+          <button type="submit" class="primary" id="signin">Sign in</button>
+          <button type="button" id="signup">Create account</button>
         </div>
       </form>
     </section>
   </div>
-  <p class="muted">Облако хранит только опубликованные выпуски лабораторий и аккаунты их авторов. Приложение остаётся в системе, пока вы не выйдете из него на экране «Лаборатории».</p>
+  <p class="muted">The cloud stores only published laboratory releases and their authors’ accounts. The app remains signed in until you sign out on the Laboratories screen.</p>
 </main>
 <script id="config" type="application/json">__CONFIG__</script>
 <script>
@@ -69,7 +69,7 @@
   'use strict';
   const cfg = JSON.parse(document.getElementById('config').textContent);
   const $ = (id) => document.getElementById(id);
-  const PROVIDERS = {google: 'Войти через Google', github: 'Войти через GitHub', vercel: 'Войти через Vercel'};
+  const PROVIDERS = {google: 'Sign in with Google', github: 'Sign in with GitHub', vercel: 'Sign in with Vercel'};
   const RETURNED = '&returned=1';
   let signingUp = false;
 
@@ -90,7 +90,7 @@
       headers: body ? {'Content-Type': 'application/json'} : {}, body: body ? JSON.stringify(body) : undefined});
     let data = null;
     try { data = await response.json(); } catch (e) { data = null; }
-    if (!response.ok) throw new Error(message(data, 'служба входа ответила ошибкой ' + response.status));
+    if (!response.ok) throw new Error(message(data, 'sign-in service returned an error: ' + response.status));
     return data;
   }
 
@@ -98,7 +98,7 @@
   async function resume() {
     busy(true);
     const data = await auth('/oauth2/continue', {selected: true, oauth_query: oauthQuery});
-    if (!data || !data.url) throw new Error('служба входа не продолжила вход');
+    if (!data || !data.url) throw new Error('sign-in service did not continue the sign-in');
     location.assign(data.url);
   }
 
@@ -126,7 +126,7 @@
       if (next(data)) return;
       if (data && data.token) return resume();
       busy(false);
-      error(signingUp ? 'Аккаунт создан: подтвердите почту по письму и войдите.' : 'Служба входа не вернула сеанс: попробуйте ещё раз.');
+      error(signingUp ? 'Account created: confirm your email using the message, then sign in.' : 'The sign-in service did not return a session; try again.');
     } catch (e) { error(e.message); busy(false); }
   });
 
@@ -134,15 +134,15 @@
     signingUp = !signingUp;
     show('name', signingUp); show('name-label', signingUp);
     $('password').setAttribute('autocomplete', signingUp ? 'new-password' : 'current-password');
-    $('signin').textContent = signingUp ? 'Создать аккаунт и войти' : 'Войти';
-    $('signup').textContent = signingUp ? 'У меня уже есть аккаунт' : 'Создать аккаунт';
+    $('signin').textContent = signingUp ? 'Create account and sign in' : 'Sign in';
+    $('signup').textContent = signingUp ? 'I already have an account' : 'Create account';
     error('');
   });
 
   for (const provider of cfg.providers || []) {
     const button = document.createElement('button');
     button.type = 'button';
-    button.textContent = PROVIDERS[provider] || ('Войти через ' + provider);
+    button.textContent = PROVIDERS[provider] || ('Sign in with ' + provider);
     button.addEventListener('click', async () => {
       error('');
       busy(true);
@@ -151,7 +151,7 @@
         const data = await auth('/sign-in/social', {provider, callbackURL: back, oauth_query: oauthQuery});
         if (data && data.url) location.assign(data.url);
         else if (data && data.redirect === false && data.token) resume();
-        else throw new Error('служба входа не дала адрес провайдера');
+        else throw new Error('sign-in service did not provide the provider URL');
       } catch (e) { error(e.message); busy(false); }
     });
     $('social').appendChild(button);
@@ -175,7 +175,7 @@
     busy(false);
     if (found && returned) { try { return await resume(); } catch (e) { error(e.message); busy(false); } }
     if (found) {
-      $('known-name').textContent = (found.user && (found.user.name || found.user.email)) || 'пользователь';
+      $('known-name').textContent = (found.user && (found.user.name || found.user.email)) || 'user';
       show('known', true);
     } else {
       show('forms', true);

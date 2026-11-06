@@ -124,9 +124,8 @@ def auth_return(request: Request, state: str = "", code: str = "", error: str = 
                             headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
 
 
-FAILED = """<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Не удалось вернуться в приложение</title><style>body{margin:0;background:#f3f5f7;color:#1b1f23;font:16px/1.45 -apple-system,"Segoe UI",Roboto,Arial,sans-serif}
+FAILED = """<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Could not return to the app</title><style>body{margin:0;background:#f3f5f7;color:#1b1f23;font:16px/1.45 -apple-system,"Segoe UI",Roboto,Arial,sans-serif}
 main{max-width:420px;margin:12vh auto;padding:24px;background:#fff;border:1px solid #d5dbe1;border-radius:12px}h1{font-size:1.3rem;margin:0 0 8px}
 @media (prefers-color-scheme:dark){body{background:#0d1117;color:#e6edf3}main{background:#161b22;border-color:#3a434d}}</style></head>
-<body><main><h1>Не удалось вернуться в приложение</h1><p>Ответ службы входа не содержит адреса приложения. Начните вход заново с экрана
-«Лаборатории» в приложении «Титан».</p></main></body></html>"""
+<body><main><h1>Could not return to the app</h1><p>The sign-in service response did not include the app address. Start sign-in again from the Laboratories screen in Titan.</p></main></body></html>"""

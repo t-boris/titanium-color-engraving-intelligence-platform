@@ -435,7 +435,7 @@ def test_the_catalogue_shows_what_the_release_file_declares(client, mint, who, a
 def test_the_sign_in_pages_carry_no_external_script_and_the_return_forwards_to_the_loopback_port_of_the_state_only(client):
     request = {"client_id": "desktop-client-test", "state": secrets.token_urlsafe(24) + ".8765", "redirect_uri": "http://testserver/auth/return",
                "scope": "openid profile email offline_access", "resource": "http://testserver", "sig": "x", "exp": "1"}
-    for path, title in (("/signin", "Вход в облако лабораторий"), ("/consent", "Разрешить доступ приложению?")):
+    for path, title in (("/signin", "Sign in to the laboratory cloud"), ("/consent", "Allow app access?")):
         page = client.get(path, params=request)
         assert page.status_code == 200 and page.headers["content-type"].startswith("text/html") and page.headers["cache-control"] == "no-store"
         assert "<script src=" not in page.text and 'href="http' not in page.text and title in page.text, path
@@ -454,7 +454,7 @@ def test_the_sign_in_pages_carry_no_external_script_and_the_return_forwards_to_t
     for bad in ("", "no-port-here-at-all-xxxxxxx", "short.8765", "x" * 24 + ".0", "x" * 24 + ".70000", "x" * 24 + ".8765.evil", state + ".1",
                 "abc</script>" + "x" * 20 + ".1", "x" * 24 + ".8765?x=1", "x" * 140 + ".8765"):
         refused = client.get("/auth/return", params={"state": bad, "code": "c"}, follow_redirects=False)
-        assert refused.status_code == 400 and "Не удалось вернуться в приложение" in refused.text and "location" not in refused.headers, bad
+        assert refused.status_code == 400 and "Could not return to the app" in refused.text and "location" not in refused.headers, bad
     assert client.get("/auth/return", params={"state": state}, follow_redirects=False).status_code == 400                # neither code nor error
     assert client.get("/auth/return", params={"state": state, "code": "c" * 600}, follow_redirects=False).status_code == 400
 
