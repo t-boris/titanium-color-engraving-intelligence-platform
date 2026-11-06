@@ -73,3 +73,7 @@ Keyboard follow-up: in the MarkView browser on the disposable setup, 71 successi
 ### Implementation · 2026-11-06
 
 Responsive MarkView browser check using same-origin iframe viewports on a disposable workshop: Works at 320×600 and 800×600 in both normal and compact modes showed 20 rows and document scrollWidth equaled clientWidth (303 and 783 respectively). At 320×600 in both modes, a capture reference L=150 stayed focused and retained the error message; input rendered about 66–68×45px and document scrollWidth equaled clientWidth (303). Visually inspected the compact reference error. This checks those screens in a desktop browser, not a physical tablet, touch ergonomics, all screens or real workshop lighting.
+
+### Implementation · 2026-11-06
+
+Additional low-window check in same-origin desktop browser frames at 800×400: Works loaded 20 rows in both densities, document width stayed 783px (client width 783px), and the last row action could be scrolled into view and focused (its bounds were y=236–264 in the 400px viewport). Scrolling was invoked explicitly; automatic keyboard scrolling and actual tablet use were not established.
