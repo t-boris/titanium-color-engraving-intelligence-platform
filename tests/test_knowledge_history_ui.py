@@ -1,4 +1,4 @@
-"""The history of a knowledge entry on its first page with an explicit «Показать ещё» (feature ux-growing-collections-p0, REQ-002): the
+"""The history of a knowledge entry on its first page with an explicit «Show more» (feature ux-growing-collections-p0, REQ-002): the
 compact list read from the real server a page at a time, the kind of event as a filter with counts, the order, the observations behind an
 event as a count with a button, and a rollback that stays on its event. Run in node over a small DOM; the screen that places the list
 (knowledge.js) is not part of this test, only the component it will call."""
@@ -11,9 +11,9 @@ from titanium_platform import knowledge as kn
 pytestmark = node
 FILES = ["screens/source-refs.js", "screens/knowledge-history.js"]
 EXPORTS = ("KnowledgeHistory",)
-LABELS = """const labels = {STAGE: {measured: 'Измерено', candidate: 'Кандидат', repeated: 'Повторено', validated: 'Валидировано', production: 'Производственное'},
-  EVENT: {created: 'создано', promoted: 'повышено автоматически', questioned: 'помечено «под вопросом»', approved: 'утверждено в производство',
-  demoted: 'понижено вручную', confirmed: 'флаг снят', rollback: 'откат'}};"""
+LABELS = """const labels = {STAGE: {measured: 'Measured', candidate: 'Candidate', repeated: 'Repeated', validated: 'Validated', production: 'Production'},
+  EVENT: {created: 'created', promoted: 'promoted automatically', questioned: 'marked questionable', approved: 'approved for production',
+  demoted: 'manually demoted', confirmed: 'flag removed', rollback: 'rollback'}};"""
 
 
 @pytest.fixture
@@ -27,8 +27,8 @@ def entry(tmp_path):
         kid = kn.list_for_setup(store, *w["setup"])[0]["id"]
         with store.transaction():
             for i in range(44):
-                kn._event(store, kid, "questioned" if i % 4 == 0 else "promoted", "measured", "candidate", f"причина {i}", [i + 1, i + 2])
-            kn._event(store, kid, "promoted", "candidate", "repeated", "причина последняя", list(range(1, 31)))
+                kn._event(store, kid, "questioned" if i % 4 == 0 else "promoted", "measured", "candidate", f"reason {i}", [i + 1, i + 2])
+            kn._event(store, kid, "promoted", "candidate", "repeated", "latest reason", list(range(1, 31)))
         yield kid, port
 
 
@@ -47,15 +47,15 @@ def test_only_the_first_page_is_read_and_the_rest_comes_by_an_explicit_button(en
       await button(box, 'Show 6 more').dispatch('click');
       await until(() => lines(box).length === 46);
       const keys = lines(box).map((l) => l.getAttribute('data-key'));
-      out.third = {{rows: keys.length, distinct: new Set(keys).size, count: count(box), more: qa(box, 'button').some((b) => b.textContent.startsWith('Показать ещё')),
+      out.third = {{rows: keys.length, distinct: new Set(keys).size, count: count(box), more: qa(box, 'button').some((b) => b.textContent.startsWith('Show more')),
         oldest: lines(box)[45].querySelector('.lst-text').textContent}};
     """, EXPORTS)
     assert out["first"]["rows"] == 20 and out["first"]["count"] == "showing 20 of 46"
     assert out["first"]["asked"] == ["offset=0&limit=20&order=newest"] and out["first"]["whole"] == 0     # the first page only; the whole entry is never read
-    assert out["first"]["newest"] == "причина последняя" and out["first"]["button"]
+    assert out["first"]["newest"] == "latest reason" and out["first"]["button"]
     assert out["second"]["rows"] == 40 and out["second"]["asked"][1] == "offset=20&limit=20&order=newest"
     assert (out["third"]["rows"], out["third"]["distinct"], out["third"]["count"], out["third"]["more"]) == (46, 46, "showing 46 of 46", False)   # every event once
-    assert out["third"]["oldest"] != "причина последняя"
+    assert out["third"]["oldest"] != "latest reason"
 
 
 def test_the_kind_of_event_filters_with_counts_and_the_order_can_be_turned(entry, tmp_path):
@@ -76,13 +76,13 @@ def test_the_kind_of_event_filters_with_counts_and_the_order_can_be_turned(entry
       const order = qa(box, 'select').find((s) => s.getAttribute('aria-label') === 'Sort order');
       order.value = 'oldest';
       await order.dispatch('change');
-      await until(() => requests('/history').pop().url.includes('order=oldest') && qa(lines(box)[0], '.pill')[0].textContent === 'создано');
+      await until(() => requests('/history').pop().url.includes('order=oldest') && qa(lines(box)[0], '.pill')[0].textContent === 'created');
       out.oldest = {{first: qa(lines(box)[0], '.pill')[0].textContent, rollback: qa(lines(box)[0], 'button').map((b) => b.textContent),
         next: qa(lines(box)[1], 'button').map((b) => b.textContent)}};
     """, EXPORTS)
-    assert out["options"][0] == "all · 46" and "помечено «под вопросом» · 11" in out["options"] and "повышено автоматически · 34" in out["options"]
-    assert out["filtered"]["rows"] == 11 and out["filtered"]["pills"] == ["помечено «под вопросом»"] and "type=questioned" in out["filtered"]["asked"]
-    assert out["oldest"]["first"] == "создано" and out["oldest"]["rollback"] == []                      # the first event has no earlier stage to return to
+    assert out["options"][0] == "all · 46" and "marked questionable · 11" in out["options"] and "promoted automatically · 34" in out["options"]
+    assert out["filtered"]["rows"] == 11 and out["filtered"]["pills"] == ["marked questionable"] and "type=questioned" in out["filtered"]["asked"]
+    assert out["oldest"]["first"] == "created" and out["oldest"]["rollback"] == []                      # the first event has no earlier stage to return to
     assert out["oldest"]["next"] == ["Roll back transition"]
 
 
@@ -108,7 +108,7 @@ def test_the_observations_behind_an_event_are_a_count_with_a_button_and_a_rollba
       out.rollback = {{count: sent.length, method: sent[0].method, body: JSON.parse(sent[0].body), after}};
     """, EXPORTS)
     assert out["details"]["count"] == "30" and out["details"]["label"] == "Observations supporting this event: " and out["details"]["toggle"] == "Show IDs"
-    assert out["details"]["drawn"] == 0 and out["details"]["reason"] == "причина последняя"            # thirty numbers are not printed until asked for
+    assert out["details"]["drawn"] == 0 and out["details"]["reason"] == "latest reason"            # thirty numbers are not printed until asked for
     assert out["dialog"] == {"title": "Roll back transition", "focusedFirst": "Cancel"}                      # a quick Enter never confirms
     assert out["rollback"]["count"] == 1 and out["rollback"]["method"] == "POST" and out["rollback"]["after"] == 1
     assert out["rollback"]["body"]["confirm_production"] is True and isinstance(out["rollback"]["body"]["event_id"], int)
@@ -154,7 +154,7 @@ def test_the_knowledge_page_reads_the_first_page_of_the_history_and_counts_the_o
         kid = kn.list_for_setup(store, *w["setup"])[0]["id"]
         with store.transaction():
             for i in range(44):
-                kn._event(store, kid, "questioned" if i % 4 == 0 else "promoted", "measured", "candidate", f"причина {i}", [i + 1])
+                kn._event(store, kid, "questioned" if i % 4 == 0 else "promoted", "measured", "candidate", f"reason {i}", [i + 1])
         behind = len(kn.get(store, kid)["summary"]["observation_ids"])
         out = run_node(tmp_path, port, ["hardware.js", "tasks.js", "screens/evidence-summary.js", *FILES, "screens/knowledge.js"], LABELS.replace("const labels", "const unused") + f"""
           const tree = mount(await ctx.KnowledgeView.render({kid}));

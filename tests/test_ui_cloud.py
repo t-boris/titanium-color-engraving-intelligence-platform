@@ -1,7 +1,7 @@
-"""The cloud on the laboratories screen (feature electron, REQ-086, REQ-087, DEC-058): the «Облако» block of «My laboratory» (sign-in in a new
+"""The cloud on the laboratories screen (feature electron, REQ-086, REQ-087, DEC-058): the «Cloud» block of «My laboratory» (sign-in in a new
 window and the wait for the account, publishing with the same preview as a file, a pending publication continued or given up, the own cloud
-laboratory with invitations and members), the «Laboratory catalog» tab (cards, «Подключить» into the same progress bar, «Принять приглашение»),
-«Проверить обновления» for the laboratories connected from the cloud with the differences view, and the cloud card of one such laboratory.
+laboratory with invitations and members), the «Laboratory catalog» tab (cards, «Connect» into the same progress bar, «Accept invitation»),
+«Check for updates» for the laboratories connected from the cloud with the differences view, and the cloud card of one such laboratory.
 Run in node over the small DOM of the other screen tests with a fake server; everything the cloud sends reaches the screen as text only."""
 import json
 import re
@@ -52,13 +52,13 @@ PREVIEW = {"ready": True, "photographs": 12, "engravings": 3, "measurements": 40
            "public": {"name": "Open lab", "author": "A. Author", "lasers": {"1": {"public_name": "Fibre 60 W"}}}, "tokenised": {}, "never": ["photographs", "notes"]}
 SIGNED_OUT = {"signed_in": False, "account": None, "signed_in_at": None, "api_url": "https://cloud.test", "switched_on": True, "lab": None, "releases": [],
               "invitations": [], "members": [], "publications": [], "pending": None}
-ACCOUNT = {"id": "acc-1", "name": "Мастерская <b>Север</b>", "email": "north@example.org"}
+ACCOUNT = {"id": "acc-1", "name": "Workshop <b>North</b>", "email": "north@example.org"}
 SIGNED_IN = {**SIGNED_OUT, "signed_in": True, "account": ACCOUNT, "signed_in_at": "2026-10-24T10:00:00+00:00"}
 RELEASE = {"id": "r-9", "lab_id": "lab-1", "number": 2, "content_sha256": "abcdef0123456789ffff", "byte_size": 2 * 1024 * 1024, "counts": {"measurements": 40, "equipment": 2},
            "terms": "CC-BY-4.0", "usage_terms": {"id": "CC-BY-4.0", "name": {"en": "CC BY 4.0"}}, "created_at": "2026-10-23T09:00:00Z", "published_at": "2026-10-23T09:05:00Z"}
-LAB = {"id": "lab-1", "name": "Лаборатория <b>Север</b>", "author": "Автор <i>Н</i>", "description": "<script>alert(1)</script>", "url": "https://north.example",
+LAB = {"id": "lab-1", "name": "Laboratory <b>North</b>", "author": "Author <i>N</i>", "description": "<script>alert(1)</script>", "url": "https://north.example",
        "visibility": "public", "origin_lab_id": "o-1", "role": "member", "latest_release": RELEASE, "own": False, "connected": None}
-DONE_JOB = {"id": "j-1", "kind": "connect", "cloud": {"lab_name": "Лаборатория <b>Север</b>"}, "phase": "done", "read": 2 * 1024 * 1024, "total": 2 * 1024 * 1024,
+DONE_JOB = {"id": "j-1", "kind": "connect", "cloud": {"lab_name": "Laboratory <b>North</b>"}, "phase": "done", "read": 2 * 1024 * 1024, "total": 2 * 1024 * 1024,
             "share": 1.0, "elapsed_s": 1.0, "error": None, "done": True,
             "result": {"unchanged": False, "release_id": "r-9", "source_id": 4, "current": {"release_id": "r-9", "content_sha256": "abcdef0123456789ffff", "release_number": 2}}}
 REVIEW = {"token": "review-1", "bytes": 2048, "verified": True, "lab": {"name": "Test Lab"}, "attribution": {"name": "A. Author"},
@@ -67,11 +67,11 @@ REVIEW = {"token": "review-1", "bytes": 2048, "verified": True, "lab": {"name": 
           "compatibility": {"schema_version": "1.0", "newer_minor": False}, "equipment": [{"laser": "Fiber 60"}], "materials": [{"family": "titanium"}]}
 REVIEW_JOB = {**DONE_JOB, "result": REVIEW}
 DIFFERENCES = {"against": "0123456789abcdefffff", "added": {"measurements": 5}, "changed": {}, "removed": {"measurements": 1}, "withdrawn": 0}
-SOURCE = {"id": 4, "origin_lab_id": "o-1", "name": "Лаборатория <b>Север</b>", "origin": "cloud", "url": "https://cloud.test/labs/lab-1", "status": "connected",
+SOURCE = {"id": 4, "origin_lab_id": "o-1", "name": "Laboratory <b>North</b>", "origin": "cloud", "url": "https://cloud.test/labs/lab-1", "status": "connected",
           "connected_at": "2026-10-20T10:00:00", "disconnected_at": None, "update_checks": "manual", "last_checked_at": None, "last_check": None, "kept": 1, "withdrawals": 0,
           "release_withdrawn": False, "current": {"release_id": "r-1", "release_number": 1, "created_at": "2026-10-20T09:00:00Z", "content_sha256": "0123456789abcdefffff",
-                                                  "verified": True, "status": "kept", "terms": {"id": "CC-BY-4.0"}, "attribution": {"name": "Автор"}, "counts": {"measurements": 35}}}
-CHECKED = {"source_id": 4, "name": "Лаборатория <b>Север</b>", "checked_at": "2026-10-24T12:00:00", "found": True, "lab_id": "lab-1", "current_release_id": "r-1",
+                                                  "verified": True, "status": "kept", "terms": {"id": "CC-BY-4.0"}, "attribution": {"name": "Author"}, "counts": {"measurements": 35}}}
+CHECKED = {"source_id": 4, "name": "Laboratory <b>North</b>", "checked_at": "2026-10-24T12:00:00", "found": True, "lab_id": "lab-1", "current_release_id": "r-1",
            "current_release_number": 1, "latest": {"id": "r-9", "number": 2, "created_at": "2026-10-23T09:00:00Z", "counts": {"measurements": 40}, "byte_size": 2048}, "newer": True,
            "withdrawn_here": False}
 
@@ -188,7 +188,7 @@ def test_sign_in_opens_the_clouds_page_in_a_new_window_and_the_block_fills_in_wh
     assert "You are signed out" in out["before"] and "Publish to cloud" not in out["before"]
     assert out["opened"] == [url] and "Complete sign-in in your browser" in out["waiting"]
     assert out["sent"] == [["POST", "/api/cloud/signin", {}]]
-    assert "Signed in as Мастерская <b>Север</b> · north@example.org" in out["after"] and "Publish to cloud" in out["after"]
+    assert "Signed in as Workshop <b>North</b> · north@example.org" in out["after"] and "Publish to cloud" in out["after"]
 
 
 @node
@@ -298,7 +298,7 @@ def test_a_signed_in_owner_publishes_after_the_same_preview_and_follows_the_job_
   await byText(dialog, 'button', 'Sign out').dispatch('click'); await tick();
   out.signedOut = sent().pop();
 """)
-    assert out["account"] == ["Мастерская <b>Север</b> · north@example.org", 0]                                           # the account's name is text
+    assert out["account"] == ["Workshop <b>North</b> · north@example.org", 0]                                           # the account's name is text
     assert out["disabledBefore"] is True and out["selects"] == [["Cloud usage terms", "CC-BY-4.0"], ["Visibility", "public"]]
     assert "Photographs12" in out["preview"].replace("\n", "") and "The release can be saved." in out["preview"] and out["disabledAfter"] is False
     assert out["progress"] == "50" and "uploading to the cloud · 0,5 MB of 1,0 MB (50 %)" in out["running"]
@@ -340,7 +340,7 @@ def test_a_pending_publication_is_continued_or_given_up_and_the_own_laboratory_l
 """)
     assert "is incomplete (uploading: the cloud could not be reached: timed out" in out["pending"] and "will not create a duplicate release" in out["pending"]
     assert "Continue publication" in out["buttons"] and "Abandon publication" in out["buttons"] and "Publish to cloud" not in out["buttons"]
-    assert out["names"] == [["Open <b>lab</b>", 0]] and out["accounts"] == [["Мастерская <b>Север</b> · north@example.org", 0], ["acc-<b>2</b>", 0], ["acc-<b>2</b>", 0]]
+    assert out["names"] == [["Open <b>lab</b>", 0]] and out["accounts"] == [["Workshop <b>North</b> · north@example.org", 0], ["acc-<b>2</b>", 0], ["acc-<b>2</b>", 0]]
     assert out["link"] == ["https://cloud.test/invitations/tok-<b>3</b>", 0]
     assert "nothing will appear in the cloud" in out["dialog"]
     assert out["sent"] == [["POST", "/api/cloud/invitations", {}], ["DELETE", "/api/cloud/members/acc-%3Cb%3E2%3C%2Fb%3E", None], ["DELETE", "/api/cloud/invitations/i-2", None],
@@ -381,10 +381,10 @@ def test_the_catalogue_shows_cards_connects_from_the_cloud_into_the_progress_bar
   out.sent = sent();
 """)
     assert out["hidden"] == [True, True, False]
-    assert out["cards"][0] == ["Лаборатория <b>Север</b>", 0, ["Public"], ["Review release"]]
+    assert out["cards"][0] == ["Laboratory <b>North</b>", 0, ["Public"], ["Review release"]]
     assert out["cards"][1][2] == ["Public", "connected", "new release available"] and out["cards"][1][3] == ["Review release #2", "Open"]
     assert out["cards"][2] == ["Own lab", 0, ["Public", "your laboratory"], []]
-    assert "Автор <i>Н</i>" in out["first"] and "<script>alert(1)</script>" in out["first"] and "#2 from 2026-10-23 · abcdef012345" in out["first"]
+    assert "Author <i>N</i>" in out["first"] and "<script>alert(1)</script>" in out["first"] and "#2 from 2026-10-23 · abcdef012345" in out["first"]
     assert "measurements: 40 · setups: 2" in out["first"] and "CC BY 4.0" in out["first"] and "2,0 MB" in out["first"]
     assert out["beforeConfirm"] == ["/api/cloud/releases/r-9/review"] and all(x in out["review"] for x in ("Fiber 60", "A. Author", "Commercial use", "a" * 64))
     assert "Laboratory connected" in out["finished"]
@@ -413,7 +413,7 @@ def test_cloud_release_review_can_be_discarded_without_connecting(tmp_path):
 
 @node
 def test_connected_cloud_laboratories_are_checked_for_updates_by_the_button_and_one_laboratory_chooses_automatic_checks(tmp_path):
-    card = {**SOURCE, "lab": {"name": "Лаборатория <b>Север</b>", "description": "d", "url": None}, "releases": [], "withdrawal_list": []}
+    card = {**SOURCE, "lab": {"name": "Laboratory <b>North</b>", "description": "d", "url": None}, "releases": [], "withdrawal_list": []}
     routes = base_routes(**{"/api/labs/sources": {"GET": ok([SOURCE, {**SOURCE, "id": 5, "name": "From file", "origin": "file", "url": None}])},
                            "/api/cloud/updates/check": {"POST": ok([CHECKED])}, "/api/cloud/updates/automatic": {"POST": ok([{**CHECKED, "source_id": 4}])},
                            "/api/cloud/releases/r-9/review": {"POST": ok(REVIEW_JOB, 202)}, "/api/cloud/reviews/review-1/connect": {"POST": ok(DONE_JOB, 202)},
@@ -443,9 +443,9 @@ def test_connected_cloud_laboratories_are_checked_for_updates_by_the_button_and_
   out.sent = sent();
   out.automatic = ctx.requests.filter((r) => r.path.endsWith('/updates/automatic')).length;
 """)
-    assert "A new cloud release is available for “Лаборатория <b>Север</b>”: #2 from 2026-10-23." in out["auto"]
+    assert "A new cloud release is available for “Laboratory <b>North</b>”: #2 from 2026-10-23." in out["auto"]
     assert "Cloud-connected laboratories: 1" in out["card"]
-    assert "Лаборатория <b>Север</b> — new release #2 from 2026-10-23 · measurements: 40" in out["checked"]
+    assert "Laboratory <b>North</b> — new release #2 from 2026-10-23 · measurements: 40" in out["checked"]
     assert "Release differences abcdef012345" in out["dialog"]
     assert "Laboratory connected from the cloud: https://cloud.test/labs/lab-1" in out["one"] and "Updates have not been checked yet" in out["one"] and out["mode"] == "manual"
     assert out["sent"] == [["POST", "/api/cloud/updates/check", {}], ["POST", "/api/cloud/releases/r-9/review", {}],
@@ -476,10 +476,10 @@ def test_the_written_releases_the_connected_laboratories_the_catalogue_and_the_i
     exports = [{"release_id": f"x-{i}", "content_sha256": f"{i:02d}ab0123456789ffff", "created_at": f"2026-10-{i:02d}T09:00:00", "counts": {"measurements": i},
                 "terms": {"id": "CC-BY-4.0"}, "bytes": 1024, "file": i != 2, "published": {"release_number": i, "published_at": "2026-10-24T10:00:00"} if i % 4 == 0 else None}
                for i in range(1, 24)]
-    sources = [{**SOURCE, "id": 4, "name": "Бета"}, {**SOURCE, "id": 5, "name": "Альфа", "origin": "file", "connected_at": "2026-10-22T10:00:00"},
-               {**SOURCE, "id": 6, "name": "Гамма", "status": "disconnected", "current": None}]
-    labs = [LAB, {**LAB, "id": "lab-2", "name": "Закрытая", "visibility": "private", "connected": {"source_id": 4, "status": "connected", "newer": False, "current_release_number": 2}},
-            {**LAB, "id": "lab-3", "name": "Своя", "own": True, "latest_release": None}]
+    sources = [{**SOURCE, "id": 4, "name": "Beta"}, {**SOURCE, "id": 5, "name": "Alpha", "origin": "file", "connected_at": "2026-10-22T10:00:00"},
+               {**SOURCE, "id": 6, "name": "Gamma", "status": "disconnected", "current": None}]
+    labs = [LAB, {**LAB, "id": "lab-2", "name": "Private", "visibility": "private", "connected": {"source_id": 4, "status": "connected", "newer": False, "current_release_number": 2}},
+            {**LAB, "id": "lab-3", "name": "Own", "own": True, "latest_release": None}]
     invitations = [{"id": f"i-{i}", "lab_id": "lab-1", "created_at": f"2026-10-{i:02d}T10:00:00", "expires_at": f"2026-11-{i:02d}T10:00:00",
                     "accepted_by": "acc-9" if i == 1 else None, "accepted_at": None, "revoked_at": "2026-10-24T10:00:00" if i == 2 else None} for i in range(1, 4)]
     own = {**SIGNED_IN, "lab": {"id": "lab-1", "name": "Open lab", "visibility": "private", "role": "owner", "origin_lab_id": "o-1"},
@@ -516,10 +516,10 @@ def test_the_written_releases_the_connected_laboratories_the_catalogue_and_the_i
     lines, chips, revoke = out["invitations"]
     assert lines == ["2026-10-03 10:00", "2026-10-02 10:00", "2026-10-01 10:00"] and chips == ["All · 3", "waiting · 1", "accepted · 1", "revoked · 1"] and revoke == 1
     names, chips, actions = out["sources"]
-    assert names == ["Альфа", "Бета", "Гамма"] and chips == ["All · 3", "connected · 2", "disconnected · 1"] and actions == ["Open"] * 3
+    assert names == ["Alpha", "Beta", "Gamma"] and chips == ["All · 3", "connected · 2", "disconnected · 1"] and actions == ["Open"] * 3
     assert "connected 2026-10-22 10:00 · releases on this computer: 1" in out["sourceDetails"]
     assert out["catalogue"] == ["All · 3", "connected · 1", "not connected · 1", "All · 3", "Public · 2", "Private · 1"]
-    assert out["notConnected"] == ["Лаборатория <b>Север</b>"]                                               # the own laboratory is neither
+    assert out["notConnected"] == ["Laboratory <b>North</b>"]                                               # the own laboratory is neither
 
 
 @node

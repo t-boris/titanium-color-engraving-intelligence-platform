@@ -34,7 +34,7 @@ def test_no_colour_is_accepted_anywhere_any_more():
         assert not re.search(r"op:\s*'accept(_all)?'", text), path.name
     for name in ("vector.js", "vector-colours.js", "vector-editor.js", "vector-split.js"):
         text = (UI_DIR / "screens" / name).read_text(encoding="utf-8")
-        assert "Принять" not in text and "unresolved" not in text and "proposed" not in text, name
+        assert "btn('Accept'" not in text and "unresolved" not in text and "proposed" not in text, name
 
 
 def test_the_editor_sends_every_operation_of_the_contract_and_asks_the_server_for_the_reach_of_a_fill():
@@ -76,7 +76,7 @@ def test_the_picture_fills_the_card_beside_the_panel_and_the_panel_goes_below_it
     outline = re.search(r"\.vw-ed-svg path\.vw-outline \{([^}]*)\}", CSS)                     # a set of regions is outlined as one path
     assert outline and "vector-effect:non-scaling-stroke" in outline.group(1) and "pointer-events:none" in outline.group(1)
     assert re.search(r"\.vw-ed-svg path\.vw-outline\.vw-halo \{[^}]*stroke:#000000", CSS) and re.search(r"\.vw-ed-svg path\.vw-sel \{[^}]*stroke:#ffd54a", CSS)
-    assert ".vw-ed-svg:not(.show-zones) path.vw-zone {display:none}" in CSS                      # the zones' outlines only on «Фото»
+    assert ".vw-ed-svg:not(.show-zones) path.vw-zone {display:none}" in CSS                      # the zones' outlines only on «Photo»
     assert re.search(r"\.vw-swatch\.as-shot \{[^}]*dashed", CSS)
 
 
@@ -164,7 +164,7 @@ def view(version=1):
     the tolerance, the third excluded), five regions (r4 with a colour of its own), three layers."""
     totals = {"recipes": 3, "regions": 4, "mean_delta_e": 3.1, "within_tolerance": 1, "colours": 3, "seconds": 125}
     return {
-        "id": 7, "name": "Тест", "strategy": "photo", "plan_identifier": "TCE-TEST", "lens": None, "markers_enabled": False,
+        "id": 7, "name": "Test", "strategy": "photo", "plan_identifier": "TCE-TEST", "lens": None, "markers_enabled": False,
         "experiment": {"device": {"name": "Laser"}, "material": {"name": "Grade 2 sheet"}},
         "document": {"version": version, "size_mm": {"width": 40, "height": 20}, "px_mm": 0.1, "image_px": {"width": 400, "height": 200},
                      "colours": 3, "regions": 5, "n_colors": 3, "min_area_mm2": 100, "tolerance_mm": 0.08, "faces": {"searched": False, "found": 0},
@@ -213,7 +213,7 @@ def run_editor(tmp_path, routes_, body):
     run = subprocess.run(["node", str(script)], capture_output=True, text=True, timeout=120)
     assert run.returncode == 0, run.stderr[-2000:]
     out = json.loads(run.stdout)
-    assert not any(bad in out["text"] for bad in ("null", "undefined", "NaN", "[object", "без перевода", "Принять")), out["text"][:3000]
+    assert not any(bad in out["text"] for bad in ("null", "undefined", "NaN", "[object", "untranslated", "Accept")), out["text"][:3000]
     return out
 
 
@@ -311,7 +311,7 @@ def test_a_brush_click_paints_the_area_the_source_colour_or_the_fill_the_hover_o
   out.svgFetches = ctx.requests.filter((r) => r.path.endsWith('/split.svg')).length;
 """)
     assert "one region" in out["scopeRegion"] and "all regions with the source color" in out["scopeColour"] and "similar neighboring regions" in out["scopeFill"]
-    assert "Загрузка" not in out["active"] and "not estimated" in out["active"] and "not selected automatically" in out["active"]
+    assert "Loading" not in out["active"] and "not estimated" in out["active"] and "not selected automatically" in out["active"]
     assert out["hotColour"] == ["r1", "r2"] and out["hotBeforeReach"] == ["r3"] and out["hotFill"] == ["r3", "r4"]
     assert out["tip"].startswith("Region r1 · source color #1 · titanium: ΔE 1.16") and "recipe: 10.0 % · 30.0 kHz · 500 mm/s" in out["tip"]
     assert "entire source color #1, 2 regions" in out["tip"] and "fill similar (ΔE 8), 2 regions" in out["tipFill"]
@@ -496,7 +496,7 @@ def routes_with_sources():
 def test_a_source_colour_can_be_replaced_from_the_editor_and_every_colour_says_where_it_comes_from(tmp_path):
     out = run_editor(tmp_path, routes_with_sources(), """
   const row = (k) => tree.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === `Mark source color #${k}`).closest('.lst-row');
-  out.folded = [1, 2, 3].map((k) => row(k).textContent.includes('гравировк'));                 // where a colour is known from: under its line
+  out.folded = [1, 2, 3].map((k) => row(k).textContent.includes('engraving'));                 // where a colour is known from: under its line
   const opened = [];
   for (const k of [1, 2, 3]) {                                                                 // each line opened in turn: the line and what it opens
     await row(k).querySelector('.lst-main').dispatch('click'); await tick();
@@ -523,7 +523,7 @@ def test_a_source_colour_can_be_replaced_from_the_editor_and_every_colour_says_w
     assert out["folded"] == [False, False, False]
     assert "verified by repetition" in rows[0] and "3 engravings: 2 tests, 1 work" in rows[0] and "all 3 agree" in rows[0]
     assert "one engraving, not repeated" in rows[1] and "1 engraving: 1 test" in rows[1]
-    assert "not engraved" in rows[2] and "гравировк" not in rows[2]                                  # an excluded colour has no titanium colour to explain
+    assert "not engraved" in rows[2] and "engraving" not in rows[2]                                  # an excluded colour has no titanium colour to explain
     assert out["buttons"] == [["Select regions", "Replace", "Do not engrave"], ["Select regions", "Replace", "Automatic", "Do not engrave"],
                               ["Select regions", "Engrave"]]                    # «Select regions» (ux-accessible-layout-p0) is new on every line
     assert out["title"] == "Group color #1" and out["better"] == 0 and out["openAtFirst"] == [True]
@@ -603,7 +603,7 @@ def test_a_colour_picked_for_the_selection_is_sent_as_one_paint_of_every_selecte
 
 
 def test_the_wording_of_leaving_an_area_unengraved_and_the_new_styles_are_present():
-    assert "'Do not engrave'" in EDITOR and "'Engrave'" in EDITOR and "'Исключить'" not in EDITOR and "'Исключить'" not in COLOURS
+    assert "'Do not engrave'" in EDITOR and "'Engrave'" in EDITOR and "'Exclude'" not in EDITOR and "'Exclude'" not in COLOURS
     assert "excluded: ['not engraved', '']" in COLOURS and "steady-stable" in CSS and "steady-doubtful" in CSS and ".vw-better" in CSS
     assert "VectorEditor.create(j, run, {pick})" in COLOURS and "tools.pick(" in EDITOR
 
@@ -745,7 +745,7 @@ def test_a_lasso_selects_the_regions_it_encloses_and_they_become_a_photo_zone(tm
     assert out["outline"] == ["M0 0 L0 10", "M0 0 L10 0", "M0 10 L10 10", "M10 0 L20 0", "M10 10 L20 10", "M20 0 L20 10"]   # one shape: not r1|r2
     assert out["selPaths"] == 2                                                      # its line and its halo, not a line per region
     assert out["points"][0] == [2, 2] and out["points"][2] == [12, 14] and out["viewBox"] == "0 0 40 20"   # mm under «meet», nothing panned
-    assert "Selected regions: 2" in out["selection"] and "Create photo zone" in out["selection"] and "обвести мышью — лассо" not in out["selection"]
+    assert "Selected regions: 2" in out["selection"] and "Create photo zone" in out["selection"] and "draw around with the mouse — lasso" not in out["selection"]
     assert out["posted"] == [{"op": "photo_add", "regions": ["r1", "r2"]}] and out["photoTab"] == "true"
 
 
@@ -834,9 +834,9 @@ def test_a_photo_zone_shows_its_picture_and_its_kind_scale_and_powers_change_it(
     assert "Other scales for this laser and titanium: 1" in out["card"]
     assert out["bar"] == ["", "", "off"]                                             # the zone's Min..Max bright, the rest dimmed
     assert out["selectedZone"] == ["r3", "r4"] and "in photo zones: 2" in out["selection"] and "Add to photo zone 1" in out["selection"]
-    assert out["stayed"] == "true"                                                   # «Выделить» keeps «Фото»: the selection is shown there
+    assert out["stayed"] == "true"                                                   # «Select» keeps «Photo»: the selection is shown there
     zone_outline = ["M20 0 L20 10", "M20 0 L30 0", "M20 10 L30 10", "M30 0 L40 0", "M30 10 L40 10", "M40 0 L40 10"]   # r3 + r4, not r3|r4
-    assert out["zoneOutline"] == zone_outline and out["zonesShownBefore"] is False and out["zonesShown"] is True   # framed on «Фото»
+    assert out["zoneOutline"] == zone_outline and out["zonesShownBefore"] is False and out["zonesShown"] is True   # framed on «Photo»
     assert out["hot"] == [["r3", "r4"], zone_outline] and out["hotAfter"] == ["r3"]  # the card's hover: the zone as one shape; then the area under the pointer
     assert out["posted"] == [{"op": "photo_set", "zone": 1, "kind": "jarvis"},
                              {"op": "photo_set", "zone": 1, "scale": {**SCALE, "speed": 500, "pulse_width": 200}},
@@ -845,12 +845,12 @@ def test_a_photo_zone_shows_its_picture_and_its_kind_scale_and_powers_change_it(
                              {"op": "photo_remove", "regions": ["r3", "r4"]}, {"op": "photo_delete", "zone": 1}]
     assert out["scalesFetched"] == ["/api/grey-scales?device_id=&material_id=&row_mm=20"]
     assert out["powerWrong"][:3] == [0, "true", "150"] and "Allowed" in out["powerWrong"][3][0] and "Entered: 150" in out["powerWrong"][3][0]
-    assert out["opened"] == ["/vector-zone?work=7&zone=1"]                            # «Открыть»: the zone on its own screen
+    assert out["opened"] == ["/vector-zone?work=7&zone=1"]                            # «Open»: the zone on its own screen
 
 
 @node
 def test_the_photo_tab_selects_regions_and_holds_the_selection_with_its_actions(tmp_path):
-    """On «Фото» the brush is out of sight: a click there selects (and a drag draws a lasso), and the selection with «Сделать фотозоной» is there."""
+    """On «Photo» the brush is out of sight: a click there selects (and a drag draws a lasso), and the selection with «Make photo zone» is there."""
     out = run_editor(tmp_path, zone_routes(zoned=False), """
   const tab = (name) => tree.querySelectorAll('button').find((b) => b.textContent === name && b.getAttribute('role') === 'tab');
   const tool = (name) => tree.querySelectorAll('button').find((b) => b.textContent === name && b.getAttribute('role') !== 'tab').getAttribute('aria-pressed');
@@ -875,7 +875,7 @@ def test_the_photo_tab_selects_regions_and_holds_the_selection_with_its_actions(
     assert out["on"] == ["false", "true", "inspector"] and "tool-select" in out["stage"]
     assert "selection" in out["status"] and "selects a region" in out["status"]
     assert "Select regions on the canvas" in out["empty"] and "inspector" in out["empty"]
-    assert out["selected"] == ["r1", "r2"] and out["sent"] == 0                      # a click on «Фото» selects, it does not paint
+    assert out["selected"] == ["r1", "r2"] and out["sent"] == 0                      # a click on «Photo» selects, it does not paint
     assert "Create photo zone" in out["actions"] and out["posted"] == [{"op": "photo_add", "regions": ["r1", "r2"]}]
     assert out["back"] == ["false", "true", "inspector"]
 
@@ -919,7 +919,7 @@ def test_escape_drops_the_selection_a_lasso_being_drawn_and_the_line_under_the_p
   out.modal = classed('vw-sel');
 """)
     assert out["before"] == [["r1", "r2"], ["r2"], ["r3", "r4"]]
-    assert out["after"] == [[], [], ["r3", "r4"]] and "Выбрано областей" not in out["selection"]   # from a field; the zone stays framed
+    assert out["after"] == [[], [], ["r3", "r4"]] and "Regions selected" not in out["selection"]   # from a field; the zone stays framed
     assert out["moved"] == ["r2"]                                                  # the pointer moves: the line under it comes back
     assert out["card"] == ["r3", "r4"] and out["cardAfter"] == []
     assert out["drawing"] == 1 and out["lasso"] == [0, 0, []]                      # the lasso is gone and asks nothing
@@ -997,13 +997,13 @@ def test_a_work_of_many_colours_shows_its_colours_and_layers_by_pages_of_30_sort
     assert out["sorts"] == ["By number", "Largest ΔE first", "Largest area first"]
     assert out["farthest"] == ["№ 33", "№ 32"]
     (opened,) = out["opened"]
-    assert opened.startswith("Source color #33") and "все 2 совпали" not in opened and "Do not engrave" in opened and "recipe: " in opened
+    assert opened.startswith("Source color #33") and "all 2 matched" not in opened and "Do not engrave" in opened and "recipe: " in opened
     assert out["all"] == 33 and out["boxStops"] is True
 
 
 @node
 def test_one_selected_region_is_split_finer_in_a_window_that_asks_into_how_many_colours(tmp_path):
-    """Feature work-size-and-splitting-a-region-again, REQ-002: «Разбить мельче…» is offered for one selected region only; the window asks for
+    """Feature work-size-and-splitting-a-region-again, REQ-002: «Split finer…» is offered for one selected region only; the window asks for
     2..8 colours, refuses another number before any request and sends ``split_region`` once."""
     out = run_editor(tmp_path, routes(colouring_view=view(version=2)), """
   const finer = () => byText(section('Selection'), 'button', 'Split finer…');

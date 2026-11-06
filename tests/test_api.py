@@ -235,9 +235,9 @@ def test_rephoto_upload_needs_only_photo_and_keeps_the_same_experiment(client):
     new = response.json()
     assert new["status"] == "Awaiting check" and new["rephoto_of"] == original["id"]
     assert new["photo_name"] == "new.png" and new["lightburn_name"] == original["lightburn_name"]
-    renamed = client.patch(f"/api/engravings/{new['engraving_id']}", json={"title": "Титан — первый запуск"})
+    renamed = client.patch(f"/api/engravings/{new['engraving_id']}", json={"title": "Titanium — first run"})
     assert renamed.status_code == 200
-    assert {p["engraving_title"] for p in client.get("/api/pairs").json()} == {"Титан — первый запуск"}
+    assert {p["engraving_title"] for p in client.get("/api/pairs").json()} == {"Titanium — first run"}
     assert client.patch(f"/api/engravings/{new['engraving_id']}", json={"title": "   "}).status_code == 422
     for key in ("device_id", "lens_id", "material_id", "plate_id", "plan_id", "engraving_id", "context", "hardware"):
         assert new[key] == client.get(f"/api/pairs/{original['id']}").json()[key]
@@ -261,12 +261,12 @@ def test_rephoto_upload_needs_only_photo_and_keeps_the_same_experiment(client):
     assert client.delete(f"/api/pairs/{original['id']}").status_code == 204
     third = client.post(f"/api/pairs/{new['id']}/rephotos", files={"photo": ("third.png", image)}).json()
     assert third["rephoto_of"] == new["id"] and third["engraving_id"] == new["engraving_id"]
-    assert third["engraving_title"] == "Титан — первый запуск"
+    assert third["engraving_title"] == "Titanium — first run"
     assert client.get(f"/api/pairs/{third['id']}/lightburn").content == lightburn
     assert client.delete(f"/api/pairs/{third['id']}").status_code == 204
     remaining = client.get("/api/pairs").json()
     assert [p["id"] for p in remaining] == [new["id"]]
-    assert remaining[0]["engraving_title"] == "Титан — первый запуск"
+    assert remaining[0]["engraving_title"] == "Titanium — first run"
     assert client.get(f"/api/pairs/{new['id']}/report").json()["photos"] == [
         {"id": new["id"], "photo_name": "new.png", "status": "Accepted", "created_at": new["created_at"]}]
 
@@ -404,13 +404,13 @@ def test_the_photo_preview_is_a_downscaled_png_of_the_uploaded_photo(client):
 
 
 @pytest.mark.parametrize("name,ascii_part,utf8_part", [
-    ("Портрет мамы", "filename=\"_______ ____.lbrn2\"", "filename*=UTF-8''%D0%9F%D0%BE%D1%80%D1%82%D1%80%D0%B5%D1%82%20%D0%BC%D0%B0%D0%BC%D1%8B.lbrn2"),
+    ("Café portrait", "filename=\"Caf_ portrait.lbrn2\"", "filename*=UTF-8''Caf%C3%A9%20portrait.lbrn2"),
     ("Plate 1", "filename=\"Plate 1.lbrn2\"", "filename*=UTF-8''Plate%201.lbrn2"),
     ('a"b\\c/d:e*f?g', "filename=\"abcdefg.lbrn2\"", "filename*=UTF-8''abcdefg.lbrn2"),
     ("   ...   ", "filename=\"plan.lbrn2\"", "filename*=UTF-8''plan.lbrn2"),
 ])
 def test_content_disposition_survives_any_plan_name(name, ascii_part, utf8_part):
-    """Regression: a Russian plan name made the export answer 500 (header values must be Latin-1)."""
+    """Regression: a non-ASCII plan name made the export answer 500 (header values must be Latin-1)."""
     from titanium_platform.api.common import content_disposition
     header = content_disposition(name, ".lbrn2")
     header.encode("latin-1")                       # must not raise
@@ -418,10 +418,10 @@ def test_content_disposition_survives_any_plan_name(name, ascii_part, utf8_part)
     assert "\n" not in header and "\r" not in header
 
 
-def test_exporting_a_plan_with_a_russian_name_works_end_to_end(client):
+def test_exporting_a_plan_with_a_non_ascii_name_works_end_to_end(client):
     s = setup(client)
     plates = client.post("/api/plates", json={"device_id": s["laser"]["id"], **JOB, "powers": "10", "frequencies": "40", "speeds": "900", "cell_width": 5, "cell_height": 4, "gap": 1}).json()
-    client.app.state.store.execute("UPDATE plan SET name=? WHERE id=?", ("Рисунок A", plates[0]["plan_id"]))
+    client.app.state.store.execute("UPDATE plan SET name=? WHERE id=?", ("Café A", plates[0]["plan_id"]))
     r = client.get(f"/api/plans/{plates[0]['plan_id']}/export.lbrn2")
     assert r.status_code == 200 and r.content.startswith(b"<?xml")
-    assert "filename*=UTF-8''%D0%A0%D0%B8%D1%81%D1%83%D0%BD%D0%BE%D0%BA%20A.lbrn2" in r.headers["content-disposition"]
+    assert "filename*=UTF-8''Caf%C3%A9%20A.lbrn2" in r.headers["content-disposition"]
