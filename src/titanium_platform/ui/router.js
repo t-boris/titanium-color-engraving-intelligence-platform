@@ -57,6 +57,8 @@ Object.assign(App, (() => {
   let sidebar = null, menuButton = null, railButton = null, pinButton = null;
   const pinKey = 'navigation.pinned';
   const pinned = () => { try { return localStorage.getItem(pinKey) === '1'; } catch (_) { return false; } };
+  // An explicitly addressed research variant; no preference or release decision is implied (DEC-001).
+  const lightStudy = new URLSearchParams(location.search || '').get('theme-study') === 'light';
   const densityKey = 'display.density';
   let density = 'normal';
   try { if (localStorage.getItem(densityKey) === 'compact') density = 'compact'; } catch (_) { /* session-only preference */ }
@@ -154,6 +156,7 @@ Object.assign(App, (() => {
       h('header', {class: 'app-header'},
         h('a', {class: 'brand', href: '#/experiments'}, 'Laser workshop', ' ', versionTag, h('small', {}, 'Materials · Settings · Works')),
         h('div', {class: 'header-actions'}, menuButton, typeof Operations !== 'undefined' ? Operations.entry() : null)),
+      lightStudy ? h('p', {class: 'theme-study-note', role: 'status'}, 'Light theme study preview · not a released theme') : null,
       h('div', {class: 'app-layout'}, sidebar, main)];
   }
 
@@ -198,6 +201,7 @@ Object.assign(App, (() => {
 
   let nextNavigationOptions = null;
   const start = () => {
+    document.body.classList.toggle('theme-study-light', lightStudy);
     setDensity(density);
     addEventListener('resize', () => setMenu(menuOpen()));
     document.addEventListener('click', (ev) => {

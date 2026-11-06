@@ -1618,3 +1618,29 @@ body.density-compact .main .g3>.card::before {display:none}
 @media (pointer:coarse) {
   body.density-compact .main button,body.density-compact .main a.btn,body.density-compact .main input,body.density-compact .main select {min-height:44px}
 }
+
+/* Opt-in theme-study prototype: reached only through ?theme-study=light, not a released preference. */
+body.theme-study-light {color-scheme:light;--bg:#f3f5f9;--surface:#fff;--surface-2:#e8edf5;--text:#172235;--muted:#4d5b6e;--line:#bbc5d3;--line-2:#a5b3c6;--accent:#354eaa;--accent-soft:#e0e8fb;--danger:#9e253f;--success:#12694b;--warning:#805300;background:var(--bg);color:var(--text)}
+.theme-study-light .app-header {background:#f8faff;border-color:var(--line);box-shadow:none}
+.theme-study-light .app-header::after {background:var(--accent);opacity:.65}
+.theme-study-light .brand,.theme-study-light .brand:hover {color:var(--text)}
+.theme-study-light .brand small,.theme-study-light .app-version {color:var(--muted)}
+.theme-study-light .sidebar {background:#e9eef6;border-color:var(--line)}
+.theme-study-light .nav-link,.theme-study-light .nav-sublink,.theme-study-light .rail-toggle {color:#34465f}
+.theme-study-light .nav-link:hover,.theme-study-light .rail-toggle:hover,.theme-study-light .nav-group.is-active>.nav-link,.theme-study-light .nav-link[aria-current=page],.theme-study-light .nav-sublink[aria-current=page] {background:#d6e0f2;color:#172235;box-shadow:none}
+.theme-study-light .sidebar-note {color:var(--muted);border-color:var(--line)}
+.theme-study-light .card,.theme-study-light .g3>.card,.theme-study-light .g3>.card:nth-child(2),.theme-study-light .g3>.card:nth-child(3) {background:var(--surface);color:var(--text);border-color:var(--line);box-shadow:none}
+.theme-study-light .g3>.card>strong {color:var(--text)}
+.theme-study-light .btn,.theme-study-light .lst-chip {background:#eef2f8;color:#253858;border-color:#aab8cc;box-shadow:none}
+.theme-study-light .btn.primary,.theme-study-light .lst-chip.on {background:#d6e2ff;color:#1c347b;border-color:#718bcd}
+.theme-study-light .btn.danger {background:#fff1f3;color:#8c1d34;border-color:#c48191}
+.theme-study-light input,.theme-study-light select,.theme-study-light textarea {background:#fff;color:#172235;border-color:#8392a8}
+.theme-study-light label.f>span:first-child,.theme-study-light .f-error,.theme-study-light .muted,.theme-study-light .sub {color:var(--muted)}
+.theme-study-light .f-error,.theme-study-light .has-error .f-error {color:#9e253f}
+.theme-study-light .alert,.theme-study-light .lst-rows,.theme-study-light .lst-det,.theme-study-light .lst-pin {background:#edf2f9;color:var(--text);border-color:var(--line)}
+.theme-study-light .lst-row.open {background:#e1eafd}
+.theme-study-light :focus-visible {outline-color:#354eaa}
+.theme-study-note {position:relative;z-index:2;margin:0;padding:5px 16px;text-align:center;background:#fff0c9;color:#523800;font-weight:650}
+.theme-study-light label.f input,.theme-study-light label.f select,.theme-study-light label.f textarea,.theme-study-light .f input,.theme-study-light .f select,.theme-study-light .f textarea {background:#fff;color:#172235;border-color:#8392a8}
+.theme-study-light summary {color:#34465f}
+.theme-study-light input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]) {background:#fff;color:#172235;border-color:#8392a8}
