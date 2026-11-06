@@ -149,11 +149,11 @@ def finding(fid, kind, subkind, statement, state="attention", pinned=False, note
 
 
 PAGE = {"run": RUN, "matched": 85, "total": 95,
-        "findings": [finding(7, "anomaly", "observation", "Аномалия слоя C1", pinned=True, note="проверить", deviation=19.04,
+        "findings": [finding(7, "anomaly", "observation", "Layer C1 anomaly", pinned=True, note="check", deviation=19.04,
                              remedies=[{"action": "exclude_measurement", "observation_id": 3063}, {"action": "remeasure", "pair_id": 41}, {"action": "count_from_latest"}]),
-                     finding(8, "unstable", "questioned", "Сомнение в знании № 12", changed=True, deviation=2.5,
+                     finding(8, "unstable", "questioned", "Doubt about knowledge #12", changed=True, deviation=2.5,
                              remedies=[{"action": "count_from_latest"}, {"action": "confirm_questioned", "knowledge_id": 12}]),
-                     finding(9, "gap", "coverage", "Нет линий на этом титане", new=True, proposable=True)],
+                     finding(9, "gap", "coverage", "No lines on this titanium", new=True, proposable=True)],
         "counts": {"state": {"": 95, "attention": 85, "acknowledged": 6, "hidden": 4, }, "kind": {"": 85, "anomaly": 40, "unstable": 30, "gap": 10,
                                                                                                "improvement": 5, "hypothesis": 0}},
         "options": {"kinds": ["anomaly", "unstable", "gap", "improvement", "hypothesis"], "tasks": ["fill", "line"],
@@ -161,12 +161,12 @@ PAGE = {"run": RUN, "matched": 85, "total": 95,
                     "stocks": [{"key": "3", "stock": CONTEXT["stock"]}]}}
 LIST_ROUTES = {**ROUTES, "/api/analysis/runs": {"status": 200, "json": [RUN]}, "/api/analysis/runs/latest": {"status": 200, "json": PAGE},
                "/api/analysis/findings/8/mark": {"status": 200, "json": {"status": "hidden"}},
-               "/api/analysis/findings/7": {"status": 200, "json": finding(7, "anomaly", "observation", "Аномалия слоя C1", pinned=True)}}
+               "/api/analysis/findings/7": {"status": 200, "json": finding(7, "anomaly", "observation", "Layer C1 anomaly", pinned=True)}}
 
 
 @node
 def test_the_acknowledged_and_hidden_chips_are_offered_even_before_anything_is_marked(tmp_path):
-    """REQ-002: the state chips «Needs attention · Acknowledged · Hidden · Все» are always there, so the operator sees where a hidden
+    """REQ-002: the state chips «Needs attention · Acknowledged · Hidden · All» are always there, so the operator sees where a hidden
     finding goes before hiding one."""
     page = {**PAGE, "counts": {**PAGE["counts"], "state": {"": 85, "attention": 85, "acknowledged": 0, "hidden": 0}}}
     out = run(tmp_path, """
@@ -195,9 +195,9 @@ def test_the_findings_open_on_those_needing_attention_one_line_each_with_chips_c
     assert out["chips"] == ["All · 95", "Needs attention · 85", "Acknowledged · 6", "Hidden · 4",
                             "All · 85", "Improvements · 5", "Instability · 30", "Anomalies · 40", "Gaps · 10"]   # no AI hypothesis to show
     assert out["pressed"] == ["Needs attention · 85", "All · 85"]
-    assert out["rows"] == ["📌AnomalyАномалия слоя C1JPT M7 · Grade 2 sheet · Grade 2 · FillΔE 19.0✎ проверить",       # the problem, what it concerns, the note
-                           "UnstableСомнение в знании № 12JPT M7 · Grade 2 sheet · Grade 2 · FillΔE 2.5changed",
-                           "GapНет линий на этом титанеJPT M7 · Grade 2 sheet · Grade 2 · Fillnew"]
+    assert out["rows"] == ["📌AnomalyLayer C1 anomalyJPT M7 · Grade 2 sheet · Grade 2 · FillΔE 19.0✎ check",       # the problem, what it concerns, the note
+                           "UnstableDoubt about knowledge #12JPT M7 · Grade 2 sheet · Grade 2 · FillΔE 2.5changed",
+                           "GapNo lines on this titaniumJPT M7 · Grade 2 sheet · Grade 2 · Fillnew"]
     assert out["actions"] == [["Remeasure photo", "Acknowledge", "Hide", "Note", "Unpin"],                    # ONE recommended step first, the queue's controls after it
                               ["Open evidence", "Acknowledge", "Hide", "Note", "Pin"],
                               ["Propose experiment", "Acknowledge", "Hide", "Note", "Pin"]]
@@ -246,7 +246,7 @@ def test_a_row_opens_its_mark_its_note_and_the_full_finding_and_the_choices_go_t
 """, routes=LIST_ROUTES)
     assert out["status"].startswith("Previously hidden 10/24/2026, ")                    # the hour as this computer's clock shows it
     assert out["status"].endswith("; new data has arrived and the finding needs attention again.")
-    assert "Measured" in out["card"] and "Сомнение в знании № 12" in out["card"] and "Samples" in out["card"]
+    assert "Measured" in out["card"] and "Doubt about knowledge #12" in out["card"] and "Samples" in out["card"]
     assert out["hash"] == "#/findings?state=hidden"
     assert out["last"] == "/api/analysis/runs/latest?state=hidden&sort=important&offset=0&limit=20"
 
@@ -257,7 +257,7 @@ def test_a_link_to_one_finding_opens_it_above_the_list(tmp_path):
   const linked = tree.querySelector('.fd-linked');
   out.head = linked.querySelector('h3').textContent;
   out.buttons = linked.querySelectorAll('button').filter((b) => !b.closest('.finding')).map((b) => b.textContent);
-  out.card = linked.querySelector('article').textContent.includes('Аномалия слоя C1');
+  out.card = linked.querySelector('article').textContent.includes('Layer C1 anomaly');
 """, routes=LIST_ROUTES, query={"finding": "7"})
     assert out["head"] == "Finding #7"
     assert out["buttons"] == ["Acknowledge", "Hide", "Note", "Unpin", "Close", "Open evidence", "Save note"] and out["card"]
@@ -267,19 +267,19 @@ def test_a_link_to_one_finding_opens_it_above_the_list(tmp_path):
 PREVIEW = {"photos": 31, "estimate_s": 775, "backup_dir": "/Users/op/titanium-backups", "backup_bytes": 1181116006, "free_bytes": 50 * 2**30, "running": False}
 STARTED = {"id": 4, "status": "running", "phase": "backup", "total": 31, "done": 0, "current": None, "elapsed_s": 0, "photos": [], "backup": None,
            "findings": None, "error": None, "started_at": "2026-10-25T12:00:00+00:00", "finished_at": None, "backup_path": None}
-RUNNING = {**STARTED, "phase": "remeasure", "done": 12, "elapsed_s": 300.0, "current": {"pair_id": 77, "photo_name": "IMG_77.CR3", "title": "Пейзаж"}}
+RUNNING = {**STARTED, "phase": "remeasure", "done": 12, "elapsed_s": 300.0, "current": {"pair_id": 77, "photo_name": "IMG_77.CR3", "title": "Landscape"}}
 REPORT = {**STARTED, "status": "done", "phase": "done", "done": 3, "total": 3, "elapsed_s": 75.0, "finished_at": "2026-10-25T12:20:00+00:00",
           "backup": {"path": "/Users/op/titanium-backups/titanium-backup-20261025T120000Z", "bytes": 1181116006},
-          "photos": [{"pair_id": 41, "photo_name": "a.CR3", "title": "Тестовая плата", "status": "replaced", "replaced_by": 120, "reason": None,
+          "photos": [{"pair_id": 41, "photo_name": "a.CR3", "title": "Test plate", "status": "replaced", "replaced_by": 120, "reason": None,
                       "max_delta_e": 0.4, "changed_layers": 0, "layers": 24},
-                     {"pair_id": 52, "photo_name": "b.CR3", "title": "Пейзаж", "status": "replaced", "replaced_by": 121, "reason": None,
+                     {"pair_id": 52, "photo_name": "b.CR3", "title": "Landscape", "status": "replaced", "replaced_by": 121, "reason": None,
                       "max_delta_e": 6.2, "changed_layers": 3, "layers": 10},
                      {"pair_id": 60, "photo_name": "c.CR3", "title": None, "status": "kept", "replaced_by": None,
                       "reason": "the new measurement reads fewer layers than the accepted one", "max_delta_e": None, "changed_layers": 0, "layers": 0}],
           "findings": {"before_run_id": 63, "after_run_id": 64, "before": 95, "after": 96, "counts": {"appeared": 2, "gone": 1, "changed": 1},
-                       "appeared": [{"id": 900, "kind": "anomaly", "statement": "Новая аномалия"}, {"id": 901, "kind": "gap", "statement": "Новый пробел"}],
-                       "gone": [{"id": 700, "kind": "anomaly", "statement": "Старая аномалия"}],
-                       "changed": [{"id": 902, "kind": "unstable", "statement": "Стало нестабильно", "was": {"id": 702, "kind": "improvement", "statement": "Было валидировано"}}]}}
+                       "appeared": [{"id": 900, "kind": "anomaly", "statement": "New anomaly"}, {"id": 901, "kind": "gap", "statement": "New gap"}],
+                       "gone": [{"id": 700, "kind": "anomaly", "statement": "Old anomaly"}],
+                       "changed": [{"id": 902, "kind": "unstable", "statement": "Became unstable", "was": {"id": 702, "kind": "improvement", "statement": "Previously validated"}}]}}
 
 
 @node
@@ -326,7 +326,7 @@ def test_a_recheck_running_when_the_screen_opens_shows_which_photograph_of_how_m
   out.progress = tree.querySelector('.fd-recheck').querySelector('.row').textContent;
   out.now = tree.querySelector('.fd-recheck').querySelector('div').getAttribute('aria-valuenow');
 """, routes={**LIST_ROUTES, "/api/recheck/latest": {"status": 200, "json": RUNNING}})
-    assert out["progress"] == "Recheck all workRemeasuring photo 13 of 31 · Пейзаж (photo #77) · remaining ≈ 8 minStop"
+    assert out["progress"] == "Recheck all workRemeasuring photo 13 of 31 · Landscape (photo #77) · remaining ≈ 8 minStop"
 
 
 @node
@@ -347,16 +347,16 @@ def test_the_last_recheck_report_lists_the_photographs_and_the_changed_findings_
     assert out["summary"].endswith(" · Recheck completed · replaced 2, previous retained 1, errors 0")
     assert "Backup/Users/op/titanium-backups/titanium-backup-20261025T120000Z (1,1 GB)" in out["facts"]
     assert "run #63 → #64: appeared 2, gone 1, changed 1" in out["facts"]
-    assert out["photos"] == ["replacedПейзажphoto #52ΔE up to 6.2layers changed: 3",
-                             "replacedТестовая платаphoto #41ΔE up to 0.4", "previous retainedc.CR3photo #60"]       # the largest colour change first
-    assert out["changes"] == ["appearedAnomalyНовая аномалия", "appearedGapНовый пробел", "goneAnomalyСтарая аномалия",
-                              "changedUnstableСтало нестабильно"]
+    assert out["photos"] == ["replacedLandscapephoto #52ΔE up to 6.2layers changed: 3",
+                             "replacedTest platephoto #41ΔE up to 0.4", "previous retainedc.CR3photo #60"]       # the largest colour change first
+    assert out["changes"] == ["appearedAnomalyNew anomaly", "appearedGapNew gap", "goneAnomalyOld anomaly",
+                              "changedUnstableBecame unstable"]
     assert out["reason"] == "the new measurement reads fewer layers than the accepted oneOpen photo"
     assert out["hash"] == "#/findings?state=attention&sort=newest"
 
 
 # -- acting on a finding (feature act-on-findings) ------------------------------------------------------------------------------
-ANOMALY = {**finding(7, "anomaly", "observation", "Наблюдение № 3063 отстоит на 84.1 ΔE", deviation=84.1,
+ANOMALY = {**finding(7, "anomaly", "observation", "Observation #3063 differs by 84.1 ΔE", deviation=84.1,
                      remedies=[{"action": "exclude_measurement", "observation_id": 3063}, {"action": "remeasure", "pair_id": 136},
                                {"action": "count_from_latest"}]),
            "key": "anomaly:photo:41:3", "evidence": {"pair_ids": [136], "observation_ids": [3063], "knowledge_id": 496}}
@@ -424,7 +424,7 @@ def test_when_the_corrective_choice_is_unclear_the_evidence_is_the_step_and_ever
 def test_a_finding_of_an_earlier_run_or_one_already_marked_offers_no_corrective_step(tmp_path):
     earlier = {**ANOMALY, "remedies": []}
     earlier["recommendation"] = fd.recommend(earlier)
-    handled = finding(8, "anomaly", "observation", "Отмеченная аномалия", state="acknowledged", remedies=ANOMALY["remedies"])
+    handled = finding(8, "anomaly", "observation", "Acknowledged anomaly", state="acknowledged", remedies=ANOMALY["remedies"])
     out = run(tmp_path, """
   const list = panel('Findings');
   out.rows = list.querySelectorAll('.lst-act').map((a) => a.querySelectorAll('button').map((b) => b.textContent));
@@ -441,7 +441,7 @@ def test_a_finding_of_an_earlier_run_or_one_already_marked_offers_no_corrective_
 
 @node
 def test_a_gap_proposes_an_experiment_and_a_finding_with_nothing_to_fix_is_acknowledged(tmp_path):
-    good = finding(11, "improvement", "validated", "Рецепт валидирован")
+    good = finding(11, "improvement", "validated", "Recipe validated")
     good["evidence"] = {}
     good["recommendation"] = fd.recommend(good)
     out = run(tmp_path, """
@@ -469,7 +469,7 @@ def test_taking_a_measurement_out_shows_what_leaves_and_the_colour_before_and_af
   out.change = modal.querySelector('.fd-change').textContent;
   out.buttons = modal.querySelectorAll('button').map((b) => b.textContent);
   out.asked = ctx.requests.filter((r) => r.path === '/api/analysis/findings/7/remedy').map((r) => r.body);
-  modal.querySelector('textarea').value = 'блик на фото';
+  modal.querySelector('textarea').value = 'glare in photo';
   data.routes['/api/analysis/findings/7/remedy'] = {status: 200, json: %(decided)s};
   await modal.querySelectorAll('button').find((b) => b.textContent === 'Exclude measurement').dispatch('click'); await tick(); await tick();
   out.sent = ctx.requests.filter((r) => r.path === '/api/analysis/findings/7/remedy').map((r) => r.body);
@@ -483,7 +483,7 @@ def test_taking_a_measurement_out_shows_what_leaves_and_the_colour_before_and_af
                              "ΔE shift 0.7")
     assert out["buttons"] == ["×", "Cancel", "Exclude measurement"]
     assert out["asked"] == ['{"action":"exclude_measurement"}']
-    assert out["sent"][-1] == '{"action":"exclude_measurement","note":"блик на фото","confirm":true}'
+    assert out["sent"][-1] == '{"action":"exclude_measurement","note":"glare in photo","confirm":true}'
     assert out["toast"] == ["Done · measurement excluded from calculation · run #64 Restore ×"] and out["closed"]
 
 
@@ -524,7 +524,7 @@ def test_a_failed_remeasure_from_the_row_leaves_the_finding_as_it_was_and_the_bu
   out.rows = list.querySelectorAll('.lst-main').length;
   tree.remove();
 """, routes={**REMEDY_ROUTES, "/api/pairs/136/remeasure": {"status": 409, "json": {"error": "every work is being re-checked: wait until it ends or stop it", "kind": "busy"}}})
-    assert out["sent"] == ["POST"] and out["label"] == "Remeasure photo" and out["disabled"] is False       # ready again, not left on «Перемеряю…»
+    assert out["sent"] == ["POST"] and out["label"] == "Remeasure photo" and out["disabled"] is False       # ready again, not left on «Remeasuring…»
     assert out["modal"] is False and out["rows"] == 1                                                   # no result is shown for a measurement that did not happen
     assert len(out["toast"]) == 1 and out["toast"][0].startswith("every work is being re-checked")                                   # the server's refusal is told, once
 
@@ -551,7 +551,7 @@ def test_pressing_the_recommended_step_twice_measures_the_photograph_once(tmp_pa
 
 @node
 def test_the_marks_still_work_beside_the_recommendation_and_a_hidden_finding_loses_its_step(tmp_path):
-    hidden = finding(12, "anomaly", "observation", "Скрытая аномалия", state="hidden", remedies=ANOMALY["remedies"])
+    hidden = finding(12, "anomaly", "observation", "Hidden anomaly", state="hidden", remedies=ANOMALY["remedies"])
     out = run(tmp_path, """
   const list = panel('Findings');
   const acts = list.querySelectorAll('.lst-act');
@@ -618,7 +618,7 @@ EXCLUSIONS = {"active": 2, "exclusions": [
     {"id": 6, "kind": "older_engravings", "active": True, "created_at": "2026-10-25T13:00:00+00:00", "note": None, "observations_out": 2,
      "settings": {"power": 13.3, "frequency": 60, "speed": 117, "pulse_width": 300, "line_interval": 0.0169, "passes": 1},
      "kept": {"title": "Big Plate", "lab": [60, 20, 0]}, "before": {"lab": [55, 5, 0], "engravings": 3}, "after": {"lab": [60, 20, 0], "engravings": 1}},
-    {"id": 5, "kind": "measurement", "active": True, "created_at": "2026-10-25T12:00:00+00:00", "note": "блик", "observations_out": 1, "pair_id": 151,
+    {"id": 5, "kind": "measurement", "active": True, "created_at": "2026-10-25T12:00:00+00:00", "note": "glare", "observations_out": 1, "pair_id": 151,
      "original_pair_id": 136, "layer_index": 3, "observation": {"layer_name": "C03", "lab": [40, 9, -21]},
      "before": {"lab": [75.4, 10.2, 54.9], "engravings": 3}, "after": {"lab": [76, 10, 55], "engravings": 2}}]}
 
@@ -636,7 +636,7 @@ def test_what_the_operator_took_out_is_one_short_list_with_vernut_on_each_line(t
              "/api/exclusions/5/revoke": {"status": 200, "json": {"exclusion": {"id": 5, "active": False}, "run_id": 65}}})
     assert out["summary"] == "Excluded by operator: 2"
     assert out["rows"][0].startswith("Recipe 13.3 % · 60 kHz · 117 mm/s · 300 ns · interval 0.0169 mm · 1 passes — from latest engraving «Big Plate»10/25/2026")
-    assert out["rows"][1].startswith("Measurement: photo #151, layer «C03»10/25/2026") and out["rows"][1].endswith("✎ блик")
+    assert out["rows"][1].startswith("Measurement: photo #151, layer «C03»10/25/2026") and out["rows"][1].endswith("✎ glare")
     assert out["sent"] == ["POST"] and out["toast"] == ["Included again · run #65 ×"]
 
 
@@ -678,7 +678,7 @@ def test_long_evidence_is_a_count_with_a_list_of_every_number_and_a_short_one_st
 @node
 def test_the_observations_that_raised_a_doubt_are_a_count_when_many_and_named_when_few(tmp_path):
     def doubtful(ids):
-        return {**finding(8, "unstable", "questioned", "Сомнение в знании № 12", deviation=2.5), "compares": {"stage": "production", "doubt_observation_ids": ids}}
+        return {**finding(8, "unstable", "questioned", "Doubt about knowledge #12", deviation=2.5), "compares": {"stage": "production", "doubt_observation_ids": ids}}
     body = """
   const list = panel('Findings');
   await list.querySelectorAll('.lst-main')[0].dispatch('click'); await tick();

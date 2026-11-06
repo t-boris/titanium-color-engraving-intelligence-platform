@@ -60,7 +60,7 @@ Operations.config.pollMs = 1;
 /** A document whose requests are answered by the test: ``gates[i]`` is the i-th request, ``res(doc)`` or ``rej(error)`` answers it. */
 function track(initial = {w: 1, v: 1}, extra = {}) {
   const gates = [], applied = [];
-  const st = SaveState.create({label: 'Работа', confirmed: initial, names: {w: 'Ширина', v: 'Высота'},
+  const st = SaveState.create({label: 'Work', confirmed: initial, names: {w: 'Width', v: 'Height'},
     send: (request, edit) => new Promise((res, rej) => gates.push({request, edit, res, rej})),
     apply: (d, info) => applied.push({doc: d, local: info.local, reverted: info.reverted, failed: info.failed}), ...extra});
   body.append(st.view.el);
@@ -100,9 +100,9 @@ def test_overlapping_changes_are_sent_in_order_and_only_the_last_answer_is_shown
   t.gates[1].res({w: 3, v: 1}); await wait();
   out.last = {applied: t.applied.map((x) => x.doc), line: t.line().replace(/ at \\d\\d:\\d\\d/, ''), status: t.st.status(), results: [await a, await b], order: t.gates.map((g) => g.request.w)};
 """)
-    assert out["start"] == {"sent": 1, "line": "Работа: Saving… · 1 more queued", "status": "saving", "queued": 1}       # the second waits for the first
-    assert out["first"] == {"sent": 2, "applied": 0, "line": "Работа: Saving…", "status": "saving"}               # the answer to 2 does not show 3 as saved
-    assert out["last"] == {"applied": [{"w": 3, "v": 1}], "line": "Работа: Saved", "status": "saved", "results": [None, None], "order": [2, 3]}
+    assert out["start"] == {"sent": 1, "line": "Work: Saving… · 1 more queued", "status": "saving", "queued": 1}       # the second waits for the first
+    assert out["first"] == {"sent": 2, "applied": 0, "line": "Work: Saving…", "status": "saving"}               # the answer to 2 does not show 3 as saved
+    assert out["last"] == {"applied": [{"w": 3, "v": 1}], "line": "Work: Saved", "status": "saved", "results": [None, None], "order": [2, 3]}
 
 
 @node
@@ -121,8 +121,8 @@ def test_a_late_answer_never_marks_a_newer_change_saved_or_replaces_it(tmp_path)
   const end = t.st.snapshot();
   out.after_last = {status: end.status, acknowledged: end.acknowledged, applied: t.applied.map((x) => x.doc)};
 """)
-    assert out["after_first"] == {"during": {"status": "calculating", "line": "Работа: Saving and calculating…"}, "status": "calculating", "revision": 2,
-                                  "acknowledged": 1, "applied": 0, "line": "Работа: Saving and calculating…"}
+    assert out["after_first"] == {"during": {"status": "calculating", "line": "Work: Saving and calculating…"}, "status": "calculating", "revision": 2,
+                                  "acknowledged": 1, "applied": 0, "line": "Work: Saving and calculating…"}
     assert out["after_last"] == {"status": "saved", "acknowledged": 2, "applied": [{"w": 3, "v": 1}]}
 
 
@@ -142,12 +142,12 @@ def test_a_failed_change_stays_in_its_place_with_the_typed_value_and_the_error_b
 """)
     failed = out["failed"]
     assert failed["result"] == "the width of the picture must be 1..1000 mm" and failed["status"] == "failed" and failed["shown"]
-    assert failed["line"] == "Работа: Not saved: the screen differs from the saved values" and failed["alert"] == "alert"
+    assert failed["line"] == "Work: Not saved: the screen differs from the saved values" and failed["alert"] == "alert"
     assert failed["text"] == ("Could not save. the width of the picture must be 1..1000 mm"
-                              "Entered but not saved — Ширина: 0 (saved: 100).Close")
+                              "Entered but not saved — Width: 0 (saved: 100).Close")
     assert failed["local"] == {"w": 0} and failed["confirmed"] == {"w": 100, "v": 1}                          # what is typed and what is stored, apart
     assert failed["redrawn"] == [{"local": {"w": 0}, "failed": True}]                                         # the screen is drawn again with the typed value over it
-    assert out["after_success"] == {"status": "failed", "shown": True, "local": {"w": 0}, "line": "Работа: Not saved: the screen differs from the saved values"}
+    assert out["after_success"] == {"status": "failed", "shown": True, "local": {"w": 0}, "line": "Work: Not saved: the screen differs from the saved values"}
 
 
 @node
@@ -167,10 +167,10 @@ def test_failure_then_retry_then_a_new_edit_during_the_retry(tmp_path):
     line: t.line().replace(/ at \\d\\d:\\d\\d/, '')};
 """)
     assert out["failed"] == {"status": "failed", "buttons": [True, True, False]}                              # a change that can be repeated: repeat, or put back
-    assert out["retrying"] == {"sent": [70, 70], "line": "Работа: Retrying save… Saving…", "retryDisabled": True}
+    assert out["retrying"] == {"sent": [70, 70], "line": "Work: Retrying save… Saving…", "retryDisabled": True}
     assert out["after_retry"] == {"status": "saving", "applied": 1, "shown": False, "local": {"w": 75}}    # the retry's answer is not the end: 75 is typed after it
     assert out["end"] == {"status": "saved", "shown": False, "applied": [{"w": 100, "v": 1}, {"w": 75, "v": 1}], "order": [70, 70, 75], "retry": None,
-                          "line": "Работа: Saved"}
+                          "line": "Work: Saved"}
 
 
 @node
@@ -200,8 +200,8 @@ def test_closing_the_error_hides_the_message_only_and_putting_back_shows_the_sto
   await button(t.st.view.el, 'Restore saved values').dispatch('click'); await wait();
   out.reverted = {status: t.st.status(), line: t.line(), local: t.st.local(), last: t.applied[t.applied.length - 1], shown: t.shown()};
 """)
-    assert out["closed"] == {"shown": False, "status": "failed", "line": "Работа: Not saved: the screen differs from the saved values", "local": {"w": 0}, "dismissed": True}
-    assert out["reverted"] == {"status": "saved", "line": "Работа: Saved", "local": {}, "shown": False,
+    assert out["closed"] == {"shown": False, "status": "failed", "line": "Work: Not saved: the screen differs from the saved values", "local": {"w": 0}, "dismissed": True}
+    assert out["reverted"] == {"status": "saved", "line": "Work: Saved", "local": {}, "shown": False,
                                "last": {"doc": {"w": 100, "v": 1}, "local": {}, "reverted": True, "failed": False}}
 
 
@@ -235,7 +235,7 @@ def test_a_failure_after_the_screen_is_gone_is_reported_to_the_task_panel(tmp_pa
   t.gates[0].rej(new Error('no connection')); await wait();
   out.reported = reported;
 """)
-    assert out["reported"] == [{"label": "Работа", "message": "no connection", "describe": "Ширина: 5 (saved: 100)", "retryable": True}]
+    assert out["reported"] == [{"label": "Work", "message": "no connection", "describe": "Width: 5 (saved: 100)", "retryable": True}]
 
 
 # -- the photo work: the save state wired into the screen (BUG-002, BUG-011) ------------------------------------------------------------
@@ -390,11 +390,11 @@ def test_the_header_entry_names_the_panel_counts_what_runs_and_opens_and_closes_
   body.append(entry);
   const read = () => [entry.textContent, entry.getAttribute('aria-expanded'), entry.getAttribute('aria-controls'), entry.getAttribute('data-state')];
   out.idle = read();
-  const one = Operations.begin({kind: 'upload', title: 'Фото 1', stage: 'Загрузка'}), two = Operations.begin({kind: 'upload', title: 'Фото 2', stage: 'Загрузка'});
+  const one = Operations.begin({kind: 'upload', title: 'Photo 1', stage: 'Uploading'}), two = Operations.begin({kind: 'upload', title: 'Photo 2', stage: 'Uploading'});
   out.running = read();
-  two.succeed('Готово');
+  two.succeed('Done');
   out.oneLeft = read();
-  one.fail('Нет связи');
+  one.fail('No connection');
   out.failed = read();
   await entry.dispatch('click');
   out.opened = [read()[1], body.querySelector('.ops-panel').hidden, body.querySelector('.ops-panel').getAttribute('id')];
@@ -418,31 +418,31 @@ def test_the_header_entry_names_the_panel_counts_what_runs_and_opens_and_closes_
 def test_a_result_goes_on_to_its_screen_when_the_person_is_still_there_and_to_the_panel_when_they_have_left(tmp_path):
     out = run(tmp_path, """
   const items = () => Operations.items().map((o) => [o.title, o.state, (o.open || {}).label, (o.open || {}).route]);
-  const control = h('button', {type: 'button'}, 'Загрузить');
+  const control = h('button', {type: 'button'}, 'Upload');
   body.append(control);
   ctx.location = ctx.location || {hash: '#/ingest'};
   ctx.location.hash = '#/ingest';
   // still on the screen: the route is gone to, nothing is put in the panel
   let end = App.landing(control);
-  out.here = [end.stillHere(), end.go('/ingest?pair=5', {title: 'Пара загружена', message: 'Откройте проверку', openLabel: 'Открыть проверку'}), went.slice(), items()];
+  out.here = [end.stillHere(), end.go('/ingest?pair=5', {title: 'Pair uploaded', message: 'Open the review', openLabel: 'Open review'}), went.slice(), items()];
   // the address changed meanwhile: the person is not taken anywhere, the result waits in the panel with a button that opens it
   went.length = 0;
   end = App.landing(control);
   ctx.location.hash = '#/devices';
-  out.gone = [end.stillHere(), end.go('/ingest?pair=6', {title: 'Пара загружена', message: 'Откройте проверку', openLabel: 'Открыть проверку'}), went.slice(), items()];
+  out.gone = [end.stillHere(), end.go('/ingest?pair=6', {title: 'Pair uploaded', message: 'Open the review', openLabel: 'Open review'}), went.slice(), items()];
   // the control was taken off the page (another screen was drawn at the same address): the same
   ctx.location.hash = '#/ingest';
-  const other = h('button', {type: 'button'}, 'Загрузить'); body.append(other);
+  const other = h('button', {type: 'button'}, 'Upload'); body.append(other);
   end = App.landing(other);
   other.remove();
-  out.removed = [end.stillHere(), end.go('/ingest?pair=7', {title: 'Пара загружена', message: 'Откройте проверку'}), went.slice(), items().length];
+  out.removed = [end.stillHere(), end.go('/ingest?pair=7', {title: 'Pair uploaded', message: 'Open the review'}), went.slice(), items().length];
   // a control that is not on any page (a test, a preview) is never «left»
   end = App.landing(null);
   out.nowhere = [end.stillHere()];
 """)
     assert out["here"][:3] == [True, True, ["/ingest?pair=5"]] and out["here"][3] == []
     assert out["gone"][:3] == [False, False, []]
-    assert out["gone"][3] == [["Пара загружена", "done", "Открыть проверку", "/ingest?pair=6"]]
+    assert out["gone"][3] == [["Pair uploaded", "done", "Open review", "/ingest?pair=6"]]
     assert out["removed"][:3] == [False, False, []] and out["removed"][3] == 2
     assert out["nowhere"] == [True]
 
@@ -538,7 +538,7 @@ def test_closing_the_panel_does_not_stop_a_task_and_stopping_says_what_it_does_f
   const dialog = body.querySelector('.modal');
   out.asked = {aborted: !!xhr.aborted, title: dialog.getAttribute('aria-label'), text: dialog.querySelector('p').textContent,
     buttons: dialog.querySelectorAll('button').map((b) => b.textContent), dockInert: dock.hasAttribute('inert'), toastsInert: body.querySelector('.toasts') ? body.querySelector('.toasts').hasAttribute('inert') : false};
-  Operations.announce('проверка'); out.said_in_dialog = body.querySelector('.toasts').querySelectorAll('p').map((p) => p.textContent).includes('проверка');
+  Operations.announce('review'); out.said_in_dialog = body.querySelector('.toasts').querySelectorAll('p').map((p) => p.textContent).includes('review');
   await button(dialog, 'Stop').dispatch('click'); await wait();
   const error = await sent;
   out.stopped = {aborted: !!xhr.aborted, kind: error.kind, state: Operations.items()[0].state, result: Operations.items()[0].result, dockInert: dock.hasAttribute('inert')};
@@ -556,8 +556,8 @@ RECHECK = """
   const photos = (n) => [{status: 'replaced'}, {status: 'kept'}, {status: 'failed'}].slice(0, n);
   const report = (extra) => ({id: 3, total: 3, done: 0, elapsed_s: 0, current: null, photos: [], phase: 'backup', status: 'running', error: null, ...extra});
   let step = 0, stops = 0;
-  const steps = [report({phase: 'remeasure', done: 1, current: {title: 'Пластина А', pair_id: 4}, elapsed_s: 10}),
-    report({phase: 'remeasure', done: 2, current: {title: 'Пластина Б', pair_id: 5}, elapsed_s: 20}),
+  const steps = [report({phase: 'remeasure', done: 1, current: {title: 'Plate A', pair_id: 4}, elapsed_s: 10}),
+    report({phase: 'remeasure', done: 2, current: {title: 'Plate B', pair_id: 5}, elapsed_s: 20}),
     report({phase: 'analysis', done: 3, elapsed_s: 30, photos: photos(3)}),
     report({phase: 'done', status: 'done', done: 3, elapsed_s: 31, photos: photos(3)})];
   serve({'/recheck': () => ({status: 202, json: report({})}), '/recheck/3': () => ({status: 200, json: GATE ? GATE() : steps[Math.min(step++, steps.length - 1)]}),
@@ -705,16 +705,16 @@ def test_the_clock_of_a_task_is_for_the_eyes_only(tmp_path):
 def test_a_field_made_the_old_way_is_drawn_exactly_as_before(tmp_path):
     out = run(tmp_path, """
   const input = h('input', {value: 'x'});
-  const plain = App.field('Название', input);
-  const helped = App.field('Название', h('input'), 'подсказка');
+  const plain = App.field('Name', input);
+  const helped = App.field('Name', h('input'), 'help text');
   const tree = (el) => ({tag: el.localName, cls: el.className, attrs: [...el.attrs.keys()].sort(), kids: el.childNodes.map((n) => (n.nodeType === 3 ? n.data : tree(n)))});
   out.plain = tree(plain);
   out.helped = tree(helped);
   out.input_attrs = [...input.attrs.keys()];
 """)
     assert out["plain"] == {"tag": "label", "cls": "f", "attrs": ["class"],
-                            "kids": [{"tag": "span", "cls": "", "attrs": [], "kids": ["Название"]}, {"tag": "input", "cls": "", "attrs": [], "kids": []}]}
-    assert out["helped"]["kids"][2] == {"tag": "span", "cls": "small muted", "attrs": ["class"], "kids": ["подсказка"]}
+                            "kids": [{"tag": "span", "cls": "", "attrs": [], "kids": ["Name"]}, {"tag": "input", "cls": "", "attrs": [], "kids": []}]}
+    assert out["helped"]["kids"][2] == {"tag": "span", "cls": "small muted", "attrs": ["class"], "kids": ["help text"]}
     assert out["input_attrs"] == []                                                                         # nothing was added to a control that asked for nothing
 
 
@@ -723,26 +723,26 @@ def test_a_field_names_its_control_by_the_label_and_describes_it_with_unit_range
     out = run(tmp_path, """
   const input = h('input', {type: 'number', value: '0'});
   body.append(h('div', {}, 'x'));
-  const el = App.field('Ширина картинки', input, 'на титане', {required: true, unit: 'мм', constraint: 'допустимо: from 1 to 1000'});
+  const el = App.field('Image width', input, 'on titanium', {required: true, unit: 'mm', constraint: 'allowed: from 1 to 1000'});
   body.append(el);
   const byId = (id) => body.querySelectorAll('[id]').find((n) => n.getAttribute('id') === id);
   const names = (attr) => (input.getAttribute(attr) || '').split(' ').filter(Boolean).map((id) => byId(id).textContent);
   out.draw = {text: el.textContent, labelledby: names('aria-labelledby'), describedby: names('aria-describedby'), required: input.getAttribute('aria-required'),
     unit: el.querySelector('.f-unit').getAttribute('aria-hidden')};
-  el.setError('Allowed: from 1 to 1000 мм. Entered: 0');
+  el.setError('Allowed: from 1 to 1000 mm. Entered: 0');
   out.error = {describedby: names('aria-describedby'), invalid: input.getAttribute('aria-invalid'), value: input.value, cls: el.className, text: el.errorText(),
     beside: el.lastChild.className.includes('f-error')};
-  el.setError('Другое сообщение');
+  el.setError('Another message');
   out.again = {errors: el.querySelectorAll('.f-error').length, describedby: names('aria-describedby').length};
   el.clearError();
   out.cleared = {describedby: names('aria-describedby'), invalid: input.getAttribute('aria-invalid'), value: input.value, cls: el.className, first: el.firstControl() === input};
 """)
-    assert out["draw"] == {"text": "Ширина картинкиrequiredмм" "unit: мм · допустимо: from 1 to 1000" "на титане", "labelledby": ["Ширина картинки"],
-                           "describedby": ["unit: мм · допустимо: from 1 to 1000", "на титане"], "required": "true", "unit": "true"}
-    assert out["error"] == {"describedby": ["unit: мм · допустимо: from 1 to 1000", "на титане", "Allowed: from 1 to 1000 мм. Entered: 0"], "invalid": "true",
-                            "value": "0", "cls": "f has-error", "text": "Allowed: from 1 to 1000 мм. Entered: 0", "beside": True}
+    assert out["draw"] == {"text": "Image widthrequiredmm" "unit: mm · allowed: from 1 to 1000" "on titanium", "labelledby": ["Image width"],
+                           "describedby": ["unit: mm · allowed: from 1 to 1000", "on titanium"], "required": "true", "unit": "true"}
+    assert out["error"] == {"describedby": ["unit: mm · allowed: from 1 to 1000", "on titanium", "Allowed: from 1 to 1000 mm. Entered: 0"], "invalid": "true",
+                            "value": "0", "cls": "f has-error", "text": "Allowed: from 1 to 1000 mm. Entered: 0", "beside": True}
     assert out["again"] == {"errors": 1, "describedby": 3}
-    assert out["cleared"] == {"describedby": ["unit: мм · допустимо: from 1 to 1000", "на титане"], "invalid": None, "value": "0", "cls": "f", "first": True}
+    assert out["cleared"] == {"describedby": ["unit: mm · allowed: from 1 to 1000", "on titanium"], "invalid": None, "value": "0", "cls": "f", "first": True}
 
 
 @node
@@ -773,8 +773,8 @@ def test_numbers_are_read_strictly_and_a_wrong_value_is_refused_not_corrected(tm
 FORM = """
   const f = Forms.create();
   const name = h('input'), power = Forms.numberInput(Forms.QUANTITIES.power), width = Forms.numberInput(Forms.QUANTITIES.pictureWidth);
-  const box = h('div', {}, f.add('name', 'Название', name, {required: true}), f.add('power', 'Мощность', power, {quantity: 'power', required: true}),
-    f.add('width', 'Ширина', width, {quantity: 'pictureWidth', help: 'на титане'}), f.error);
+  const box = h('div', {}, f.add('name', 'Name', name, {required: true}), f.add('power', 'Power', power, {quantity: 'power', required: true}),
+    f.add('width', 'Width', width, {quantity: 'pictureWidth', help: 'on titanium'}), f.error);
   body.append(box);
   const field = (label) => box.querySelectorAll('label').find((l) => l.firstChild.textContent === label);
 """
@@ -785,12 +785,12 @@ def test_a_form_marks_every_bad_field_beside_its_input_keeps_the_typed_text_and_
     out = run(tmp_path, FORM + """
   power.value = '150'; width.value = '12abc';
   out.values = f.collect();
-  out.marks = {name: field('Название').errorText(), power: field('Мощность').errorText(), width: field('Ширина').errorText(),
+  out.marks = {name: field('Name').errorText(), power: field('Power').errorText(), width: field('Width').errorText(),
     invalid: [name, power, width].map((i) => i.getAttribute('aria-invalid')), typed: [name.value, power.value, width.value],
     focus: doc.activeElement === name, form: f.error.textContent, shown: !f.error.hidden, role: f.error.getAttribute('role')};
   power.value = '50'; await power.dispatch('input');
-  out.edited = {power: field('Мощность').errorText(), name: field('Название').errorText(), form: f.error.hidden};
-  name.value = ' Лазер '; width.value = '';
+  out.edited = {power: field('Power').errorText(), name: field('Name').errorText(), form: f.error.hidden};
+  name.value = ' Laser '; width.value = '';
   out.fixed = f.collect();
   out.after = {marks: [name, power, width].map((i) => i.getAttribute('aria-invalid')), form: f.error.hidden};
 """)
@@ -798,27 +798,27 @@ def test_a_form_marks_every_bad_field_beside_its_input_keeps_the_typed_text_and_
     assert out["marks"]["name"] == "Complete this field" and out["marks"]["power"] == "Allowed: greater than 0 and at most 100 %. Entered: 150"
     assert out["marks"]["width"] == "Enter a number, mm. Entered: “12abc”"
     assert out["marks"]["invalid"] == ["true", "true", "true"] and out["marks"]["typed"] == ["", "150", "12abc"] and out["marks"]["focus"] is True
-    assert out["marks"]["form"] == "Not submitted: correct fields “Название”, “Мощность”, “Ширина”. Your entries remain in the form." and out["marks"]["role"] == "alert"
+    assert out["marks"]["form"] == "Not submitted: correct fields “Name”, “Power”, “Width”. Your entries remain in the form." and out["marks"]["role"] == "alert"
     assert out["edited"] == {"power": "", "name": "Complete this field", "form": True}
-    assert out["fixed"] == {"name": "Лазер", "power": 50, "width": None} and out["after"] == {"marks": [None, None, None], "form": True}
+    assert out["fixed"] == {"name": "Laser", "power": 50, "width": None} and out["after"] == {"marks": [None, None, None], "form": True}
 
 
 @node
 def test_what_the_server_says_goes_beside_the_field_it_names_else_it_stays_on_the_form_with_what_to_do(tmp_path):
     out = run(tmp_path, FORM + """
-  name.value = 'Лазер'; power.value = '50';
+  name.value = 'Laser'; power.value = '50';
   f.fail(Object.assign(new Error('Check the form fields'), {details: [{field: 'power', message: 'Value must be greater than 0'}, {field: 'passport', message: 'Complete this field'}]}));
-  out.named = {power: field('Мощность').errorText(), name: field('Название').errorText(), form: f.error.textContent, focus: doc.activeElement === power, typed: [name.value, power.value]};
+  out.named = {power: field('Power').errorText(), name: field('Name').errorText(), form: f.error.textContent, focus: doc.activeElement === power, typed: [name.value, power.value]};
   f.clear();
-  f.fail(Object.assign(new Error('Название уже занято'), {kind: 'invalid', status: 422}));
-  out.refusal = {form: f.error.textContent, marks: [field('Название').errorText(), field('Мощность').errorText()], typed: [name.value, power.value]};
+  f.fail(Object.assign(new Error('Name is already taken'), {kind: 'invalid', status: 422}));
+  out.refusal = {form: f.error.textContent, marks: [field('Name').errorText(), field('Power').errorText()], typed: [name.value, power.value]};
   f.fail(Object.assign(new Error('Cannot reach the local service. Is the application running?'), {kind: 'network'}));
   out.network = f.error.textContent;
 """)
-    assert out["named"] == {"power": "Value must be greater than 0", "name": "", "focus": True, "typed": ["Лазер", "50"],
-                            "form": "The server rejected field “Мощность”: correct it and submit again. Also: Complete this field."}
-    assert out["refusal"] == {"form": "The server rejected the data: Название уже занято. Your entries remain in the form; correct them and submit again.",
-                              "marks": ["", ""], "typed": ["Лазер", "50"]}
+    assert out["named"] == {"power": "Value must be greater than 0", "name": "", "focus": True, "typed": ["Laser", "50"],
+                            "form": "The server rejected field “Power”: correct it and submit again. Also: Complete this field."}
+    assert out["refusal"] == {"form": "The server rejected the data: Name is already taken. Your entries remain in the form; correct them and submit again.",
+                              "marks": ["", ""], "typed": ["Laser", "50"]}
     assert out["network"].startswith("Could not submit: Cannot reach the local service.") and out["network"].endswith("correct them and submit again.")
 
 
