@@ -53,6 +53,10 @@ def test_screens_are_loaded_after_the_helpers_they_use():
                       ("/screens/photo-panels.js", "/screens/vector-zone.js"), ("/screens/prediction-review.js", "/screens/experiment.js"),
                       ("/router.js", "/screens/lifecycle.js"), ("/screens/lifecycle.js", "/screens/plan.js"), ("/screens/lifecycle.js", "/screens/experiment.js"),
                       ("/screens/lifecycle.js", "/screens/vector-review.js"), ("/screens/lifecycle.js", "/screens/vector.js"), ("/screens/lifecycle.js", "/screens/ingest-review.js"), ("/screens/lifecycle.js", "/screens/photo-engraving.js"),
+                      # the business-card editor (feature-2): the canvas and the panels before the screen, the screen before the works list that opens its dialog
+                      ("/app.js", "/screens/card-panels.js"), ("/forms.js", "/screens/card-panels.js"), ("/screens/lettering.js", "/screens/card-panels.js"),
+                      ("/screens/card-panels.js", "/screens/card-work.js"), ("/screens/card-canvas.js", "/screens/card-work.js"), ("/save-state.js", "/screens/card-work.js"),
+                      ("/screens/lifecycle.js", "/screens/card-work.js"), ("/screens/vector-workspace.js", "/screens/card-work.js"), ("/screens/card-work.js", "/screens/works.js"),
                       # the selector of a stock record (ux-growing-collections-p0, REQ-001) is loaded before every file that builds one
                       *[("/screens/material-picker.js", user) for user in ("/context.js", "/screens/vector.js", "/screens/labs.js", "/screens/plate-dialog.js",
                                                               "/screens/photo-preview.js", "/screens/experiments.js", "/screens/ingest-upload.js", "/screens/ingest.js",

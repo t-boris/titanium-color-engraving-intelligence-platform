@@ -184,7 +184,7 @@ def test_the_first_page_shows_at_most_twenty_works_with_thumbnail_name_type_size
 """)
     assert len(out["rows"]) == 20 and out["count"] == "showing 20 of 45" and out["more"] and out["gets"] == 1 and out["heading"] == "Works"
     assert "limit=20" in out["first"] and "offset=0" in out["first"]
-    assert out["chips"] == ["All · 45", "Vector · 20", "Mixed · 10", "Photo engraving · 15"]
+    assert out["chips"] == ["All · 45", "Vector · 20", "Mixed · 10", "Photo engraving · 15", "Cards"]
     newest = out["rows"][0]                                      # the newest work first: M010 (the last one made)
     assert newest["name"] == "M010" and newest["pills"] == ["Mixed", "Prepared"] and newest["parts"] == "2 photo zones · 1 lettering item"
     assert newest["href"] == f"#/vector?plan={made['M010']}" and newest["img"].startswith(f"/api/vector/{made['M010']}/thumb.png?v=")
@@ -239,11 +239,11 @@ def test_search_the_type_and_equipment_filters_and_the_order_narrow_one_list_wit
   await until(() => count(s) === 'showing 9 of 9', 'reset');
   out.reset = {{count: count(s), search: search.value, address: ctx.location.hash, state: s.list.state(), resetHidden: reset.hidden}};
 """)
-    assert out["start"]["count"] == "showing 9 of 9" and out["start"]["chips"] == ["All · 9", "Vector · 4", "Mixed · 2", "Photo engraving · 3"]
+    assert out["start"]["count"] == "showing 9 of 9" and out["start"]["chips"] == ["All · 9", "Vector · 4", "Mixed · 2", "Photo engraving · 3", "Cards"]
     assert out["laserOptions"] == ["any · 9", "Laser Alpha · 4", "Laser Beta · 5"]
     assert sorted(out["photo"]["names"]) == ["P001", "P002", "P003"] and "type=photo" in out["photo"]["url"] and out["photo"]["address"] == "#/works?type=photo"
     assert out["laser"]["address"] == f"#/works?laser={laser_b}" and sorted(out["laser"]["names"]) == ["M001", "P001", "P003", "V001", "V003"]
-    assert out["laser"]["chips"] == ["All · 5", "Vector · 2", "Mixed · 1", "Photo engraving · 2"]       # a count is what the chip would show with the laser as chosen
+    assert out["laser"]["chips"] == ["All · 5", "Vector · 2", "Mixed · 1", "Photo engraving · 2", "Cards"]       # a count is what the chip would show with the laser as chosen
     assert out["laser"]["lensOptions"][0] == "any · 5"
     assert sorted(out["searched"]["names"]) == ["V001", "V003"] and out["searched"]["count"] == "showing 2 of 2"
     assert out["searched"]["address"] == f"#/works?q=v00&laser={laser_b}"

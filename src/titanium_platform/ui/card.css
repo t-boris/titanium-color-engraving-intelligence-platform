@@ -1,0 +1,100 @@
+/* The business-card editor (screens/card-work.js, card-panels.js). One screen that uses the whole window: the .os layout of styles.css with three
+   columns (add and layers, the card, the selected element or the engraving settings). The boxes of the side panels are denser than the 44 px of
+   the rest of the application, because an editor shows many of them at once; they are still large enough to hit (32 px) and keep their labels. */
+.cw .os-body {grid-template-columns:minmax(230px,280px) minmax(0,1fr) minmax(300px,360px)}
+.cw .os-col-head {min-height:40px}
+.cw .os-col-head h3 {white-space:nowrap}
+
+/* the top bar */
+.cw-head {flex-wrap:wrap;gap:8px 10px}
+.cw-title {min-width:0;flex:0 1 auto}
+.cw-title .small {margin:0}
+.cw-title .vw-name-row h2 {max-width:26ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cw-head .save-state {flex-direction:row;flex-wrap:wrap;align-items:center;gap:6px 10px;margin:0;min-width:0}
+.cw-head .save-line {white-space:nowrap}
+.cw-head .save-error {padding:6px 10px;font-size:12px}
+.cw-tabs {flex:none;padding:0;border:0;gap:4px}
+.cw-tabs .vw-tab {flex:none;padding:6px 16px}
+.cw-export {display:inline-flex}
+.cw-export .lc-download {display:inline-flex;flex-direction:column;gap:4px}
+
+/* denser boxes in the side columns */
+.cw input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]),.cw select {min-height:32px;height:32px;padding:4px 9px;font-size:13px}
+.cw select {padding-right:32px}
+.cw textarea {min-height:64px;padding:6px 9px;font-size:13px}
+.cw .btn {min-height:32px}
+.cw .btn-small {min-height:30px;padding:4px 10px}
+.cw label.f {gap:3px}
+.cw .stack {gap:10px}
+.cw .os-scroll {padding:8px 12px}
+.cw h4 {margin:0;font-size:13px}
+
+/* numbers: a slider beside its box where the range is short */
+.cw-num {display:flex;align-items:center;gap:8px}
+.cw-num input[type=number] {flex:none;width:92px}
+.cw .cw-range {flex:1 1 auto;min-width:60px;width:auto;height:20px;min-height:0;padding:0;border:0;background:none;accent-color:var(--accent)}
+.cw .f-with-unit {display:inline-flex;align-items:center;gap:6px}
+.cw-pair {display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px}
+.cw-pair .cw-num input[type=number] {width:100%}
+.cw-radio {gap:6px}
+.cw-check {display:flex;flex-direction:column;gap:2px}
+
+/* add */
+.cw-left {min-height:0}
+.cw-add {flex:none;max-height:46%;overflow:auto;padding:10px 12px;display:flex;flex-direction:column;gap:10px;border-bottom:1px solid var(--line)}
+.cw-add-grid {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.cw-add-btn {white-space:nowrap}
+.cw-add-btn[aria-expanded=true] {background:#2c3a58;border-color:var(--accent)}
+.cw-stage:empty {display:none}
+.cw-pick .lst-rows {display:grid;grid-template-columns:repeat(auto-fill,minmax(68px,1fr));gap:6px;border:0;background:none;overflow:visible}
+.cw-pick .lst-row {flex-direction:column;align-items:stretch;padding:0;border:1px solid var(--line);border-radius:10px;background:#111826}
+.cw-pick .lst-main {padding:0;overflow:visible;white-space:normal}
+.cw-pick .lst-main>* {flex:1 1 auto}
+.cw-pick-item {display:flex;flex-direction:column;align-items:center;gap:4px;width:100%;padding:8px 4px;border:0;border-radius:10px;background:none;color:inherit;cursor:pointer}
+.cw-pick-item:hover {background:#1a2435}
+.cw-pick-label {max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cw-thumb {width:34px;height:34px;color:#dfe7f7}
+
+/* layers */
+.cw-layers-list .lst-rows {border-radius:10px}
+.cw-layers-list .lst-row {padding:0 6px}
+.cw-layers-list .cw-on {background:#17223a}
+.cw-layer {display:flex;align-items:center;gap:8px;flex:1 1 auto;min-width:0;padding:4px 0;border:0;background:none;color:inherit;text-align:left;cursor:pointer}
+.cw-layer-type {flex:none;min-width:26px;text-align:center;font-size:11px;font-weight:700;color:var(--accent)}
+.cw-layer-name {min-width:0;overflow:hidden;text-overflow:ellipsis}
+.cw-dot {flex:none;color:var(--warning);font-size:11px}
+.cw-layers-list .lst-act .btn {min-width:26px;min-height:26px;padding:2px 6px}
+
+/* the card */
+.cw-centre {min-height:0}
+.cw-summary {white-space:nowrap}
+.cw-tools {gap:6px}
+.cw-panel {flex:1 1 auto;display:flex;min-height:0;padding:8px}
+.cw-canvas {position:relative;flex:1 1 auto;min-width:0;min-height:320px;width:100%;height:100%}
+
+/* the selected element */
+.cw-inspector .alert {margin:0;padding:6px 10px;font-size:12px}
+.cw-actions .row {gap:6px}
+.cw-suit {padding:8px 10px;border:1px solid var(--line-2);border-radius:10px;background:#0f1622}
+.cw-suit .facts {gap:4px 12px}
+.cw-suit .facts dt,.cw-suit .facts dd {font-size:12px}
+.cw-warning {margin:0}
+.cw-no-guarantee {margin:0;color:var(--warning)}
+
+/* engraving settings and the review */
+.cw-set {border:1px solid var(--line);border-radius:10px;padding:6px 10px;margin-bottom:6px;background:#111826}
+.cw-set summary {display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;margin:0;font-weight:500}
+.cw-set-flags {display:inline-flex;gap:4px}
+.cw-set-body {padding-top:8px}
+.cw-mode {gap:14px}
+.cw-review-side {padding:8px 0;border-top:1px solid var(--line)}
+.cw-preview {display:block;width:100%;max-height:96px;object-fit:contain;border-radius:8px;background:#0e1420}
+.cw-problems {margin:0;padding-left:18px}
+.cw-attention {margin:0;padding:0;list-style:none}
+.cw-attention li {justify-content:space-between;gap:8px;padding:2px 0}
+
+@media (max-width:1000px) {
+  .cw .os-body {grid-template-columns:minmax(0,1fr) !important}
+  .cw-add {max-height:none}
+  .cw-canvas {min-height:260px}
+}
