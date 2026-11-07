@@ -17,12 +17,12 @@ const CardWork = (() => {
   const LIBRARY_KEY = {shape: 'kind', frame: 'style', icon: 'name'};                                        // the name of the item in the element's payload
   const ADD = [['text', 'Text'], ['shape', 'Shape'], ['frame', 'Frame'], ['icon', 'Icon'], ['image', 'Image'], ['generate', 'Generate'], ['qr', 'QR code']];
   const ORDER = [['front', 'To front'], ['forward', 'Forward'], ['backward', 'Backward'], ['back', 'To back']];
-  const CARD_OPS = new Set(['settings_add', 'settings_set', 'settings_delete', 'set_size']);                 // edits of the card, not of a side
+  const CARD_OPS = new Set(['settings_add', 'settings_set', 'settings_delete', 'set_size', 'settings_apply', 'settings_confirm', 'settings_custom', 'set_setup']);   // edits of the card, not of a side
   const FIELD_NAME = {name: 'Name', x: 'Center X, mm', y: 'Center Y, mm', width: 'Width, mm', height: 'Height, mm', rotation: 'Rotation, degrees', settings_id: 'Engraving settings',
     'text.text': 'Text', 'text.font': 'Font', 'text.height_mm': 'Letter height, mm', 'text.width_pct': 'Letter width, %', 'text.spacing_mm': 'Letter spacing, mm',
-    'text.line_pct': 'Line spacing, %', 'text.align': 'Alignment', 'qr.kind': 'QR content type', 'qr.ecc': 'QR error correction'};
+    'text.line_pct': 'Line spacing, %', 'text.align': 'Alignment', 'qr.kind': 'QR content type', 'qr.ecc': 'QR error correction', 'image.engrave': 'Engrave as'};
   const SETTING_NAME = {name: 'Name', mode: 'Mode', power: 'Power, %', speed: 'Speed, mm/s', frequency: 'Frequency, kHz', pulse_width: 'Pulse width, ns',
-    line_interval: 'Line interval, mm', passes: 'Passes'};
+    line_interval: 'Line interval, mm', passes: 'Passes', min_power: 'Minimum power, %', scan_angle: 'Scan angle, degrees', dot_width: 'Dot width, mm', dither: 'Image mode'};
   const dig = (object, path) => path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), object);
   const mm = (v) => String(+(+v).toFixed(1));
   let keys = null;                                           // keyboard shortcuts of the open card, as in the other work screens
@@ -199,9 +199,32 @@ const CardWork = (() => {
       paint();
     }
 
+    // -- the ready settings of the card's own laser, lens and material: asked for when a chooser first needs them, kept for the setup and the version of
+    // the work they were asked for. What was measured for another setup is dropped at once and never shown, whatever answer is still on its way.
+    const cache = {key: null, part: null, data: null, json: null, error: null, loading: false, promise: null};
+    function choices() {
+      const setup = view.setup || {}, part = JSON.stringify([setup.device_id ?? null, setup.lens_id ?? null, setup.material_id ?? null]), key = `${part}@${view.updated_at}`;
+      if (cache.key !== key) {
+        if (cache.part !== part) { cache.data = null; cache.json = null; }
+        Object.assign(cache, {key, part, error: null, loading: true});
+        cache.promise = get(`${base}/settings-choices`).then((data) => {
+          if (cache.key !== key) return;                          // the card moved on while this was on its way
+          cache.loading = false;
+          if (data.setup && !CardSettings.sameSetup(data.setup, view.setup)) { cache.error = 'The ready settings do not belong to the laser, lens and material of this card.'; return; }
+          const json = JSON.stringify(data);
+          if (json !== cache.json) { cache.json = json; cache.data = data; }       // the same answer again changes nothing on the screen
+        }, (e) => { if (cache.key === key) { cache.loading = false; cache.error = e.message || String(e); } });
+      }
+      return cache;
+    }
     const env = {lib: () => lib, local, view: () => view, set: (e, path, value) => setField(e, path, value), setQr, setQrKind, select, reveal, settingsName,
       reorder: (elementId, to) => edit({op: 'reorder', id: elementId, to}, {retryable: false}),
-      settingsAdd: () => edit({op: 'settings_add'}, {retryable: false}), setSettings: (settingsId, changes) => setSettings(settingsId, changes), settingsDelete};
+      settingsAdd: () => edit({op: 'settings_add'}, {retryable: false}), setSettings: (settingsId, changes) => setSettings(settingsId, changes), settingsDelete,
+      setup: () => view.setup, choices, reloadChoices: () => { cache.key = null; },
+      applyChoice: (settingsId, choiceId) => edit({op: 'settings_apply', settings_id: settingsId, choice_id: choiceId}, {retryable: false}),
+      confirmSettings: (settingsId) => edit({op: 'settings_confirm', settings_id: settingsId}, {retryable: false}),
+      customSettings: (settingsId) => edit({op: 'settings_custom', settings_id: settingsId}, {retryable: false}),
+      setSetup: (setup) => soft({path: `${base}/edit`, body: {op: 'set_setup', device_id: setup.device_id, lens_id: setup.lens_id, material_id: setup.material_id}})};
 
     // -- the left column: add, then the layers
     const layers = P.layerList(env);
@@ -225,7 +248,7 @@ const CardWork = (() => {
         if (error) { failure.textContent = error.message || String(error); failure.hidden = false; }
       });
       return h('div', {class: 'stack'}, h('h4', {}, 'Add a picture'), App.filePick(input, 'Choose picture'), state, failure,
-        h('p', {class: 'small muted'}, 'PNG, JPEG, GIF, BMP, TIFF or WebP. The picture is traced into shapes that can be engraved; adjust the tracing after it is added.'));
+        h('p', {class: 'small muted'}, 'PNG, JPEG, GIF, BMP, TIFF or WebP. The picture is traced into shapes that can be engraved; adjust the tracing after it is added, or engrave it as a photo.'));
     }
     const generation = {};
     function generatePanel() {

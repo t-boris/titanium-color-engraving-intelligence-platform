@@ -9,7 +9,8 @@ import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
-from titanium_platform import card_generate, card_qr, card_work as cw, catalog, devices, lightburn as lb, research, setup as su
+from titanium_platform import (card_generate, card_qr, card_work as cw, catalog, conversion as cv, creation_context as cc, devices,
+                               lightburn as lb, plans as pl, research, setup as su)
 from titanium_platform.api.app import create_app
 from titanium_platform.db import Store
 
@@ -40,6 +41,7 @@ def no_network(monkeypatch):
 @pytest.fixture
 def workshop(store):
     devices.create_from_template(store, TEMPLATE, name="JPT M7", serial="CARD-1")
+    su.save_material(store, "Ti grade 2 sheet", grade="Grade 2")         # a card is tied to a laser, a lens and a material (DEC-009)
     return store
 
 
@@ -267,7 +269,10 @@ def test_engraving_settings_are_the_operators_and_nothing_is_defaulted(workshop,
         with pytest.raises(su.ValidationError, match=words):
             cw.edit(workshop, card, {"op": "settings_set", "id": 1, "changes": changes})
     ok = cw.edit(workshop, card, {"op": "settings_set", "id": 1, "changes": {**SETTINGS, "pulse_width": 120, "passes": 2}})
-    assert ok["settings"][0] == {"id": 1, "name": "Engraving 1", "mode": "fill", **SETTINGS, "pulse_width": 120.0, "passes": 2}
+    first = ok["settings"][0]
+    assert {k: first[k] for k in ("id", "name", "mode", "power", "speed", "frequency", "line_interval", "pulse_width", "passes")} == \
+        {"id": 1, "name": "Engraving 1", "mode": "fill", **SETTINGS, "pulse_width": 120.0, "passes": 2}
+    assert first["origin"]["kind"] == "custom" and first["confirmed"] and first["status"]["state"] == "custom"   # typed numbers are Custom
 
 
 def test_settings_sets_are_added_assigned_and_removed_without_orphans(workshop, card):
@@ -299,7 +304,7 @@ def test_a_side_is_not_ready_until_its_settings_are_complete_and_the_review_says
     b = add(workshop, card, type="shape", shape={"kind": "star"})
     review = cw.view(workshop, card)["review"]["front"]
     assert not review["ready"] and review["sets"][0]["missing"] == ["power", "speed", "frequency", "line_interval"]
-    assert "power" in review["problems"][0]
+    assert "settings chosen for this laser, lens and material" in review["problems"][0]          # unknown settings: a choice is needed, not numbers
     with pytest.raises(su.ValidationError, match="not ready"):
         cw.export(workshop, card, "front")
     cw.edit(workshop, card, {"op": "settings_add", "name": "Text"})
@@ -311,6 +316,98 @@ def test_a_side_is_not_ready_until_its_settings_are_complete_and_the_review_says
     ready(workshop, card)
     assert cw.view(workshop, card)["review"]["front"]["ready"]
     assert not cw.view(workshop, card)["review"]["back"]["ready"]                   # the other side is prepared on its own
+
+
+# -- ready engraving settings: a card is tied to its setup, a set is chosen, proposed, confirmed or custom, never blank ---------------------
+def second_laser(store):
+    """Another laser, another lens and another material in the same workshop."""
+    other = devices.create_from_template(store, TEMPLATE, name="JPT M7 second", serial="CARD-2")
+    material = su.save_material(store, "Ti grade 5 sheet", grade="Grade 5")["id"]
+    return other["id"], material
+
+
+def test_a_card_is_tied_to_the_laser_lens_and_material_of_the_workshop_when_it_is_made(workshop, card):
+    view = cw.view(workshop, card)
+    setup = view["setup"]
+    assert setup["set"] and setup["device"]["name"].startswith("JPT M7") and setup["material"]["name"] == "Ti grade 2 sheet"
+    assert setup["device_id"] and setup["material_id"]
+    later, material = second_laser(workshop)
+    cc.save(workshop, {"device_id": later, "material_id": material})            # the workshop moves on; the card keeps its own
+    again = cw.view(workshop, card)["setup"]
+    assert (again["device_id"], again["material_id"]) == (setup["device_id"], setup["material_id"])
+
+
+def test_settings_nobody_chose_are_unknown_with_a_reason_never_a_blank_form(workshop, card):
+    first = cw.view(workshop, card)["settings"][0]
+    assert first["origin"] is None and first["status"]["state"] == "unknown" and not first["status"]["ready"]
+    assert "No settings are chosen" in first["status"]["summary"]
+    assert any("laser, lens and material" in need for need in first["status"]["needs"])
+
+
+def test_typing_numbers_is_custom_and_remembers_what_it_started_from(workshop, card):
+    done = cw.edit(workshop, card, {"op": "settings_set", "id": 1, "changes": {"power": 31}})["settings"][0]
+    assert done["origin"]["kind"] == "custom" and done["confirmed"] and done["status"]["state"] == "custom"
+    assert done["origin"]["setup"] == {k: cw.view(workshop, card)["setup"][k] for k in ("device_id", "lens_id", "material_id")}
+    renamed = cw.edit(workshop, card, {"op": "settings_set", "id": 1, "changes": {"name": "Logo"}})["settings"][0]
+    assert renamed["name"] == "Logo" and renamed["origin"] == done["origin"]       # a name is not a number: the origin stays
+
+
+def test_there_is_nothing_to_confirm_or_apply_when_nothing_was_chosen(workshop, card):
+    with pytest.raises(su.ValidationError, match="confirm"):
+        cw.edit(workshop, card, {"op": "settings_confirm", "id": 1})
+    with pytest.raises(su.ValidationError, match="not measured"):
+        cw.edit(workshop, card, {"op": "settings_apply", "id": 1, "choice_id": "no-such-choice"})
+
+
+def test_a_hand_typed_set_is_not_the_cards_until_confirmed_for_its_setup_after_the_setup_changes(workshop, card):
+    add(workshop, card, type="shape", shape={"kind": "star"})
+    ready(workshop, card)
+    assert cw.view(workshop, card)["review"]["front"]["ready"]
+    later, material = second_laser(workshop)
+    moved = cw.edit(workshop, card, {"op": "set_setup", "device_id": later, "lens_id": None, "material_id": material})
+    state = moved["settings"][0]
+    assert moved["setup"]["device_id"] == later and state["power"] == 30.0                       # the numbers stay: they are the operator's own
+    assert state["status"]["state"] == "other_setup" and state["confirmed"] is False
+    review = moved["review"]["front"]
+    assert not review["ready"] and "settings chosen again, or confirmed" in review["problems"][0]
+    with pytest.raises(su.ValidationError, match="not ready"):
+        cw.export(workshop, card, "front")
+    confirmed = cw.edit(workshop, card, {"op": "settings_confirm", "id": 1})
+    assert confirmed["settings"][0]["status"]["state"] == "custom" and confirmed["review"]["front"]["ready"]
+    cw.export(workshop, card, "front")
+
+
+def test_the_setup_of_a_card_is_checked_and_can_be_undone(workshop, card):
+    later, material = second_laser(workshop)
+    for body, words in [({"device_id": 9999, "material_id": material}, "laser"), ({"device_id": later, "lens_id": 9999, "material_id": material}, "lens"),
+                        ({"device_id": later, "material_id": 9999}, "material"), ({"device_id": later}, "material")]:
+        with pytest.raises(su.ValidationError, match=words):
+            cw.edit(workshop, card, {"op": "set_setup", **body})
+    before = cw.view(workshop, card)["setup"]
+    cw.edit(workshop, card, {"op": "set_setup", "device_id": later, "lens_id": None, "material_id": material})
+    assert cw.view(workshop, card)["setup"]["device_id"] == later
+    assert cw.step(workshop, card, "undo")["setup"]["device_id"] == before["device_id"]
+
+
+def test_a_card_saved_before_settings_could_be_chosen_opens_with_its_numbers_as_custom_and_nothing_lost(workshop, card):
+    plan = pl.get_plan(workshop, card)
+    data = {k: plan[k] for k in cw.DATA if k != "setup"}
+    data["settings"] = [{"id": 1, "name": "Old", "mode": "line", "power": 12.0, "speed": 700.0, "frequency": 50.0, "pulse_width": None,
+                         "line_interval": None, "passes": 2}]
+    cv.save_plan(workshop, card, name=plan["name"], mode=cw.MODE, status=cv.ST_DRAFT, device_id=plan["device_id"], lens_id=plan["lens_id"],
+                 markers=False, identifier=plan["plan_identifier"], band_count=None, data=data)
+    view = cw.view(workshop, card)
+    old = view["settings"][0]
+    assert (old["power"], old["speed"], old["frequency"], old["mode"], old["passes"]) == (12.0, 700.0, 50.0, "line", 2)
+    assert old["origin"]["kind"] == "custom" and "Typed before" in old["origin"]["note"] and not old["confirmed"]
+    assert view["setup"]["device_id"] == plan["device_id"] and not view["setup"]["set"]
+    assert old["status"]["state"] == "other_setup" and any("material" in need for need in old["status"]["needs"])
+
+
+def test_a_copy_keeps_the_setup_and_the_origin_of_every_set(workshop, card):
+    ready(workshop, card)
+    twin = cw.view(workshop, cw.copy_work(workshop, card))
+    assert twin["setup"] == cw.view(workshop, card)["setup"] and twin["settings"][0]["origin"]["kind"] == "custom"
 
 
 def bounds_of(layer):
@@ -526,6 +623,7 @@ def test_a_card_is_listed_with_the_other_works(workshop, card):
 def client(tmp_path):
     app = create_app(tmp_path)
     devices.create_from_template(app.state.store, TEMPLATE, name="JPT M7", serial="API-1")
+    su.save_material(app.state.store, "Ti grade 2 sheet", grade="Grade 2")
     with TestClient(app, base_url="http://127.0.0.1") as c:
         yield c
 

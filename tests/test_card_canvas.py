@@ -346,6 +346,69 @@ def test_show_draws_the_card_to_scale_with_one_path_per_element_in_z_order(tmp_p
 
 
 @node
+def test_a_picture_engraved_as_a_photo_is_drawn_as_its_bitmap_with_a_dotted_outline_and_stays_selectable_and_movable(tmp_path):
+    got = run(tmp_path, VIEW + """
+  const photo = el('p', 'image', 40, 30, 30, 20, {raster: {url: '/api/card-works/7/elements/p/raster.png?v=3', width_px: 300, height_px: 200, dpi: 254, dither: 'jarvis', given: true},
+    image: {engrave: 'raster'}});
+  const traced = el('t', 'image', 70, 30, 20, 20, {image: {engrave: 'vector'}, raster: null});
+  const list = [view.elements[0], photo, traced];
+  const t = mount({...view, elements: list, selection: ['p']});
+  const g = t.group('p');
+  const image = g.childNodes.find((n) => n.localName === 'image'), outline = g.childNodes.find((n) => n.localName === 'rect' && n.classList.contains('cc-raster-outline'));
+  out.image = ['x', 'y', 'width', 'height', 'href', 'preserveAspectRatio', 'class'].map((k) => image.getAttribute(k));
+  out.outline = ['x', 'y', 'width', 'height'].map((k) => outline.getAttribute(k));
+  out.noInk = g.childNodes.filter((n) => n.localName === 'path').length;
+  out.classes = [g.getAttribute('class').split(' ').includes('cc-el-raster'), g.getAttribute('class').split(' ').includes('cc-selected')];
+  out.traced = [t.group('t').childNodes.map((n) => n.localName), t.group('t').getAttribute('class').includes('cc-el-raster')];
+  out.order = t.q('g').filter((n) => n.classList.contains('cc-el')).map((n) => n.getAttribute('data-id'));
+  out.title = g.childNodes.some((n) => n.localName === 'title');
+  out.handles = t.handles();
+  t.take();
+  t.canvas.show({...view, elements: list, selection: []});
+  t.click(40, 30);                                                       // anywhere in the picture's box picks it
+  out.picked = t.take();
+  t.canvas.show({...view, elements: list, selection: ['p']});
+  t.drag([40, 30], [50, 30]);
+  out.moved = t.take();
+  t.canvas.show({...view, elements: list, selection: ['p']});
+  t.fire('pointerdown', 40, 30); t.fire('pointermove', 45, 30);
+  out.during = t.group('p').getAttribute('transform');                    // the bitmap goes with the pointer
+  t.fire('pointerup', 45, 30); t.take();
+  t.canvas.show({...view, elements: list, selection: ['p']});
+  t.drag([55, 40], [65, 50]);                                            // the south-east corner of the picture (25..55 by 20..40)
+  out.resized = t.take().map((c) => c[0]);
+""")
+    assert got["image"] == ["25", "20", "30", "20", "/api/card-works/7/elements/p/raster.png?v=3", "none", "cc-raster"]       # the bitmap lies on the picture's rectangle
+    assert got["outline"] == ["25", "20", "30", "20"] and got["noInk"] == 0                                              # a dotted outline, and no filled path under the photo
+    assert got["classes"] == [True, True]
+    assert got["traced"] == [["path"], False]                                                                            # a traced picture is the same as before
+    assert got["order"] == ["a", "p", "t"] and got["title"] is False                                                     # the z-order holds; a complete photo has no note
+    assert got["handles"] == ["nw", "ne", "se", "sw", "rotate"]                                                          # a picture keeps its proportions: corners and rotation
+    assert got["picked"] == [["onSelect", ["p"]]]
+    assert got["moved"] == [["onMove", ["p"], 10, 0]]
+    assert got["during"] == "matrix(1 0 0 1 5 0)"
+    assert got["resized"] == ["onResize"]
+
+
+@node
+def test_a_photo_with_no_url_or_no_box_falls_back_to_its_path_and_a_plain_grey_preview_says_why(tmp_path):
+    got = run(tmp_path, VIEW + """
+  const bare = (id, raster, extra = {}) => el(id, 'image', 40, 30, 30, 20, {raster, ...extra});
+  const list = [bare('nourl', {url: '', given: true}), bare('nobox', {url: '/x.png', given: true}, {bounds: null}), bare('plain', {url: '/y.png', given: false}), bare('empty', {url: '/z.png', given: true}, {d: ''})];
+  const t = mount({...view, elements: list});
+  const kinds = (id) => t.group(id).childNodes.map((n) => n.localName);
+  out.kinds = Object.fromEntries(list.map((e) => [e.id, kinds(e.id)]));
+  out.plain = t.group('plain').childNodes.find((n) => n.localName === 'title').textContent;
+  out.escaped = t.group('plain').childNodes.find((n) => n.localName === 'image').getAttribute('href');
+""")
+    assert got["kinds"]["nourl"] == ["path"] and got["kinds"]["nobox"] == ["path"]                                      # without a url or a box the path is drawn, as before
+    assert "image" not in got["kinds"]["nourl"] and "image" not in got["kinds"]["nobox"]
+    assert got["kinds"]["plain"][:2] == ["image", "rect"] and "image" in got["kinds"]["empty"]
+    assert got["plain"] == "Plain grey preview: the engraving settings give no line interval or image mode yet"
+    assert got["escaped"] == "/y.png"
+
+
+@node
 def test_a_minor_grid_is_left_out_where_its_lines_would_be_too_close(tmp_path):
     got = run(tmp_path, VIEW + """
   const t = mount(view);

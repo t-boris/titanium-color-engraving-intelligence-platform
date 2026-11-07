@@ -2,7 +2,8 @@
 other screen tests, with a stand-in for the canvas (it records what the screen shows it and lets a test fire its handlers) and a small fake
 of the card server that answers the way the real one does (the edit operations, the view with its review, the library, the refusals).
 So what is read here is the screen's own behaviour: what it posts for each action and how it draws the answers. The look of the page, the
-real canvas and the real server are covered elsewhere."""
+real canvas and the real server are covered elsewhere. The ready engraving settings (the setup bar, the choice by type, the raster picture) are in
+test_card_settings_ui.py, which runs on this same harness."""
 import json
 import shutil
 import subprocess
@@ -54,16 +55,24 @@ const TEXT_DEFAULT = {text: 'Text', font: null, height_mm: 5, align: 'center', w
 const QR_FIELDS = {link: {url: 'https://example.com'}, text: {text: ''}, wifi: {ssid: '', password: '', security: 'WPA', hidden: false}, phone: {number: ''}, email: {address: ''}, vcard: {first_name: ''}};
 const SETTING_LIMITS = {power: [0, 100, 'power (%)'], speed: [0, 100000, 'speed (mm/s)'], frequency: [0, 10000, 'frequency (kHz)'], pulse_width: [0, 10000, 'pulse width (ns)'],
   line_interval: [0, 10, 'line interval (mm)']};
+const EXTRA_LIMITS = {min_power: [0, 100, 'minimum power (%)'], scan_angle: [-360, 360, 'scan angle (degrees)'], dot_width: [0, 5, 'dot width (mm)']};
 const deep = (v) => JSON.parse(JSON.stringify(v));
-const blank = (id, name) => ({id, name, mode: 'fill', power: null, speed: null, frequency: null, pulse_width: null, line_interval: null, passes: 1});
+// a set with nothing chosen: no value, no origin (the editor offers choices, it does not offer a blank form)
+const blank = (id, name) => ({id, name, mode: 'fill', power: null, speed: null, frequency: null, pulse_width: null, line_interval: null, passes: 1, global_passes: null,
+  bidirectional: null, cross_hatch: null, scan_angle: null, min_power: null, dither: null, dot_width: null, origin: null, confirmed: false});
+const NAMES = {device: {1: 'Laser A', 2: 'Laser B'}, lens: {1: 'Lens 100 mm'}, material: {3: 'Titanium grade 2', 4: 'Titanium grade 5'}};
+const named = (kind, id) => (id == null || !NAMES[kind][id] ? null : {id, name: NAMES[kind][id]});
+const sameSetup = (a, b) => !!a && !!b && ['device_id', 'lens_id', 'material_id'].every((k) => a[k] === b[k]);
 
 const srv = {refuse: [], generation: {available: false, reason: 'No OpenAI key is set: add it in the workshop AI settings to generate pictures.'}, w: null};
+srv.choices = null;                                           // the types of GET settings-choices; null: all four unknown, each with its reason
 srv.reset = () => {
   srv.w = {id: 7, name: 'Visit card', preset: '85x53', size_mm: {width: 85, height: 53}, sides: {front: {elements: []}, back: {elements: []}}, settings: [blank(1, 'Engraving 1')],
-    default: 1, next: 1, nextSettings: 2, undo: [], redo: [], rev: 0};
+    setup: {device_id: 1, lens_id: null, material_id: 3}, default: 1, next: 1, nextSettings: 2, undo: [], redo: [], rev: 0};
+  srv.choices = null;
 };
 srv.reset();
-const STATE = ['size_mm', 'preset', 'sides', 'settings', 'default', 'next', 'nextSettings'];
+const STATE = ['size_mm', 'preset', 'sides', 'settings', 'setup', 'default', 'next', 'nextSettings'];
 const snapshot = () => deep(Object.fromEntries(STATE.map((k) => [k, srv.w[k]])));
 const fail = (text) => { throw new Error(text); };
 const number = (v, label, lo, hi) => { if (typeof v !== 'number' || !Number.isFinite(v) || v < lo || v > hi) fail(`${label} must be a number from ${lo} to ${hi}`); return Math.round(v * 10000) / 10000; };
@@ -105,7 +114,10 @@ function checkEdited(e) {
     if (unknown.length) fail(`the QR type '${e.qr.kind}' has no field '${unknown[0]}'`);
     e.qr.fields = Object.fromEntries(specs.map((s) => [s.name, given[s.name] ?? (s.default ?? (s.type === 'bool' ? false : ''))]));
   }
-  if (e.type === 'image') for (const p of LIB.image.params) if (['int', 'number'].includes(p.type)) number(e.image[p.name], p.label, p.min, p.max);
+  if (e.type === 'image') {
+    for (const p of LIB.image.params) if (['int', 'number'].includes(p.type)) number(e.image[p.name], p.label, p.min, p.max);
+    if (!['vector', 'raster'].includes(e.image.engrave)) fail('a picture is engraved as traced shapes or as a photo');
+  }
   return e;
 }
 srv.apply = (b) => {
@@ -118,21 +130,59 @@ srv.apply = (b) => {
     else fail('choose a card size: 85 × 53 mm, 85 × 54 mm or a custom size');
   } else if (op === 'settings_add') {
     w.settings.push(blank(w.nextSettings, b.name || `Engraving ${w.nextSettings}`)); w.nextSettings += 1;
-  } else if (op === 'settings_set' || op === 'settings_delete') {
-    const set = w.settings.find((s) => s.id === b.id);
+  } else if (op === 'set_setup') {
+    if (!NAMES.device[b.device_id]) fail('choose the laser of this card.');
+    if (b.lens_id !== null && !NAMES.lens[b.lens_id]) fail('choose a lens, or the unknown lens.');
+    if (!NAMES.material[b.material_id]) fail('choose the material of this card.');
+    const next = {device_id: b.device_id, lens_id: b.lens_id, material_id: b.material_id};
+    if (!sameSetup(next, w.setup)) {                               // card_work._resetup: what was chosen for the old setup never carries over
+      w.settings = w.settings.map((set) => {
+        if (!set.origin) return set;
+        if (set.origin.kind === 'custom') return {...set, confirmed: false};
+        return {...blank(set.id, set.name)};
+      });
+    }
+    w.setup = next;
+  } else if (['settings_set', 'settings_delete', 'settings_apply', 'settings_confirm', 'settings_custom'].includes(op)) {
+    const set = w.settings.find((s) => s.id === (b.settings_id ?? b.id));
     if (!set) fail('these engraving settings no longer exist');
     if (op === 'settings_delete') {
       if (w.settings.length < 2) fail('a card keeps at least one set of engraving settings');
       w.settings = w.settings.filter((s) => s !== set);
       if (w.default === set.id) w.default = w.settings[0].id;
       for (const s of ['front', 'back']) for (const e of w.sides[s].elements) if (e.settings_id === set.id) e.settings_id = null;
+    } else if (op === 'settings_apply') {
+      const found = srv.items().find((i) => i.id === b.choice_id);
+      if (!found) fail('these settings are not measured for this laser, lens and material.');
+      const fresh = blank(set.id, set.name);
+      fresh.passes = null;
+      for (const [k, v] of Object.entries(found.settings)) if (v !== null) fresh[k] = v;
+      Object.assign(set, fresh, {origin: {kind: 'choice', choice_id: found.id, type: found.type, source: found.source, label: found.label, detail: found.detail, evidence: found.evidence,
+        setup: {...w.setup}, at: 'now', note: null, proposed: false}, confirmed: true});
+    } else if (op === 'settings_confirm') {
+      if (!set.origin) fail('there are no settings to confirm: choose some first.');
+      if (set.origin.kind === 'choice' && !sameSetup(set.origin.setup, w.setup)) fail('these settings were chosen for another laser, lens or material: choose them again.');
+      set.origin = {...set.origin, setup: {...w.setup}, proposed: false}; set.confirmed = true;
+    } else if (op === 'settings_custom') {
+      const before = set.origin;
+      set.origin = {kind: 'custom', choice_id: null, type: null, source: 'Custom', label: 'Typed by the operator', detail: 'The values were typed by hand, not taken from a measurement.',
+        evidence: null, setup: {...w.setup}, at: 'now', note: before && before.kind === 'choice' ? `Started from ${before.label}.` : null, proposed: false};
+      set.confirmed = true;
     } else {
       for (const [k, v] of Object.entries(b.changes)) {
         if (k === 'name') set.name = v;
         else if (k === 'mode') set.mode = v;
         else if (k === 'passes') set.passes = number(v, 'the passes', 1, 100);
+        else if (k === 'dither') set.dither = v;
         else if (v === null) set[k] = null;
+        else if (EXTRA_LIMITS[k]) { const [lo, hi, label] = EXTRA_LIMITS[k]; set[k] = number(v, label, lo, hi); }
         else { const [lo, hi, label] = SETTING_LIMITS[k]; set[k] = number(v, label, lo, hi); }
+      }
+      if (Object.keys(b.changes).some((k) => k !== 'name')) {            // a number was typed: the set is the operator's own now
+        const before = set.origin;
+        set.origin = {kind: 'custom', choice_id: null, type: null, source: 'Custom', label: 'Typed by the operator', detail: 'The values were typed by hand, not taken from a measurement.',
+          evidence: null, setup: {...w.setup}, at: 'now', note: before && before.kind === 'choice' ? `Started from ${before.label}.` : null, proposed: false};
+        set.confirmed = true;
       }
     }
   } else {
@@ -184,18 +234,52 @@ srv.step = (direction) => {
   if (!from.length) fail(direction === 'undo' ? 'there is no earlier change of the card to undo' : 'there is no undone change to redo');
   const there = from.pop(); to.push(snapshot()); Object.assign(w, there); w.rev += 1;
 };
-const missing = (set) => ['power', 'speed', 'frequency', ...(set.mode === 'fill' ? ['line_interval'] : [])].filter((k) => set[k] === null);
+// card_work._need, _state, _status and _review: where a set stands and what it still needs
+const need = (set, raster) => ['power', 'speed', 'frequency', ...(set.mode === 'fill' || raster ? ['line_interval'] : []), ...(raster ? ['min_power', 'dither'] : [])].filter((k) => set[k] == null);
+function stateOf(set) {
+  const w = srv.w, o = set.origin;
+  if (!o) return 'unknown';
+  if (!sameSetup(o.setup, w.setup) || w.setup.material_id === null) return 'other_setup';
+  if (o.kind === 'custom') return 'custom';
+  return set.confirmed ? 'chosen' : 'proposed';
+}
+const SUMMARY = {unknown: 'No settings are chosen yet.', proposed: 'Proposed from the workshop\'s measurements. Confirm them or choose others.', chosen: 'Chosen from the workshop\'s measurements.',
+  custom: 'Typed by hand, the last resort.', other_setup: 'Chosen for another laser, lens or material.'};
+function statusOf(set, raster) {
+  const state = stateOf(set), needs = [];
+  if (srv.w.setup.material_id === null) needs.push('the material of this card');
+  if (state === 'unknown') needs.push('settings chosen for this laser, lens and material');
+  else if (state === 'other_setup') needs.push('settings chosen again, or confirmed, for this laser, lens and material');
+  else if ((state === 'proposed' || state === 'custom') && !set.confirmed) needs.push('your confirmation');
+  const missing = state !== 'unknown' ? need(set, raster) : [];
+  if (missing.length) needs.push(missing.map((k) => k.replace('_', ' ')).join(', '));
+  return {state, ready: !needs.length, needs, summary: SUMMARY[state]};
+}
+const effectiveId = (e) => (srv.w.settings.some((s) => s.id === e.settings_id) ? e.settings_id : srv.w.default);
+const isRaster = (e) => e.type === 'image' && e.image.engrave === 'raster';
+const rasterSets = () => new Set(['front', 'back'].flatMap((side) => srv.w.sides[side].elements.filter(isRaster).map(effectiveId)));
 function review(side) {
-  const w = srv.w, rows = [], sets = {}, problems = [];
+  const w = srv.w, rows = [], sets = {}, problems = [], raster = rasterSets();
   for (const e of w.sides[side].elements) {
-    const eff = w.settings.some((s) => s.id === e.settings_id) ? e.settings_id : w.default, set = w.settings.find((s) => s.id === eff), miss = missing(set);
-    rows.push({id: e.id, name: e.name, type: e.type, settings_id: e.settings_id, effective_settings_id: eff, complete: !miss.length, empty: isEmpty(e)});
-    if (!isEmpty(e)) { sets[eff] = sets[eff] || {settings_id: eff, name: set.name, elements: [], missing: miss, complete: !miss.length}; sets[eff].elements.push(e.id); }
+    const eff = effectiveId(e), set = w.settings.find((s) => s.id === eff), status = statusOf(set, raster.has(eff));
+    rows.push({id: e.id, name: e.name, type: e.type, settings_id: e.settings_id, effective_settings_id: eff, complete: status.ready, empty: isEmpty(e), raster: isRaster(e)});
+    if (!isEmpty(e)) {
+      sets[eff] = sets[eff] || {settings_id: eff, name: set.name, elements: [], state: status.state, needs: status.needs, missing: status.state !== 'unknown' ? need(set, raster.has(eff)) : [], complete: status.ready};
+      sets[eff].elements.push(e.id);
+    }
   }
-  for (const s of Object.values(sets)) if (s.missing.length) problems.push(`The engraving settings “${s.name}” lack: ${s.missing.join(', ')}`);
+  for (const s of Object.values(sets)) if (s.needs.length) problems.push(`The engraving settings “${s.name}” still need ${s.needs.join('; ')}.`);
   if (!w.sides[side].elements.some((e) => !isEmpty(e))) problems.push(`There is nothing to engrave on the ${side}`);
   return {ready: !problems.length, problems, sets: Object.values(sets), elements: rows, empty: !rows.length};
 }
+srv.items = () => (srv.choices || []).flatMap((t) => t.groups.flatMap((g) => g.items));
+srv.setupView = () => {
+  const s = srv.w.setup, device = named('device', s.device_id), material = named('material', s.material_id);
+  return {set: s.material_id !== null, device_id: s.device_id, lens_id: s.lens_id, material_id: s.material_id, device, lens: named('lens', s.lens_id), material,
+    complete: !!device && !!material, missing: [...(device ? [] : ['device']), ...(material ? [] : ['material'])]};
+};
+srv.choicesAnswer = () => ({setup: srv.setupView(), types: srv.choices || [['color', 'Colour'], ['photo', 'Photo'], ['line_text', 'Lines and text'], ['deep', 'Deep engraving']]
+  .map(([type, label]) => ({type, label, known: false, reason: `Nothing of type ${type} has been measured for this laser, lens and material.`, groups: []}))});
 function elementView(e, els) {
   const out = deep(e), warnings = [];
   out.d = 'M0 0L1 0L1 1Z'; out.bounds = [e.x - e.width / 2, e.y - e.height / 2, e.x + e.width / 2, e.y + e.height / 2]; out.empty = isEmpty(e);
@@ -209,10 +293,17 @@ function elementView(e, els) {
   }
   if (e.x - e.width / 2 < 0) warnings.push({code: 'outside_card', message: 'Part of this element lies outside the card and would not be engraved on it.'});
   out.warnings = warnings;
+  if (e.type === 'image') {
+    const set = srv.w.settings.find((s) => s.id === effectiveId(e));
+    out.image.engrave = e.image.engrave || 'vector';
+    out.raster = isRaster(e) ? {url: `/api/card-works/7/elements/${e.id}/raster.png?v=${srv.w.rev}`, width_px: Math.round(e.width * 10), height_px: Math.round(e.height * 10), dpi: 254,
+      dither: set.dither || 'grayscale', given: !!(set.line_interval && set.dither)} : null;
+  }
   return out;
 }
 srv.view = (added) => {
-  const w = srv.w, out = {id: w.id, name: w.name, size_mm: deep(w.size_mm), preset: w.preset, presets: LIB.presets, sides: {}, settings: deep(w.settings), default_settings_id: w.default, review: {},
+  const w = srv.w, raster = rasterSets(), out = {id: w.id, name: w.name, size_mm: deep(w.size_mm), preset: w.preset, presets: LIB.presets, sides: {},
+    settings: deep(w.settings).map((set) => ({...set, status: statusOf(set, raster.has(set.id))})), default_settings_id: w.default, review: {}, setup: srv.setupView(),
     can_undo: w.undo.length > 0, can_redo: w.redo.length > 0, updated_at: 'rev' + w.rev, laser: {id: 1, name: 'Laser'}, generation: srv.generation, qr: {thresholds: LIB.qr.thresholds}};
   for (const side of ['front', 'back']) { out.sides[side] = {elements: w.sides[side].elements.map((e, i, all) => elementView(e, all))}; out.review[side] = review(side); }
   if (added) out.added = added;
@@ -233,6 +324,7 @@ ctx.fetch = async (url, opts = {}) => {
   try {
     if (method === 'GET' && path === '/api/card-library') return reply(200, LIB);
     if (method === 'GET' && path === '/api/card-works/7') return reply(200, srv.view());
+    if (method === 'GET' && path === '/api/card-works/7/settings-choices') return reply(200, srv.choicesAnswer());
     if (method === 'GET' && path.endsWith('/export.lbrn2')) return reply(200, undefined, 'application/octet-stream');
     if (method === 'GET' && path === '/api/works') return reply(200, srv.catalog());
     if (method === 'POST' && path === '/api/card-works') {
@@ -248,13 +340,13 @@ ctx.fetch = async (url, opts = {}) => {
     if (method === 'POST' && path === '/api/card-works/7/images') {
       const stem = body.picture.replace(/\.[^.]+$/, '');
       const e = build(body.side, {type: 'image', name: stem, width: 30, height: 15, image: {name: stem, size: [200, 100], auto_threshold: true, threshold: 128, invert: false, treatment: 'none',
-        detail: 50, strength: 60, min_feature_mm: 0.15, origin: 'import', prompt: null}});
+        detail: 50, strength: 60, min_feature_mm: 0.15, origin: 'import', prompt: null, engrave: 'vector'}});
       srv.w.sides[body.side].elements.push(e); srv.w.undo.push(snapshot()); return reply(200, srv.view([e.id]));
     }
     if (method === 'POST' && path === '/api/card-works/7/generate') {
       if (!srv.generation.available) fail(srv.generation.reason);
       const e = build(body.side, {type: 'image', name: `${body.kind} ${body.description}`.slice(0, 30), width: 30, height: 30, image: {name: body.description, size: [1024, 1024], auto_threshold: true,
-        threshold: 128, invert: false, treatment: 'none', detail: 50, strength: 60, min_feature_mm: 0.15, origin: 'generated', prompt: body.description}});
+        threshold: 128, invert: false, treatment: 'none', detail: 50, strength: 60, min_feature_mm: 0.15, origin: 'generated', prompt: body.description, engrave: 'vector'}});
       srv.w.sides[body.side].elements.push(e); return reply(200, srv.view([e.id]));
     }
   } catch (e) { return reply(400, {error: e.message, kind: 'invalid'}); }
@@ -270,8 +362,9 @@ ctx.setInterval = () => 0;
 const downloads = [];
 El.prototype.click = function () { downloads.push(this.getAttribute('download')); };
 __SERVER__
-load(ctx, __UI__, [...__TABLES__, 'app.js', 'save-state.js', 'dialogs.js', 'list.js', 'filepick.js', 'screens/lifecycle.js', 'screens/vector-workspace.js', {code: __GLUE__},
-  'screens/card-panels.js', 'screens/card-work.js', 'screens/works.js', {code: 'globalThis.CardWork = CardWork; globalThis.CardPanels = CardPanels; globalThis.Works = Works;'}]);
+load(ctx, __UI__, [...__TABLES__, 'app.js', 'save-state.js', 'dialogs.js', 'list.js', 'filepick.js', 'hardware.js', 'screens/material-picker.js', 'screens/lifecycle.js',
+  'screens/vector-workspace.js', {code: __GLUE__}, 'screens/card-settings.js', 'screens/card-panels.js', 'screens/card-work.js', 'screens/works.js',
+  {code: 'globalThis.CardWork = CardWork; globalThis.CardPanels = CardPanels; globalThis.CardSettings = CardSettings; globalThis.Works = Works;'}]);
 const App = ctx.App, doc = ctx.document, Works = ctx.Works;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /** Wait until ``fn()`` is true (a request takes a few ticks); fail the test when it never is. */
@@ -311,7 +404,9 @@ const layerNames = () => root.querySelectorAll('.cw-layer-name').map((n) => n.te
 const rightTitle = () => root.querySelector('.cw-right').querySelector('h3').textContent;
 const dialog = () => doc.body.querySelector('.modal');
 const text = (el) => (el ? el.textContent : null);
-const tabs = () => root.querySelectorAll('button').filter((b) => b.getAttribute('role') === 'tab');
+const tabs = () => root.querySelectorAll('button').filter((b) => b.getAttribute('role') === 'tab' && (b.getAttribute('id') || '').startsWith('cw-tab-'));    // the sides, not the types of engraving
+/** Open the "Custom values" of a set (the number boxes are built when it opens). */
+const openCustom = async (scope = root) => { const box = scope.querySelector('.cw-custom'); box.open = true; await box.dispatch('toggle'); return box; };
 const addElement = async (label, expected) => { await press(label); await saved(); return expected; };
 const errorOf = (label, scope = root) => { const l = labelled(label, scope); return l ? text(l.querySelectorAll('span').find((s) => s.classList.contains('f-error'))) : null; };
 (async () => {
@@ -672,6 +767,8 @@ def test_the_engraving_panel_edits_each_set_and_says_what_uses_it(tmp_path):
   out.used = text(root.querySelectorAll('p').find((p) => (p.textContent || '').startsWith('Used by')));
   await fill_('Name', 'Fine text', set); await saved();
   out.name = lastPost();
+  out.beforeCustom = set.querySelectorAll('input').filter((i) => i.getAttribute('type') === 'number').length;
+  await openCustom(set);
   const line_ = control('Line interval', set).closest('label');
   const mode = set.querySelectorAll('input').filter((i) => i.getAttribute('type') === 'radio');
   out.modes = mode.map((i) => [i.getAttribute('aria-label'), i.checked]);
@@ -693,9 +790,12 @@ def test_the_engraving_panel_edits_each_set_and_says_what_uses_it(tmp_path):
   out.line = {body: lastPost(), hidden: line_.hidden};
   out.units = ['Power', 'Speed', 'Frequency', 'Pulse width (optional)', 'Line interval', 'Passes'].map((l) => text(labelled(l, set).querySelectorAll('span').find((s) => s.classList.contains('f-unit')) || {textContent: 'unitless'}));
   out.deleteDisabled = button('Delete settings').disabled;
+  out.origin = {chip: text(set.querySelector('.cw-chip')), line: text(set.querySelector('.cw-origin'))};
 """)
     assert out["empty"] == {"title": "Engraving", "sets": "Engraving settings (1)"}
     assert out["open"] is True and "Engraving 1" in out["summary"] and "default" in out["summary"]
+    assert out["beforeCustom"] == 0                                                              # no number box until "Custom values" is opened
+    assert out["origin"] == {"chip": "Typed by hand, the last resort.", "line": "Typed by hand"}   # the numbers typed above made the set the operator's own
     assert out["used"] == "Used by: Text 1, Shape 1."
     assert out["name"] == {"op": "settings_set", "id": 1, "changes": {"name": "Fine text"}}
     assert out["modes"] == [["Fill", True], ["Line", False]]
@@ -747,6 +847,7 @@ def test_a_side_is_exported_only_when_its_review_is_ready_and_the_review_names_w
   canvas().handlers.onEscape();
   const set = root.querySelector('.cw-set');
   out.missing = text(set.querySelector('summary'));
+  await openCustom(set);
   await fill_('Power', 30, set); await saved(); await fill_('Speed', 900, set); await saved(); await fill_('Frequency', 30, set); await saved();
   out.stillNot = exportButtons().front.disabled;
   await fill_('Line interval', 0.05, set); await saved();
@@ -759,10 +860,10 @@ def test_a_side_is_exported_only_when_its_review_is_ready_and_the_review_names_w
 """)
     assert out["empty"]["front"] is True and out["empty"]["back"] is True and "There is nothing to engrave on the front" in out["empty"]["title"]
     assert out["empty"]["review"] == ["not ready", "not ready"]
-    assert "lack: power, speed, frequency, line_interval" in out["problems"]["list"] and out["problems"]["disabled"] is True
-    assert out["problems"]["attention"].startswith("Text 1 (Text): its engraving settings lack power, speed, frequency, line_interval")
+    assert "still need settings chosen for this laser, lens and material" in out["problems"]["list"] and out["problems"]["disabled"] is True
+    assert out["problems"]["attention"].startswith("Text 1 (Text): its engraving settings still need settings chosen for this laser, lens and material")
     assert out["selected"] == {"title": "Selected", "ids": ["e1"]}
-    assert "needs power, speed, frequency, line_interval" in out["missing"]
+    assert "Needs: settings chosen for this laser, lens and material" in out["missing"] and "No settings are chosen yet." in out["missing"]
     assert out["stillNot"] is True
     assert out["ready"]["disabled"] is False and out["ready"]["back"] is True and out["ready"]["pill"] == "ready to export" and "Download the LightBurn file" in out["ready"]["title"]
     assert out["download"] == {"names": ["card-front.lbrn2"], "url": ["/api/card-works/7/sides/front/export.lbrn2"]}
@@ -986,6 +1087,8 @@ def test_every_control_has_a_name_every_number_a_unit_and_a_long_list_is_paged(t
   await press('QR code'); await saved();
   out.unnamed.push(audit());
   canvas().handlers.onEscape();
+  out.unnamed.push(audit());
+  await openCustom();
   out.unnamed.push(audit());
   const numbers = root.querySelectorAll('input').filter((i) => i.getAttribute('type') === 'number' && !i.hidden);
   const hasUnit = (i) => { for (let n = i.parentNode; n; n = n.parentNode) if (n.localName === 'label') return n.querySelectorAll('span').some((s) => s.classList.contains('f-unit') || s.classList.contains('sr-only')); return false; };

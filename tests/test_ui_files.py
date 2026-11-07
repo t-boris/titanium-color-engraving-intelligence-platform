@@ -55,6 +55,8 @@ def test_screens_are_loaded_after_the_helpers_they_use():
                       ("/screens/lifecycle.js", "/screens/vector-review.js"), ("/screens/lifecycle.js", "/screens/vector.js"), ("/screens/lifecycle.js", "/screens/ingest-review.js"), ("/screens/lifecycle.js", "/screens/photo-engraving.js"),
                       # the business-card editor (feature-2): the canvas and the panels before the screen, the screen before the works list that opens its dialog
                       ("/app.js", "/screens/card-panels.js"), ("/forms.js", "/screens/card-panels.js"), ("/screens/lettering.js", "/screens/card-panels.js"),
+                      # the choice of ready engraving settings is built by card-settings.js, which card-panels.js hands its controls to
+                      ("/app.js", "/screens/card-settings.js"), ("/screens/card-settings.js", "/screens/card-panels.js"), ("/screens/card-settings.js", "/screens/card-work.js"),
                       ("/screens/card-panels.js", "/screens/card-work.js"), ("/screens/card-canvas.js", "/screens/card-work.js"), ("/save-state.js", "/screens/card-work.js"),
                       ("/screens/lifecycle.js", "/screens/card-work.js"), ("/screens/vector-workspace.js", "/screens/card-work.js"), ("/screens/card-work.js", "/screens/works.js"),
                       # the selector of a stock record (ux-growing-collections-p0, REQ-001) is loaded before every file that builds one

@@ -22,7 +22,9 @@ engraved, not colour-marked, and the operator's settings are written as given.
 """
 from __future__ import annotations
 
+import base64
 import copy
+import hashlib
 import json
 import math
 import shutil
@@ -35,8 +37,8 @@ import shapely
 from shapely import affinity
 from shapely.geometry import GeometryCollection, MultiPolygon, Polygon, box as shapely_box
 
-from . import (card_generate, card_image, card_library, card_qr, conversion as cv, creation_context as cc, fonts, lettering, plans as pl,
-               render_cache as rc, setup as su)
+from . import (card_generate, card_image, card_library, card_qr, card_raster, card_settings, conversion as cv, creation_context as cc, devices,
+               fonts, grayscale, lenses, lettering, plans as pl, render_cache as rc, setup as su)
 from .db import Store, now
 
 MODE = pl.MODE_CARD_WORK
@@ -54,6 +56,7 @@ UNDO_DEPTH = 50
 COPY_SHIFT_MM = 2.0
 KEEP_GEOMETRIES = 512
 KEEP_IMAGES = 4
+KEEP_RASTERS = 8
 OUTSIDE_TOLERANCE_MM = 0.05
 DEFAULT_QR_MM = 18.0
 IMAGE_LONG_SIDE_MM = 30.0
@@ -63,14 +66,27 @@ SETTING_FIELDS = {"power": (0.0, 100.0, "power (%)"), "speed": (0.0, 100000.0, "
                   "frequency": (0.0, 10000.0, "frequency (kHz)"), "pulse_width": (0.0, 10000.0, "pulse width (ns)"),
                   "line_interval": (0.0, 10.0, "line interval (mm)")}
 MODES = ("fill", "line")
-DATA = ("size_mm", "preset", "sides", "settings", "default_settings_id", "next_id", "next_settings_id", "undo", "redo", "updated_at")
+# What a set of settings carries beyond the six numbers of 0.41.0 (ready-engraving-settings-for-business-cards, REQ-023): the fields of a
+# scan layer and of a photo (image) layer. ``None`` is "the source does not give it"; nothing is defaulted.
+EXTRA_NUMBERS = {"min_power": (0.0, 100.0, "minimum power (%)"), "scan_angle": (-360.0, 360.0, "scan angle (degrees)"),
+                 "dot_width": (0.0, 5.0, "dot width (mm)")}
+EXTRA_FLAGS = ("bidirectional", "cross_hatch")
+VALUE_KEYS = ("mode", "power", "speed", "frequency", "pulse_width", "line_interval", "passes", "global_passes", "bidirectional", "cross_hatch",
+              "scan_angle", "min_power", "dither", "dot_width")
+ENGRAVE = ("vector", "raster")
+RASTER_DPI_PREVIEW = 254.0                 # the preview of a raster picture before it has a line interval (0.1 mm)
+STATES = ("unknown", "proposed", "chosen", "custom", "other_setup")
+DATA = ("size_mm", "preset", "sides", "settings", "default_settings_id", "setup", "next_id", "next_settings_id", "undo", "redo", "updated_at")
 # What one step of undo or redo brings back: everything that decides what the card engraves.
-STATE = ("size_mm", "preset", "sides", "settings", "default_settings_id", "next_id", "next_settings_id")
+STATE = ("size_mm", "preset", "sides", "settings", "default_settings_id", "setup", "next_id", "next_settings_id")
 EDIT_OPS = ("add", "set", "move", "resize", "rotate", "reorder", "duplicate", "delete", "group", "ungroup", "assign_settings",
-            "settings_add", "settings_set", "settings_delete", "set_size")
+            "settings_add", "settings_set", "settings_delete", "set_size", "settings_apply", "settings_confirm", "settings_custom", "set_setup")
+
+CARD_OPS = ("settings_add", "settings_set", "settings_delete", "set_size", "settings_apply", "settings_confirm", "settings_custom", "set_setup")
 
 _lock = threading.Lock()
 _geometries: OrderedDict[str, tuple] = OrderedDict()
+_rasters: OrderedDict[str, bytes] = OrderedDict()
 _decoded: OrderedDict[str, object] = OrderedDict()
 
 
@@ -128,6 +144,39 @@ def _work(store: Store, plan_id: int) -> dict:
     plan = pl.get_plan(store, plan_id)
     if plan["status"] == "Deleted" or plan["mode"] != MODE:
         raise KeyError(f"business card work {plan_id} not found")
+    return _normalized(plan)
+
+
+def _setup(plan: Mapping) -> dict:
+    """The laser, lens and material the card is tied to (DEC-009): the only setup whose measurements may be offered to it."""
+    value = plan["setup"]
+    return {"device_id": value["device_id"], "lens_id": value["lens_id"], "material_id": value["material_id"]}
+
+
+def _custom_origin(setup, note=None) -> dict:
+    return {"kind": "custom", "choice_id": None, "type": None, "source": "Custom", "label": "Typed by the operator",
+            "detail": "The values were typed by hand, not taken from a measurement.", "evidence": None, "setup": setup, "at": now(),
+            "note": note, "proposed": False}
+
+
+def _normalized(plan: dict) -> dict:
+    """A work saved by 0.41.0 brought to the present shape: it gets the laser and lens it already had and no material, its sets get an
+    origin (typed numbers count as Custom, never confirmed for a setup) and its pictures are traced shapes. Nothing is lost or invented."""
+    if not isinstance(plan.get("setup"), dict):
+        plan["setup"] = {"device_id": plan["device_id"], "lens_id": plan["lens_id"], "material_id": None}
+    sets = []
+    for item in plan["settings"]:
+        value = {**_blank_settings(item["id"], item["name"]), **item}
+        if "origin" not in item:
+            typed = any(value.get(key) is not None for key in ("power", "speed", "frequency", "pulse_width", "line_interval"))
+            value["origin"] = _custom_origin(None, "Typed before settings could be chosen.") if typed else None
+            value["confirmed"] = False
+        sets.append(value)
+    plan["settings"] = sets
+    for side in SIDES:
+        for element in plan["sides"][side]["elements"]:
+            if element["type"] == "image":
+                element["image"].setdefault("engrave", "vector")
     return plan
 
 
@@ -136,8 +185,10 @@ def size_mm(plan: Mapping) -> dict:
 
 
 def _blank_settings(settings_id: int, name: str) -> dict:
+    """Settings with no value given: not a form to type into but a set waiting for a choice (the editor offers one or says unknown)."""
     return {"id": settings_id, "name": name, "mode": "fill", "power": None, "speed": None, "frequency": None, "pulse_width": None,
-            "line_interval": None, "passes": 1}
+            "line_interval": None, "passes": 1, "global_passes": None, "bidirectional": None, "cross_hatch": None, "scan_angle": None,
+            "min_power": None, "dither": None, "dot_width": None, "origin": None, "confirmed": False}
 
 
 def _card_size(preset, width_mm=None, height_mm=None) -> tuple[str, dict]:
@@ -151,8 +202,9 @@ def _card_size(preset, width_mm=None, height_mm=None) -> tuple[str, dict]:
 
 
 def _save(store: Store, plan: Mapping, plan_id: int | None = None, *, name: str | None = None, identifier: str | None = None) -> int:
-    return cv.save_plan(store, plan_id, name=name or plan["name"], mode=MODE, status=cv.ST_DRAFT, device_id=plan["device_id"],
-                        lens_id=plan["lens_id"], markers=False, identifier=identifier or plan["plan_identifier"], band_count=None,
+    setup = plan["setup"]                              # the laser and lens columns of the row follow the card's own setup
+    return cv.save_plan(store, plan_id, name=name or plan["name"], mode=MODE, status=cv.ST_DRAFT, device_id=setup["device_id"],
+                        lens_id=setup["lens_id"], markers=False, identifier=identifier or plan["plan_identifier"], band_count=None,
                         data={k: plan[k] for k in DATA})
 
 
@@ -163,9 +215,11 @@ def create(store: Store, name, preset=PRESETS[0]["id"], width_mm=None, height_mm
         raise su.ValidationError("add the laser first: a card is engraved with a laser of the workshop")
     chosen, size = _card_size(preset, width_mm, height_mm)
     title = _name(name, "the card") if isinstance(name, str) and name.strip() else "Business card"
-    plan = {"device_id": context["device_id"], "lens_id": context["lens_id"], "size_mm": size, "preset": chosen,
+    setup = {"device_id": context["device_id"], "lens_id": context["lens_id"], "material_id": context["material_id"]}
+    plan = {"device_id": setup["device_id"], "lens_id": setup["lens_id"], "size_mm": size, "preset": chosen, "setup": setup,
             "sides": {side: {"elements": []} for side in SIDES}, "settings": [_blank_settings(1, "Engraving 1")], "default_settings_id": 1,
             "next_id": 1, "next_settings_id": 2, "undo": [], "redo": [], "updated_at": now()}
+    plan["settings"][0] = _proposed(store, plan, plan["settings"][0])
     with store.transaction():
         plan_id = _save(store, plan, name=title, identifier=pl.new_identifier(IDENTIFIER_PREFIX))
         store.audit("card_work_created", plan_id=plan_id)
@@ -230,7 +284,8 @@ def _image_payload(payload) -> dict:
         raise su.ValidationError("an image element needs the size of its picture")
     return {"file": payload["file"], "name": str(payload.get("name") or "picture")[:MAX_NAME], "size": [int(size[0]), int(size[1])], **params,
             "origin": payload.get("origin") if payload.get("origin") in ("import", "generated") else "import",
-            "prompt": payload.get("prompt") if isinstance(payload.get("prompt"), str) else None}
+            "prompt": payload.get("prompt") if isinstance(payload.get("prompt"), str) else None,
+            "engrave": payload.get("engrave") if payload.get("engrave") in ENGRAVE else "vector"}
 
 
 def _checked(plan: Mapping, element: Mapping) -> dict:
@@ -334,6 +389,9 @@ def _local(store: Store, element: Mapping):
             if not Path(path).exists():
                 problems.append("The picture file of this element is missing")
                 geometry = Polygon()
+            elif element["image"].get("engrave") == "raster":          # REQ-026: engraved as a photo, it fills its rectangle
+                _picture(path)
+                geometry = shapely_box(-element["width"] / 2, -element["height"] / 2, element["width"] / 2, element["height"] / 2)
             else:
                 params = {k: v for k, v in element["image"].items() if k in card_image.DEFAULTS}
                 geometry = card_image.geometry(_picture(path), element["width"], element["height"], params)
@@ -503,10 +561,19 @@ def _regroup(elements: list[dict]) -> None:
             e["group"] = None
 
 
+def _whole(value, label: str, low: int, high: int) -> int:
+    number = _number(value, label, low, high)
+    if number != int(number):
+        raise su.ValidationError(f"the {label} must be a whole number from {low} to {high}")
+    return int(number)
+
+
 def _checked_settings(changes: Mapping, current: Mapping) -> dict:
+    """``current`` with ``changes`` applied, each value checked; ``None`` clears a value. The origin is not touched here."""
     if not isinstance(changes, dict) or not changes:
         raise su.ValidationError("give the engraving settings to change")
-    unknown = sorted(set(changes) - {"name", "mode", "passes", *SETTING_FIELDS})
+    allowed = {"name", "mode", "passes", "global_passes", "dither", *EXTRA_FLAGS, *SETTING_FIELDS, *EXTRA_NUMBERS}
+    unknown = sorted(set(changes) - allowed)
     if unknown:
         raise su.ValidationError(f"engraving settings have no field {unknown[0]!r}")
     out = dict(current)
@@ -517,13 +584,21 @@ def _checked_settings(changes: Mapping, current: Mapping) -> dict:
             if value not in MODES:
                 raise su.ValidationError("engrave by filling areas or along lines")
             out[key] = value
-        elif key == "passes":
-            number = _number(value, "the passes", 1, 100)
-            if number != int(number):
-                raise su.ValidationError("the passes must be a whole number from 1 to 100")
-            out[key] = int(number)
+        elif key in ("passes", "global_passes"):
+            out[key] = None if value is None and key == "global_passes" else _whole(value, "the passes" if key == "passes" else "the global passes", 1, 100)
+        elif key in EXTRA_FLAGS:
+            if value is not None and not isinstance(value, bool):
+                raise su.ValidationError(f"{key.replace('_', ' ')} is on or off")
+            out[key] = value
+        elif key == "dither":
+            if value is not None and not (isinstance(value, str) and 0 < len(value) <= 40):
+                raise su.ValidationError("the image mode must be a name")
+            out[key] = value
         elif value is None:
             out[key] = None
+        elif key in EXTRA_NUMBERS:
+            low, high, label = EXTRA_NUMBERS[key]
+            out[key] = _number(value, label, low, high)
         else:
             low, high, label = SETTING_FIELDS[key]
             number = _number(value, label, low, high)
@@ -533,14 +608,82 @@ def _checked_settings(changes: Mapping, current: Mapping) -> dict:
     return out
 
 
+# -- settings that come from the workshop's measurements (ready-engraving-settings-for-business-cards) ------------------------------------
+def _same_setup(a, b) -> bool:
+    return isinstance(a, dict) and isinstance(b, dict) and all(a.get(k) == b.get(k) for k in ("device_id", "lens_id", "material_id"))
+
+
+def _applied(plan: Mapping, current: Mapping, item: Mapping, *, proposed: bool) -> dict:
+    """``current`` replaced, whole, by the values of a choice (a field the source does not give becomes unknown) and the origin it came from."""
+    values = {k: v for k, v in item["settings"].items() if k in VALUE_KEYS and v is not None}
+    base = {**_blank_settings(current["id"], current["name"]), "passes": None}
+    out = _checked_settings(values, base) if values else base
+    out["origin"] = {**item["origin"], "kind": "choice", "at": now(), "note": None, "proposed": proposed, "setup": _setup(plan)}
+    out["confirmed"] = not proposed
+    return out
+
+
+def _proposed(store: Store, plan: Mapping, current: Mapping) -> dict:
+    """``current`` filled with the best known proposal for the card's setup (marked proposed, to be confirmed), or left unknown when none."""
+    if not card_settings.setup_view(store, _setup(plan))["complete"]:
+        return current
+    item = card_settings.proposal(store, _setup(plan))
+    return current if item is None else _applied(plan, current, item, proposed=True)
+
+
+def _unknown_set(current: Mapping) -> dict:
+    return {**_blank_settings(current["id"], current["name"])}
+
+
+def _need(settings: Mapping, raster: bool = False) -> list[str]:
+    need = ["power", "speed", "frequency"] + (["line_interval"] if settings["mode"] == "fill" or raster else [])
+    if raster:
+        need += ["min_power", "dither"]
+    return [key for key in need if settings.get(key) is None]
+
+
+def _state(plan: Mapping, settings: Mapping) -> str:
+    origin = settings.get("origin")
+    if origin is None:
+        return "unknown"
+    if not _same_setup(origin.get("setup"), _setup(plan)) or plan["setup"]["material_id"] is None:
+        return "other_setup"
+    if origin["kind"] == "custom":
+        return "custom"
+    return "proposed" if not settings.get("confirmed") else "chosen"
+
+
+def _status(plan: Mapping, settings: Mapping, raster: bool = False) -> dict:
+    """Where a set stands: its state, what it still needs before an export, and one sentence for the screen."""
+    state = _state(plan, settings)
+    needs = []
+    if plan["setup"]["material_id"] is None:
+        needs.append("the material of this card")
+    if state == "unknown":
+        needs.append("settings chosen for this laser, lens and material")
+    elif state == "other_setup":
+        needs.append("settings chosen again, or confirmed, for this laser, lens and material")
+    elif state in ("proposed", "custom") and not settings.get("confirmed"):
+        needs.append("your confirmation")
+    missing = _need(settings, raster) if state != "unknown" else []
+    if missing:
+        needs.append(", ".join(k.replace("_", " ") for k in missing))
+    summary = {"unknown": "No settings are chosen yet.",
+               "proposed": "Proposed from the workshop's measurements. Confirm them or choose others.",
+               "chosen": "Chosen from the workshop's measurements.",
+               "custom": "Typed by hand, the last resort.",
+               "other_setup": "Chosen for another laser, lens or material."}[state]
+    return {"state": state, "ready": not needs, "needs": needs, "summary": summary}
+
+
 def _apply(store: Store, plan: dict, body: Mapping) -> list[str]:
     """Carry out one edit on the plan's state (not yet saved). Returns the ids of the elements it added."""
     op = body.get("op")
     if op not in EDIT_OPS:
         raise su.ValidationError("this edit is not known")
     added: list[str] = []
-    if op in ("settings_add", "settings_set", "settings_delete", "set_size"):
-        return _apply_card(plan, op, body)
+    if op in CARD_OPS:
+        return _apply_card(store, plan, op, body)
     elements = _side(plan, body.get("side"))
     if op == "add":
         added.append(_add(store, plan, body["side"], body.get("element")))
@@ -618,30 +761,105 @@ def _apply(store: Store, plan: dict, body: Mapping) -> list[str]:
     return added
 
 
-def _apply_card(plan: dict, op: str, body: Mapping) -> list[str]:
+def _exists(store: Store, table: str, record_id) -> bool:
+    return isinstance(record_id, int) and not isinstance(record_id, bool) and store.one(f"SELECT 1 FROM {table} WHERE id=?", (record_id,)) is not None
+
+
+def _checked_setup(store: Store, body: Mapping) -> dict:
+    device_id, lens_id, material_id = body.get("device_id"), body.get("lens_id"), body.get("material_id")
+    if not _exists(store, "laser_device", device_id):
+        raise su.ValidationError("choose the laser of this card.")
+    if lens_id is not None and not _exists(store, "lens", lens_id):
+        raise su.ValidationError("choose a lens, or the unknown lens.")
+    if not _exists(store, "material_profile", material_id):
+        raise su.ValidationError("choose the material of this card.")
+    return {"device_id": device_id, "lens_id": lens_id, "material_id": material_id}
+
+
+def _resetup(store: Store, plan: dict, setup: dict) -> None:
+    """The card moves to another laser, lens or material (DEC-009): what was chosen for the old one never carries over. A set that was
+    chosen is replaced by the same choice for the new setup when it is measured there, else by the proposal (the default set) or by unknown;
+    a set typed by hand keeps its numbers and must be confirmed again."""
+    old = _setup(plan)
+    plan["setup"] = dict(setup)
+    if old == setup:
+        return
+    complete = card_settings.setup_view(store, setup)["complete"]
+    for position, current in enumerate(plan["settings"]):
+        origin = current.get("origin")
+        if origin is None:                                       # nothing was chosen: the first set gets the new setup's proposal, as a new card does
+            if current["id"] == plan["default_settings_id"]:
+                plan["settings"][position] = _proposed(store, plan, current)
+            continue
+        if origin["kind"] == "custom":
+            plan["settings"][position] = {**current, "confirmed": False}
+            continue
+        item = card_settings.item_by_id(store, setup, origin.get("choice_id")) if complete else None
+        if item is not None:
+            plan["settings"][position] = _applied(plan, current, item, proposed=True)
+        elif current["id"] == plan["default_settings_id"]:
+            plan["settings"][position] = _proposed(store, plan, _unknown_set(current))
+        else:
+            plan["settings"][position] = _unknown_set(current)
+
+
+def _apply_card(store: Store, plan: dict, op: str, body: Mapping) -> list[str]:
     if op == "set_size":
         plan["preset"], plan["size_mm"] = _card_size(body.get("preset", CUSTOM), body.get("width_mm"), body.get("height_mm"))
-    elif op == "settings_add":
+        return []
+    if op == "set_setup":
+        _resetup(store, plan, _checked_setup(store, body))
+        return []
+    if op == "settings_add":
         settings_id = plan["next_settings_id"]
         plan["next_settings_id"] += 1
-        plan["settings"].append(_checked_settings({"name": body.get("name") or f"Engraving {settings_id}"}, _blank_settings(settings_id, "")))
-    else:
-        known = {s["id"]: s for s in plan["settings"]}
-        settings_id = body.get("id")
-        if settings_id not in known:
-            raise su.ValidationError("these engraving settings no longer exist")
-        if op == "settings_set":
-            plan["settings"][plan["settings"].index(known[settings_id])] = _checked_settings(body.get("changes"), known[settings_id])
-        else:
-            if len(known) < 2:
-                raise su.ValidationError("a card keeps at least one set of engraving settings")
-            plan["settings"] = [s for s in plan["settings"] if s["id"] != settings_id]
-            if plan["default_settings_id"] == settings_id:
-                plan["default_settings_id"] = plan["settings"][0]["id"]
-            for side in SIDES:
-                for element in plan["sides"][side]["elements"]:
-                    if element["settings_id"] == settings_id:
-                        element["settings_id"] = None
+        fresh = _checked_settings({"name": body.get("name") or f"Engraving {settings_id}"}, _blank_settings(settings_id, ""))
+        plan["settings"].append(_proposed(store, plan, fresh))
+        return []
+    known = {s["id"]: s for s in plan["settings"]}
+    settings_id = body.get("settings_id", body.get("id"))
+    if settings_id not in known:
+        raise su.ValidationError("these engraving settings no longer exist")
+    current = known[settings_id]
+    position = plan["settings"].index(current)
+    if op == "settings_set":
+        changes = body.get("changes")
+        out = _checked_settings(changes, current)
+        if any(key != "name" for key in changes):                 # a number was typed: the set is the operator's own now
+            before = current.get("origin")
+            note = None
+            if before is not None and before["kind"] == "choice":
+                note = f"Started from {before['label']}."
+            elif before is not None:
+                note = before.get("note")
+            out["origin"], out["confirmed"] = _custom_origin(_setup(plan), note), True
+        plan["settings"][position] = out
+    elif op == "settings_apply":
+        item = card_settings.item_by_id(store, _setup(plan), body.get("choice_id"))
+        if item is None:
+            raise su.ValidationError("these settings are not measured for this laser, lens and material.")
+        plan["settings"][position] = _applied(plan, current, item, proposed=False)
+    elif op == "settings_confirm":
+        origin = current.get("origin")
+        if origin is None:
+            raise su.ValidationError("there are no settings to confirm: choose some first.")
+        if origin["kind"] == "choice" and not _same_setup(origin.get("setup"), _setup(plan)):
+            raise su.ValidationError("these settings were chosen for another laser, lens or material: choose them again.")
+        plan["settings"][position] = {**current, "origin": {**origin, "setup": _setup(plan), "proposed": False}, "confirmed": True}
+    elif op == "settings_custom":
+        before = current.get("origin")
+        note = f"Started from {before['label']}." if before is not None and before["kind"] == "choice" else None
+        plan["settings"][position] = {**current, "origin": _custom_origin(_setup(plan), note), "confirmed": True}
+    else:                                                          # settings_delete
+        if len(known) < 2:
+            raise su.ValidationError("a card keeps at least one set of engraving settings")
+        plan["settings"] = [s for s in plan["settings"] if s["id"] != settings_id]
+        if plan["default_settings_id"] == settings_id:
+            plan["default_settings_id"] = plan["settings"][0]["id"]
+        for side in SIDES:
+            for element in plan["sides"][side]["elements"]:
+                if element["settings_id"] == settings_id:
+                    element["settings_id"] = None
     return []
 
 
@@ -757,6 +975,58 @@ def generate(store: Store, plan_id: int, side: str, description, kind: str) -> d
 
 
 # -- the view ---------------------------------------------------------------------------------------------------------------------------
+def _is_raster(element: Mapping) -> bool:
+    return element["type"] == "image" and element["image"].get("engrave") == "raster"
+
+
+def _raster_params(element: Mapping) -> dict:
+    return {k: v for k, v in element["image"].items() if k in card_image.DEFAULTS}
+
+
+def _raster_look(plan: Mapping, element: Mapping) -> dict:
+    """What decides the pixels of a raster picture: its set's line interval (as DPI), image mode and dot width, with plain grey and a
+    default DPI shown until the set gives them."""
+    settings = {s["id"]: s for s in plan["settings"]}[_effective(plan, element)]
+    interval = settings.get("line_interval")
+    return {"dpi": float(grayscale.image_dpi(interval)) if interval else RASTER_DPI_PREVIEW, "dither": settings.get("dither") or "grayscale",
+            "dot_width": settings.get("dot_width"), "given": bool(interval and settings.get("dither"))}
+
+
+def _raster_key(element: Mapping, look: Mapping) -> str:
+    parts = {"stamp": rc.file_stamp(element["image"]["file"]), "w": round(element["width"], 3), "h": round(element["height"], 3),
+             "rotation": element["rotation"], "params": _raster_params(element), "look": look}
+    return hashlib.sha1(json.dumps(parts, sort_keys=True, default=str).encode("utf-8")).hexdigest()[:16]
+
+
+def _raster_view(plan: Mapping, element: Mapping) -> dict:
+    look = _raster_look(plan, element)
+    width, height = card_raster.bounds(element["width"], element["height"], element["rotation"])
+    scale = look["dpi"] / grayscale.MM_PER_INCH
+    return {"url": f"/api/card-works/{plan['id']}/elements/{element['id']}/raster.png?v={_raster_key(element, look)}",
+            "width_px": round(width * scale), "height_px": round(height * scale), "dpi": look["dpi"], "dither": look["dither"],
+            "given": look["given"]}
+
+
+def raster_png(store: Store, plan_id: int, element_id: str) -> bytes:
+    """The dithered look of a raster picture at its size, as the screen shows it (REQ-026)."""
+    plan = _work(store, plan_id)
+    for side in SIDES:
+        for element in plan["sides"][side]["elements"]:
+            if element["id"] == element_id and _is_raster(element):
+                look = _raster_look(plan, element)
+                key = _raster_key(element, look)
+                with _lock:
+                    if key in _rasters:
+                        _rasters.move_to_end(key)
+                        return _rasters[key]
+                pixels = card_raster.prepare(Path(element["image"]["file"]).read_bytes(), element["width"], element["height"], element["rotation"],
+                                             look["dpi"], _raster_params(element))
+                png = card_raster.preview_png(pixels, look["dither"], look["dot_width"], look["dpi"])
+                _remember(_rasters, key, png, KEEP_RASTERS)
+                return png
+    raise KeyError(f"raster picture {element_id} not found")
+
+
 def _effective(plan: Mapping, element: Mapping) -> int:
     ids = [s["id"] for s in plan["settings"]]
     return element["settings_id"] if element["settings_id"] in ids else plan["default_settings_id"]
@@ -775,7 +1045,13 @@ def _side_elements(store: Store, plan: Mapping, side: str) -> list[dict]:
         item = copy.deepcopy(element)
         if measured is not None:
             item["width"], item["height"] = max(MIN_ELEMENT_MM, measured[0]), max(MIN_ELEMENT_MM, measured[1])
-        built.append({"element": item, "geometry": _placed(local, item), "problems": list(problems)})
+        found = list(problems)
+        if _is_raster(item) and not local.is_empty:                  # a picture too large for its line interval cannot be made: say so before export
+            try:
+                card_raster.check(item["width"], item["height"], item["rotation"], _raster_look(plan, item)["dpi"])
+            except su.ValidationError as error:
+                found.append(str(error))
+        built.append({"element": item, "geometry": _placed(local, item), "problems": found})
     return built
 
 
@@ -785,6 +1061,7 @@ def _element_view(plan: Mapping, built: list[dict], index: int, card) -> dict:
     out = copy.deepcopy(element)
     if element["type"] == "image":
         out["image"].pop("file", None)
+        out["raster"] = _raster_view(plan, element) if _is_raster(element) and not geometry.is_empty and not entry["problems"] else None
     out["d"] = path_d(geometry)
     out["bounds"] = [round(v, 3) for v in geometry.bounds] if not geometry.is_empty else None
     out["empty"] = geometry.is_empty
@@ -809,29 +1086,54 @@ def _element_view(plan: Mapping, built: list[dict], index: int, card) -> dict:
     return out
 
 
+def _raster_sets(plan: Mapping) -> set[int]:
+    """The ids of the settings sets that engrave at least one raster picture (on either side)."""
+    return {_effective(plan, e) for side in SIDES for e in plan["sides"][side]["elements"] if _is_raster(e)}
+
+
 def _review(plan: Mapping, side: str, built: list[dict]) -> dict:
     sets: dict[int, dict] = {}
     rows = []
     problems = []
     names = {s["id"]: s for s in plan["settings"]}
     engraved = [b for b in built if not b["geometry"].is_empty]
+    raster_ids = {_effective(plan, b["element"]) for b in engraved if _is_raster(b["element"])}
     for entry in built:
         element = entry["element"]
         effective = _effective(plan, element)
-        complete = not _missing(names[effective])
+        status = _status(plan, names[effective], effective in raster_ids)
         rows.append({"id": element["id"], "name": element["name"], "type": element["type"], "settings_id": element["settings_id"],
-                     "effective_settings_id": effective, "complete": complete, "empty": entry["geometry"].is_empty})
+                     "effective_settings_id": effective, "complete": status["ready"], "empty": entry["geometry"].is_empty,
+                     "raster": _is_raster(element)})
         if not entry["geometry"].is_empty:
-            sets.setdefault(effective, {"settings_id": effective, "name": names[effective]["name"], "elements": [], "missing": _missing(names[effective])})
+            sets.setdefault(effective, {"settings_id": effective, "name": names[effective]["name"], "elements": [], "state": status["state"],
+                                        "needs": status["needs"], "missing": _need(names[effective], effective in raster_ids)})
             sets[effective]["elements"].append(element["id"])
+    for entry in engraved:
+        if _is_raster(entry["element"]):
+            problems += [f"The picture “{entry['element']['name']}” cannot be engraved as a photo: {text}" for text in entry["problems"]]
     for item in sets.values():
-        item["complete"] = not item["missing"]
-        if item["missing"]:
-            problems.append(f"The engraving settings “{item['name']}” still need " + ", ".join(item["missing"]) + ".")
+        item["complete"] = not item["needs"]
+        if item["needs"]:
+            problems.append(f"The engraving settings “{item['name']}” still need " + "; ".join(item["needs"]) + ".")
     if not engraved:
         problems.append(f"There is nothing to engrave on the {side}")
     return {"ready": not problems, "problems": problems, "sets": sorted(sets.values(), key=lambda s: s["settings_id"]), "elements": rows,
             "empty": not engraved}
+
+
+def _named(record) -> dict | None:
+    if not isinstance(record, dict) or record.get("id") is None:
+        return None
+    return {"id": record["id"], "name": record.get("name") or record.get("label") or record.get("title") or f"#{record['id']}"}
+
+
+def _setup_view(store: Store, plan: Mapping) -> dict:
+    """The card's laser, lens and material with their names, and what is still missing (REQ-024)."""
+    seen = card_settings.setup_view(store, _setup(plan))
+    return {"set": plan["setup"]["material_id"] is not None, "device_id": plan["setup"]["device_id"], "lens_id": plan["setup"]["lens_id"],
+            "material_id": plan["setup"]["material_id"], "device": _named(seen.get("device")), "lens": _named(seen.get("lens")),
+            "material": _named(seen.get("material")), "complete": bool(seen.get("complete")), "missing": list(seen.get("missing") or [])}
 
 
 def _view(store: Store, plan: dict, added=None) -> dict:
@@ -842,15 +1144,21 @@ def _view(store: Store, plan: dict, added=None) -> dict:
         built = _side_elements(store, plan, side)
         sides[side] = {"elements": [_element_view(plan, built, i, card) for i in range(len(built))]}
         review[side] = _review(plan, side, built)
-    context = cc.get(store)
+    setup = _setup_view(store, plan)
+    raster_ids = _raster_sets(plan)
+    settings = [{**copy.deepcopy(item), "status": _status(plan, item, item["id"] in raster_ids)} for item in plan["settings"]]
     out = {"id": plan["id"], "name": plan["name"], "size_mm": card_size, "preset": plan["preset"], "presets": PRESETS, "sides": sides,
-           "settings": copy.deepcopy(plan["settings"]), "default_settings_id": plan["default_settings_id"], "review": review,
+           "settings": settings, "default_settings_id": plan["default_settings_id"], "review": review, "setup": setup,
            "can_undo": bool(plan["undo"]), "can_redo": bool(plan["redo"]), "updated_at": plan["updated_at"],
-           "laser": context["device"] and {"id": context["device_id"], "name": context["device"].get("name")},
-           "generation": generation(store), "qr": {"thresholds": card_qr.THRESHOLDS}}
+           "laser": setup["device"], "generation": generation(store), "qr": {"thresholds": card_qr.THRESHOLDS}}
     if added is not None:
         out["added"] = list(added)
     return out
+
+
+def settings_choices(store: Store, plan_id: int) -> dict:
+    """What the operator can choose for a set of this card: the measurements of its own laser, lens and material, by type."""
+    return card_settings.choices(store, _setup(_work(store, plan_id)))
 
 
 def view(store: Store, plan_id: int) -> dict:
@@ -873,15 +1181,37 @@ def preview_svg(store: Store, plan_id: int, side: str) -> str:
     plan = _work(store, plan_id)
     _side(plan, side)
     card = size_mm(plan)
-    paths = "".join(f'<path d="{path_d(b["geometry"])}" fill-rule="evenodd"/>' for b in _side_elements(store, plan, side) if not b["geometry"].is_empty)
+    paths, pictures = [], []
+    for entry in _side_elements(store, plan, side):
+        if entry["geometry"].is_empty:
+            continue
+        if _is_raster(entry["element"]):
+            element = entry["element"]
+            width, height = card_raster.bounds(element["width"], element["height"], element["rotation"])
+            png = base64.b64encode(raster_png(store, plan["id"], element["id"])).decode("ascii")
+            pictures.append(f'<image href="data:image/png;base64,{png}" x="{_fmt(element["x"] - width / 2)}" y="{_fmt(element["y"] - height / 2)}" '
+                            f'width="{_fmt(width)}" height="{_fmt(height)}"/>')
+        else:
+            paths.append(f'<path d="{path_d(entry["geometry"])}" fill-rule="evenodd"/>')
     return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {_fmt(card["width"])} {_fmt(card["height"])}">'
             f'<rect width="{_fmt(card["width"])}" height="{_fmt(card["height"])}" rx="3" fill="{CARD_FILL}"/>'
-            f'<g fill="{ENGRAVED_FILL}">{paths}</g></svg>')
+            f'<g fill="{ENGRAVED_FILL}">{"".join(paths)}</g>{"".join(pictures)}</svg>')
+
+
+def _layer_parameters(settings: Mapping, *, image: bool) -> dict:
+    keys = ["power", "frequency", "speed", "pulse_width", "line_interval", "passes"]
+    values = {k: settings[k] for k in keys}
+    if image:
+        values.update({k: settings[k] for k in ("min_power", "global_passes", "dot_width")})
+    elif settings["mode"] != "fill":
+        values["line_interval"] = None
+    return values
 
 
 def export(store: Store, plan_id: int, side: str) -> tuple[bytes, str]:
-    """One side as a LightBurn project (DEC-035): its elements' shapes in the card's millimetres, one layer for each set of engraving
-    settings the side uses, written as the operator defined them. Refused with the problems of the side's review when it is not ready."""
+    """One side as a LightBurn project (DEC-035): its shapes in the card's millimetres, one scan or cut layer for each set of engraving
+    settings the side's shapes use, one image layer for each picture engraved as a raster photo (REQ-026), written as the settings give them
+    (the fields of the source engraving too, REQ-023). Refused with the problems of the side's review when it is not ready."""
     plan = _work(store, plan_id)
     _side(plan, side)
     built = _side_elements(store, plan, side)
@@ -889,25 +1219,40 @@ def export(store: Store, plan_id: int, side: str) -> tuple[bytes, str]:
     if not review["ready"]:
         raise su.ValidationError("the " + side + " is not ready to export: " + "; ".join(review["problems"]))
     names = {s["id"]: s for s in plan["settings"]}
-    used = [item["settings_id"] for item in review["sets"]]
+    engraved = [b for b in built if not b["geometry"].is_empty]
+    shapes = [b for b in engraved if not _is_raster(b["element"])]
+    pictures = [b for b in engraved if _is_raster(b["element"])]
     layers, regions = [], []
-    for position, settings_id in enumerate(used, start=1):
+    for position, settings_id in enumerate(sorted({_effective(plan, b["element"]) for b in shapes}), start=1):
         s = names[settings_id]
-        layers.append({"index": position, "name": s["name"], "cut_type": "Scan" if s["mode"] == "fill" else "Cut", "regions": [],
-                       "layer_keys": [f"s{settings_id}"], "prediction": None,
-                       "parameters": {"power": s["power"], "frequency": s["frequency"], "speed": s["speed"], "pulse_width": s["pulse_width"],
-                                      "line_interval": s["line_interval"] if s["mode"] == "fill" else None, "passes": s["passes"]}})
-    for entry in built:
-        if entry["geometry"].is_empty:
-            continue
+        layer = {"index": position, "name": s["name"], "cut_type": "Scan" if s["mode"] == "fill" else "Cut", "regions": [],
+                 "layer_keys": [f"s{settings_id}"], "prediction": None, "parameters": _layer_parameters(s, image=False)}
+        scan = {k: s[k] for k in ("global_passes", "bidirectional", "cross_hatch", "scan_angle") if s.get(k) is not None}
+        if scan:
+            layer["lightburn_settings"] = scan
+        layers.append(layer)
+    for entry in shapes:
         loops = _rings(entry["geometry"])
         if loops:
             regions.append({"id": entry["element"]["id"], "layer_key": f"s{_effective(plan, entry['element'])}", "loops": loops, "strokes": []})
-    context = cc.get(store)
-    device, lens, material = context.get("device") or {}, context.get("lens") or {}, context.get("material") or {}
+    for entry in pictures:
+        element = entry["element"]
+        s = names[_effective(plan, element)]
+        width, height = card_raster.bounds(element["width"], element["height"], element["rotation"])
+        pixels = card_raster.prepare(Path(element["image"]["file"]).read_bytes(), element["width"], element["height"], element["rotation"],
+                                     float(grayscale.image_dpi(s["line_interval"])), _raster_params(element))
+        stem = "".join(c if c.isalnum() or c in "-_" else "-" for c in element["name"]).strip("-") or "picture"
+        layers.append({"index": len(layers) + 1, "name": f"{s['name']} - {element['name']}", "cut_type": "Image", "regions": [], "layer_keys": [],
+                       "prediction": None, "parameters": _layer_parameters(s, image=True),
+                       "picture": {"x": element["x"] - width / 2, "y": element["y"] - height / 2, "width": width, "height": height,
+                                   "pixels": pixels, "file": f"{stem}.png", "dither": s["dither"]}})
+    own = _setup(plan)                                  # the file names the card's own laser, lens and material, not the workshop's current ones
+    device = devices.brief(store, own["device_id"]) if _exists(store, "laser_device", own["device_id"]) else None
+    lens = lenses.get_lens(store, own["lens_id"]) if _exists(store, "lens", own["lens_id"]) else None
+    material = store.one("SELECT * FROM material_profile WHERE id=?", (own["material_id"],))
     data = pl.export_lbrn2({"mode": MODE, "name": f"{plan['name']} {side}", "layers": layers, "vector_document": {"regions": regions},
                             "size_mm": size_mm(plan), "export_mirror_y": True, "plan_identifier": "",
-                            "experiment": {"label": f"Business card {side}", "test_name": plan["name"], "device": device, "lens": lens,
-                                           "material": material}})
+                            "experiment": {"label": f"Business card {side}", "test_name": plan["name"], "device": device or {}, "lens": lens or {},
+                                           "material": dict(material) if material else {}}})
     store.audit("card_work_exported", plan_id=plan["id"], side=side)
     return data, f"{plan['name']} {side}"

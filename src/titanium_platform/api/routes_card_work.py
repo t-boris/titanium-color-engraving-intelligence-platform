@@ -37,8 +37,23 @@ def get_card_work(plan_id: int, request: Request):
 @router.post("/card-works/{plan_id}/edit")
 def edit_card_work(plan_id: int, body: dict, request: Request):
     """One edit of the card (``op``: add, set, move, resize, rotate, reorder, duplicate, delete, group, ungroup, assign_settings,
-    settings_add, settings_set, settings_delete, set_size); the work is returned as it is now, with ``added``."""
+    settings_add, settings_set, settings_delete, set_size, settings_apply, settings_confirm, settings_custom, set_setup); the work is
+    returned as it is now, with ``added``."""
     return card_work.edit(store_of(request), plan_id, body)
+
+
+@router.get("/card-works/{plan_id}/settings-choices")
+def card_settings_choices(plan_id: int, request: Request):
+    """The engraving settings the workshop measured for this card's own laser, lens and material, by type of engraving; an unmeasured type
+    says so. Nothing measured on another laser, lens or material is ever listed."""
+    return card_work.settings_choices(store_of(request), plan_id)
+
+
+@router.get("/card-works/{plan_id}/elements/{element_id}/raster.png")
+def card_raster_picture(plan_id: int, element_id: str, request: Request):
+    """A picture engraved as a raster photo, dithered the way its image mode engraves it, at the element's size."""
+    return Response(card_work.raster_png(store_of(request), plan_id, element_id), media_type="image/png",
+                    headers={"Cache-Control": "private, max-age=3600"})
 
 
 @router.post("/card-works/{plan_id}/undo")
