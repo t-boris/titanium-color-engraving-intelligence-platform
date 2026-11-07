@@ -14,7 +14,7 @@ router = APIRouter(prefix="/api")
 def of_plan(store, plan_id: int) -> dict:
     """The lifecycle of any plan: a vector work from its assessment (one :func:`vector_job.view`), another plan from its stored layers."""
     plan = plans.get_plan(store, plan_id)
-    if plan["status"] == "Deleted" or plan["mode"] == plans.MODE_PHOTO_WORK:        # a photograph work exports through its own routes
+    if plan["status"] == "Deleted" or plan["mode"] in (plans.MODE_PHOTO_WORK, plans.MODE_CARD_WORK):      # these works export through their own routes
         raise KeyError(f"plan {plan_id} not found")
     if plan["mode"] == plans.MODE_VECTOR:
         return lifecycle.of_vector(store, plan_id, vector_job.view(store, plan_id))

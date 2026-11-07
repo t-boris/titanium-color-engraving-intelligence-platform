@@ -55,7 +55,7 @@ def _plan(request: Request, plan_id: int, regions: bool = False) -> dict:
     result["photo_zones"] = vector_job.plan_zones(s, plan)              # a vector work's photo zones: Image layers after the colours
     result["active_pairs"] = s.one("SELECT COUNT(*) AS n FROM pair WHERE plan_id=? AND status!='Deleted'", (plan_id,))["n"]
     result["time"] = experiments.plan_time(plans.get_plan(s, plan_id))
-    if plan["mode"] != plans.MODE_PHOTO_WORK:        # a photograph work exports through its own routes, with no file records
+    if plan["mode"] not in (plans.MODE_PHOTO_WORK, plans.MODE_CARD_WORK):        # these works export through their own routes, with no file records
         result["lifecycle"] = routes_lifecycle.of_plan(s, plan_id)      # the chain, the readiness and the files (ux-engraving-lifecycle-p0)
     return result
 

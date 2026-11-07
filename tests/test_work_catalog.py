@@ -286,7 +286,7 @@ def test_the_count_of_a_value_is_what_choosing_it_would_show_with_the_search_and
 def test_the_facets_offer_the_equipment_the_works_use_by_name_and_none_when_a_work_has_none(shop):
     build_mixed_shop(shop)
     facets = listed(shop, type="photo")["facets"]                                              # the offer does not shrink with the filters
-    assert facets["type"] == ["vector", "mixed", "photo"]
+    assert facets["type"] == ["vector", "mixed", "photo", "card"]
     assert [f["name"] for f in facets["laser"]] == ["Laser Alpha", "Laser Beta"]
     assert facets["lens"][-1] == {"value": "none", "name": None} and [f["name"] for f in facets["lens"][:-1]] == ["F-Theta 175", "F-Theta 254"]
     assert facets["material"][-1] == {"value": "none", "name": None}

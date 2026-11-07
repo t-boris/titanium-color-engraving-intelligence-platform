@@ -523,6 +523,43 @@ def started_client():
                             "dependencies (see README)") from None
 
 
+IMAGE_TIMEOUT_S = 180.0                        # one picture of the image service can take a minute
+
+
+def generated_image(model_name: str, prompt: str, *, size: str = "1024x1024", **options) -> bytes:
+    """One picture from the OpenAI image service (feature-2, DEC-039): the bytes of the PNG it returns, asked for with the workshop's own
+    key and nothing else. It is the only place that talks to the service for a picture, so the optional ``openai`` library stays imported
+    here only. A refusal, a missing key or a lost connection is a :class:`ResearchError` that says in plain words what to do."""
+    import base64
+    client = started_client()
+    if client is None:
+        raise ResearchError("No OpenAI key is set: add it in the workshop's AI settings to generate pictures.")
+    import openai
+    try:
+        result = client.with_options(timeout=IMAGE_TIMEOUT_S, max_retries=0).images.generate(model=model_name, prompt=prompt, size=size, n=1,
+                                                                                         **options)
+    except openai.AuthenticationError:
+        raise ResearchError("The OpenAI key was refused: check the key in the workshop's AI settings.") from None
+    except openai.PermissionDeniedError:
+        raise ResearchError("The OpenAI account may not use this image model: choose another model or check the account.") from None
+    except openai.RateLimitError:
+        raise ResearchError("The image service is busy or the account has no credit left: try again later.") from None
+    except openai.BadRequestError:
+        raise ResearchError("The image service refused this description: describe the picture differently.") from None
+    except openai.APIConnectionError:
+        raise ResearchError("The image service could not be reached: check the internet connection and try again.") from None
+    except openai.APIStatusError as error:
+        raise ResearchError(f"The image service failed (status {error.status_code}): try again in a moment.") from None
+    items = getattr(result, "data", None) or []
+    encoded = getattr(items[0], "b64_json", None) if items else None
+    if not encoded:
+        raise ResearchError("The image service returned no picture: try again.")
+    try:
+        return base64.b64decode(encoded, validate=True)
+    except ValueError:
+        raise ResearchError("The image service returned a damaged picture: try again.") from None
+
+
 EXPLAIN_INSTRUCTIONS = """Help a titanium laser engraving operator understand the proposed experiment.
 The proposal was calculated offline from measurements; do not change it or choose settings.
 Reply in English as plain text, up to 1,800 characters: explain what the plate tests, why each set was chosen
