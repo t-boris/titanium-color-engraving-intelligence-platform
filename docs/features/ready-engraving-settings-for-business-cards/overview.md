@@ -2,7 +2,7 @@
 type: feature
 id: ready-engraving-settings-for-business-cards
 title: Ready engraving settings for business cards
-status: exploring
+status: implemented
 owner: Boris Tsekinovsky
 created: 2026-11-07
 provenance: Created by an AI agent through MarkView from Operator's request of 2026-11-07 after the release of 0.41.0 (feature-2); code research of the same day

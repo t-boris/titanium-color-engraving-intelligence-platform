@@ -1,3 +1,75 @@
+# ready-engraving-settings-for-business-cards — 2026-11-07
+
+Goal (MarkView `ready-engraving-settings-for-business-cards`, GitHub #44, follows feature-2): the engraving settings of a business card are never
+empty. The editor proposes settings the workshop MEASURED for the card's own laser, lens and material, or says "unknown"; choosing comes first
+(type of engraving: colour, photo, lines and text, deep engraving = unknown), typing numbers ("Custom") is the last resort; a picture can be engraved
+as a raster photo. Branch `feature/ready-engraving-settings-for-business-cards` from `origin/main` 57fdcc4 (+ release 0.41.1 pending in PR 45).
+Binding records (read the folder `docs/features/ready-engraving-settings-for-business-cards/`): REQ-001..005, 022..024, 026; Q-001 A (measured only),
+Q-002 C (raster pictures), Q-004 A (proposal, confirm before export), Q-005 CORRECTED to A (card tied to its own laser/lens/material; NEVER offer
+settings of another laser, lens or material, not even as "nearest"); DEC-007..010. Q-003 (copy vs link) is open: copy is used (DEC-010, proposed).
+
+## Contract (every module is written against this; the lead integrates)
+
+**Normalised settings** (keys of a set; `None` = not given; the six first are the ones of 0.41.0):
+`mode` ("fill"|"line"), `power`, `speed`, `frequency`, `pulse_width`, `line_interval`, `passes`, and new: `global_passes`, `bidirectional`,
+`cross_hatch`, `scan_angle`, `min_power`, `dither` (a photo-mode key such as `grayscale`), `dot_width`.
+
+**`card_settings.py`** (backend, reads the store only, never writes):
+- `setup_view(store, setup) -> {"device_id","lens_id","material_id","device","lens","material","complete","missing"}`; `setup` = `{"device_id","lens_id","material_id"}`
+  (`lens_id` None = the lens is unknown, which is a valid explicit state); `complete` needs device and material; `missing` lists what is not set.
+- `choices(store, setup) -> {"setup": setup_view, "types": [type, ...]}` with four types in this order: `color`, `photo`, `line_text`, `deep`;
+  `type = {"type","label","known":bool,"reason":str|None,"groups":[{"source","label","count","items":[item,...]}]}`; a type with no measured item has
+  `known=False`, a plain `reason` that names what to measure, and no groups; `deep` is always unknown until a source for it exists.
+- `item = {"id","type","source","label","detail","evidence":{"status",...},"settings":{normalised keys, only what the source HAS},"unused":[keys that do not apply to
+  vector elements],"swatch":{"srgb":"#rrggbb"}|None,"origin":{"kind":"choice","choice_id","type","source","label","detail","evidence","setup":{device_id,lens_id,material_id}}}`.
+- `item_by_id(store, setup, choice_id) -> item | None` (None when not offered for this exact setup); `proposal(store, setup) -> item | None` (the best known
+  default for a new card: prefer line_text, then color, then photo; None when nothing is known).
+- Only measured/validated results of EXACTLY this laser, lens and material; no model prediction, no grey-scale span, no other titanium, no other lens, no other laser.
+  A failed ("flat") photo result is never offered.
+
+**`card_raster.py`** (backend, pure functions on pixels):
+- `prepare(image_bytes, width_mm, height_mm, rotation_deg, dpi, params) -> np.ndarray` upright BGRA/gray pixels of the picture at `dpi` for the rotated bounding box,
+  transparent outside (for `plans.export_lbrn2` Image layer `picture.pixels`); `preview_png(pixels, dither, dot_width, dpi) -> bytes` (the screen's dithered view);
+  `cache_key(...)`; `bounds(width_mm, height_mm, rotation_deg) -> (w, h)` of the rotated bounding box.
+
+**Work view** (`GET /api/card-works/{id}` and every edit answer; existing keys stay):
+- `setup`: `{"set":bool,"device_id","lens_id","material_id","device":{"id","name"}|None,"lens":{"id","name"}|None,"material":{"id","name"}|None,"complete":bool,"missing":[...]}`.
+- each `settings[]` item = the six old fields + the new fields + `origin` (None | `{"kind":"choice"|"custom","choice_id"|None,"type","source","label","detail","evidence","setup":{...}|None,"at","note"|None,"proposed":bool}`),
+  `confirmed: bool`, `status: {"state":"unknown"|"proposed"|"chosen"|"custom"|"other_setup","ready":bool,"needs":[str],"summary":str}`.
+- each `image` element: `engrave: "vector"|"raster"`; raster ones also `raster: {"url","width_px","height_px","dpi"} | None` and a problem when no photo setting is assigned.
+- `GET /api/card-works/{id}/settings-choices` -> `card_settings.choices(...)`; `GET /api/card-works/{id}/elements/{eid}/raster.png` -> the dithered preview.
+- edit ops added: `settings_apply {settings_id, choice_id}` (copy values and origin, confirmed), `settings_confirm {settings_id}`, `settings_custom {settings_id}`,
+  `set_setup {device_id, lens_id, material_id}`; `settings_set` on numbers of a chosen set turns it into Custom (note keeps the source); `set` on an image accepts `engrave`.
+- review: a set is ready only with complete numbers, an origin, `confirmed`, and an origin setup equal to the work's setup; raster pictures also need `min_power`, `line_interval`, `dither`.
+
+## Steps
+
+- [x] P0 records: answers Q-001/002/004/005 (+ correction), REQ-026, DEC-009/010 on main (57fdcc4)
+- [x] P1 `card_settings.py` + tests/test_card_settings.py (14 tests; the lead, after the first agents were lost with the previous session)
+- [x] P2 `card_raster.py` + tests/test_card_raster.py (97 tests; agent; dpi ceiling raised to 5080 and `check()` added by the lead)
+- [x] P3 `card_work.py` + routes + tests (test_card_work.py 59, test_card_work_settings.py 16): setup, origin/confirm/custom, review, export fields and Image layers, migration of 0.41.0 cards; commit 86a26cc
+- [x] P4 UI: engraving panel with type -> groups -> items, status/confirm, Custom last, setup bar, raster toggle and canvas image (agent; commit 565693b)
+- [x] P5 integrate, targeted tests, full suite `-n 12` (3868 passed), real-browser walk on a copy of the live workshop (found and fixed the chooser row layout, the setup bar overflow, duplicate colour recipes; 4100a1c)
+- [x] P6 version 0.42.0 (35dd754), README entry, PR #46, CI green on ubuntu 3.11 / 3.12 / macOS 3.12, merge b419461, backup, wheel deployed to `~/.titanium-platform-app` and verified on a copy of the live DB (port 8798), signed desktop build, local reinstall (`shell 0.42.0` in shell.log)
+
+## Review (2026-11-07)
+
+Result: release 0.42.0 is merged, deployed (wheel env) and reinstalled (`/Applications/Laser workshop.app`). GitHub #44 may be closed.
+What the operator gets: a business card is tied to its own laser, lens and material; its engraving settings are a choice of measured sets (colour 380, photo 42, lines and text and deep engraving
+"unknown" on the live data), the first set of a new card is a proposal the operator confirms before export, typing numbers is the last entry ("Custom values"), a picture can be engraved as a raster photo.
+Evidence: full suite 3868 passed; real-browser walk (proposal -> confirm -> choose colour/photo -> deep unknown -> raster toggle -> export with Scan + Image layers -> change setup to an unknown lens and undo -> custom values);
+the wheel server on a copy of the live DB refused export (422) until confirmation and exported with the card's own laser in the notes.
+
+Open points to tell the operator:
+- Q-003 (copy values or live link) is still open: the implementation copies values (DEC-010, proposed). DEC-007..010 are proposed, the person accepts them in MarkView. Q-005's front-matter `answer:` line still shows the first answer (B); the Answer section and the discussion carry the correction (A).
+- Acceptance criteria left unticked on purpose: REQ-002 #3 (each choice does not show its own laser/lens/material line; the setup bar shows it for the whole card and the origin stores it), REQ-003 #2 (a colour is applied to a set; elements take sets through their own select),
+  REQ-004 #1 (the photo row shows mode and evidence status, not a score), REQ-023 #1 (DPI is derived from the line interval, not stored). REQ-003 criterion 6 of feature-2 is still unticked; feature-2's F-004 has a stale `resolved_by`.
+- Cold start: the first colour palette load and the first card creation in a process take about 6 s on the live data; later ones about 0.4 s.
+- Transparent parts of an imported logo engrave as white (minimum power in grayscale mode) when the picture is engraved as a raster photo. SVG import is not supported.
+- Live data has no line/text candidates yet, so "Lines and text" says unknown; deep engraving is unknown by design (Q-001 A).
+- No GitHub tag or pre-release was made for 0.42.0 (as for 0.41.x): ask before publishing.
+- The browser console shows `ResizeObserver loop completed with undelivered notifications`: a harmless browser warning from the card canvas (0.41.0 code), not from this change.
+
 # feature-2: titanium business cards — 2026-11-06
 
 Goal (MarkView `feature-2`, GitHub #42): a two-sided, physically sized card work (85 × 53 / 85 × 54 mm or custom), composed on a canvas

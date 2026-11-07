@@ -801,3 +801,14 @@ again in the next commit). Add the exact files a tool or an edit produced; check
 - **Rule.** A test of anything that can call an outside service patches the *client factory* (`research.openai_client` raises) in an autouse
   fixture, not only a switch that application start-up can reset. A test that wants the service hands the code a fake client. Check the
   first run of such a test for unexpectedly passing "refusal" assertions: a success where a refusal was expected means it went outside.
+
+## "Prepare everything for the next feature" and "go, do not stop" means build it (ready-engraving-settings, 2026-11-07)
+
+- **What happened.** The operator asked to prepare everything for a follow-up feature and ended with "go, do not stop until you finish". I wrote
+  only the specification, questions and decisions, and reported "nothing built" low in a long message. The operator then asked angrily whether I had
+  done anything they asked.
+- **Rule.** When the request describes a behaviour change (here: engraving settings must be a choice, never empty) and says to go on, the
+  deliverable is the working change, not its documents. Specification and questions are the first step of the same turn, not the answer. If a
+  question must wait for the operator, ask it with a recommended default and build on the default; say in the first line of the report what is
+  built and what is not. A report that opens with documents when the operator expected a working screen reads as "nothing was done".
+- **Related.** The operator's word "closed" means released and installed (see the memory note on closed = deployed); a merge is not the end.
