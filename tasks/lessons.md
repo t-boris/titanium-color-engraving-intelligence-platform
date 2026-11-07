@@ -824,3 +824,18 @@ again in the next commit). Add the exact files a tool or an edit produced; check
   helper concept of mine (a "set of settings") must not become what the operator has to manage. Every multi-panel layout gets resizable/hideable panels from the start.
 - **Rule.** A browser walk that tests my panel is not a walk of the operator's task. Do not tick criteria that the operator could not perform; list a criterion as
   met only after the story that needs it has been performed by hand.
+
+## Test the UI with the shape of the live data, and measure the page, not only the widget (card editor 0.43.0)
+- Found while walking the operator's stories in the real editor, after the node tests were green: (1) every hue group of a type has the same `source` ("Colour map") and differs
+  only by label, so a button keyed by `source` made all groups look pressed and showed the wrong list; the fake server in the tests used distinct sources. (2) A drawing sized
+  `72vh` overflowed a short window and scrolled its column. (3) `.sr-only` is `position:absolute`; inside a clipped column with no positioned ancestor it lands below the window
+  and stretches the whole page (163 px when a picture was selected).
+- Rule: key list items by place or id, never by a field that the data may repeat; write at least one UI test with the real data shape (repeated sources, repeated labels).
+  After building a screen, read `document.scrollingElement.scrollHeight` against `innerHeight` and each column's `scrollHeight` against `clientHeight` with every kind of
+  element selected; they must be equal. Give scrollers `position:relative` so hidden helpers scroll with their content.
+
+## Do not start paid, long jobs without asking; watch what a trigger costs (CI, 2026-11-07)
+- Remark: «дичайший, долгий CI … я плачу за CI каждый раз … приостанови моментально». I opened a pull request and watched a CI that ran three jobs of 29, 46 and 59 minutes
+  on every pull request and every push to main (11 runs in one day), after the whole suite had already passed locally.
+- Rule: the local full suite is the release gate; CI is manual-only (main 761fee0). Do not open pull requests, push branches or start workflows to get checks, and never wait for them.
+  Before relying on any automatic job, read its triggers, matrix and duration, and say what it costs. When the operator says stop, cancel first, diagnose second.

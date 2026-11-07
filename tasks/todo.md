@@ -1,4 +1,4 @@
-# card editor: choose the engraving where the element is, and a layout the operator can resize — 2026-11-07 (plan, waiting for approval)
+# card editor: choose the engraving where the element is, and a layout the operator can resize — 2026-11-07 (approved by the operator; building)
 
 Operator feedback on 0.42.0: selecting an element (shape, icon, frame, QR, text) gives no way to choose its colour; "Engraving settings" is only a dropdown of sets; the colour chooser is
 hidden in a panel nobody finds; the left/middle/right panels cannot be resized, so nothing can be seen at once. Root cause (checked in code): `card-settings.js` is mounted only
@@ -25,12 +25,24 @@ in the right column when NOTHING is selected and works on *sets*; `card-work.js`
 - Layer list shows the element's recipe swatch.
 
 ## Steps
-- [ ] L1 backend: `assign_choice` (+ group/multi ids, undo/redo, setup guard, review stays right) and tests
-- [ ] L2 UI: inspector Engraving block, wide chooser dialog, details; remove nothing the operator needs
-- [ ] L3 UI: splitters, hide buttons, remembered widths
-- [ ] L4 node UI tests for the block, the dialog and the splitters; full suite `-n 12`
-- [ ] L5 walk stories 1-5 in the real browser on a copy of the live data (screenshots), fix, repeat
-- [ ] L6 release 0.43.0: README, PR, CI, merge, backup, wheel deploy, desktop build and reinstall; report with the stories, not the criteria
+- [x] L1 backend: `assign_choice` (+ group/multi ids, undo/redo, setup guard, review stays right) and tests
+- [x] L2 UI: inspector Engraving block, wide chooser dialog, details; remove nothing the operator needs
+- [x] L3 UI: splitters, hide buttons, remembered widths (card-layout.js)
+- [x] L4 node UI tests for the block, the dialog and the splitters (test_card_engraving_ui.py, test_card_layout_ui.py); [ ] full suite `-n 12` before release
+- [x] L5 walked stories 1-5 in the real browser on a copy of the live data (rehearse-0.43, port 8796). Found and fixed on the way: hue groups share one `source` so every group looked pressed (keyed by place now, also in the old chooser); the drawing was 72vh high and overflowed a short window; hidden `.sr-only` radios stretched the page by 163 px when a picture was selected
+- [x] L6 release 0.43.0: README, PR #47 (merge 51fef83), backup, wheel deploy to ~/.titanium-platform-app (verified on a DB copy, port 8798: version, foreign Host 421, assign_choice, export), desktop build, signed, quit, backup, reinstall; report with the stories, not the criteria
+- [x] CI cut down on the operator's order (main 761fee0): manual only, one ubuntu job, `pytest -n auto`; PR #47 was merged with its CI cancelled, the local full suite (3904 passed) is the gate
+
+## Review 0.43.0 (2026-11-07)
+- Stories 1-5 walked in the running editor on a copy of the live data (rehearse-0.43): gold for a star shows in the block, the layer list and the exported file; one choice for three elements gives them one set;
+  a picture engraved as a photo opens the dialog on Photo and exports its own image layer (Grayscale, 30 %: 30 %, 150 mm/s, 60 kHz, 0.0254 mm); the panels drag, hide, reload and come back.
+- Found only by walking the app, not by the node tests: shared `source` of hue groups, the 72vh drawing, the absolute `.sr-only` radios stretching the page. Lesson in tasks/lessons.md.
+- Not verified: the stacked layout below 1100 px and the dialog at 760 px (the window could not be resized), the light theme of the new block and dialog, touch, keyboard use of the splitters in the running app
+  (the node tests cover the keys), the double-click reset in a narrow window (the default width is clamped to what fits).
+- Not built: the canvas still draws every element in black (no colour preview of the chosen engraving on the canvas); selecting several elements works on the canvas (Shift-click or the rubber band), not in the layer list;
+  a click inside a frame selects the frame (it covers the card), so the rubber band has to start outside the card.
+- Open from 0.42.0 and unchanged: Q-003, DEC-007..010 proposed, four criteria left unticked (REQ-002 #3, REQ-003 #2, REQ-004 #1, REQ-023 #1); no GitHub tag or pre-release.
+
 
 # ready-engraving-settings-for-business-cards — 2026-11-07
 
