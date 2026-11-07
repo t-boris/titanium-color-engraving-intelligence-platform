@@ -275,6 +275,13 @@ const CardPanels = (() => {
   function layerList(env) {
     let on = [], shown = [];
     const groupSize = (e) => shown.filter((x) => x.group && x.group === e.group).length;
+    /** What the layer engraves with: the swatch of its colour and, when it has settings of its own, their name. */
+    function engravingMark(e) {
+      const set = env.engravingOf ? env.engravingOf(e) : null, colour = CardSettings.swatchOf(set);
+      const swatch = colour ? h('span', {class: 'sw cw-swatch cw-layer-swatch', style: `background:${colour}`, role: 'img', 'aria-label': `Engraves in ${set.origin.label}`}) : null;
+      const own = e.settings_id != null ? pill(env.settingsName(e.settings_id) || 'settings') : null;
+      return swatch || own ? h('span', {class: 'cw-layer-engraving'}, swatch, own) : null;
+    }
     const list = App.list({id: 'cw.layers', items: [], key: (e) => e.id, search: (e) => `${e.name} ${TYPE_NAME[e.type]}`, page: 12, className: 'cw-layers-list',
       selected: () => (on.length ? on[on.length - 1] : null), rowClass: (e) => (on.includes(e.id) ? 'cw-on' : ''),
       row: (e) => {
@@ -283,7 +290,7 @@ const CardPanels = (() => {
           h('span', {class: 'cw-layer-type', 'aria-hidden': 'true'}, TYPE_MARK[e.type]), h('span', {class: 'sr-only'}, `${TYPE_NAME[e.type]}: `),
           h('span', {class: 'lst-text cw-layer-name'}, e.name)),
         e.group ? pill(`Group of ${groupSize(e)}`) : null,
-        e.settings_id != null ? pill(env.settingsName(e.settings_id) || 'settings') : null,
+        engravingMark(e),
         bad ? h('span', {class: 'cw-dot', role: 'img', 'aria-label': 'Has a warning', title: [...(e.problems || []), ...(e.warnings || []).map((w) => w.message)].join('\n')}, '●') : null];
       },
       actions: (e) => {

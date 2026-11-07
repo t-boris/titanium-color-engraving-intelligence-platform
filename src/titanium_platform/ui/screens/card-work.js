@@ -222,6 +222,8 @@ const CardWork = (() => {
       settingsAdd: () => edit({op: 'settings_add'}, {retryable: false}), setSettings: (settingsId, changes) => setSettings(settingsId, changes), settingsDelete,
       setup: () => view.setup, choices, reloadChoices: () => { cache.key = null; },
       applyChoice: (settingsId, choiceId) => edit({op: 'settings_apply', settings_id: settingsId, choice_id: choiceId}, {retryable: false}),
+      assignChoice: (ids, choiceId) => edit({op: 'assign_choice', ids, choice_id: choiceId}, {retryable: false}),
+      engravingOf: (e) => view.settings.find((x) => x.id === (e.settings_id == null ? view.default_settings_id : e.settings_id)) || null,
       confirmSettings: (settingsId) => edit({op: 'settings_confirm', settings_id: settingsId}, {retryable: false}),
       customSettings: (settingsId) => edit({op: 'settings_custom', settings_id: settingsId}, {retryable: false}),
       setSetup: (setup) => soft({path: `${base}/edit`, body: {op: 'set_setup', device_id: setup.device_id, lens_id: setup.lens_id, material_id: setup.material_id}})};
@@ -336,6 +338,7 @@ const CardWork = (() => {
           grouped ? small('Ungroup', () => edit({op: 'ungroup', ids}, {retryable: false})) : null));
     }
     const settingsOptions = () => [['', `Default (${settingsName(view.default_settings_id)})`], ...view.settings.map((s) => [String(s.id), s.name])];
+    const sheetControls = {numberControl: P.numberControl, textControl: P.textControl, Q: P.Q};
 
     /** The inspector of one element: built when the element (or the kind of its QR code) changes, then only brought up to date. */
     function buildInspector(e) {
@@ -343,12 +346,13 @@ const CardWork = (() => {
       const name = P.textControl({label: 'Name', key: K('name'), local, nonEmpty: true, commit: (v) => setField(e, 'name', v)});
       const [x, y, width, height, rotation] = [number('Center X', 'x', Q.x), number('Center Y', 'y', Q.y), number('Width', 'width', Q.width), number('Height', 'height', Q.height),
         number('Rotation', 'rotation', Q.rotation)];
-      const settings = P.selectControl({label: 'Engraving settings', key: K('settings_id'), local, options: settingsOptions(), commit: (v) => assign([e.id], v)});
+      const settings = P.selectControl({label: 'Use another set of this card', key: K('settings_id'), local, options: settingsOptions(), commit: (v) => assign([e.id], v)});
+      const engraving = CardSettings.engravingBlock(env, sheetControls, settings.el);
       const form_ = P.typeForm(e, env), notes = h('div', {class: 'stack'}), actions = h('div', {}), head = h('h4', {});
       let optionsKey = '';
       return {key: `${e.id}:${e.type}:${e.type === 'qr' ? e.qr.kind : ''}`,
-        el: h('div', {class: 'stack cw-inspector'}, head, notes, name.el, h('div', {class: 'cw-pair'}, x.el, y.el), h('div', {class: 'cw-pair'}, width.el, height.el), rotation.el,
-          settings.el, actions, form_.el),
+        el: h('div', {class: 'stack cw-inspector'}, head, notes, engraving.el, name.el, h('div', {class: 'cw-pair'}, x.el, y.el), h('div', {class: 'cw-pair'}, width.el, height.el), rotation.el,
+          actions, form_.el),
         sync(next) {
           fill(head, `${TYPE_NAME[next.type]}${next.group ? ' · in a group' : ''}`);
           fill(notes, (next.problems || []).map((p) => h('p', {class: 'alert bad small'}, p)), next.type === 'qr' ? null : (next.warnings || []).map((w) => h('p', {class: 'alert warn small'}, w.message)));
@@ -356,6 +360,7 @@ const CardWork = (() => {
           const options = settingsOptions(), signature = JSON.stringify(options);
           if (signature !== optionsKey) { optionsKey = signature; settings.setOptions(options); }
           settings.sync(next.settings_id == null ? '' : next.settings_id);
+          engraving.sync([next]);
           fill(actions, actionsFor([next]));
           form_.sync(next);
         }};
@@ -366,7 +371,9 @@ const CardWork = (() => {
         values.size > 1 ? h('option', {value: '__mixed', disabled: true}, 'Mixed: choose to set all') : null,
         settingsOptions().map(([value, label]) => h('option', {value}, label)));
       select_.value = values.size > 1 ? '__mixed' : [...values][0];
-      return h('div', {class: 'stack cw-inspector'}, h('h4', {}, `${chosen.length} elements selected`), actionsFor(chosen), field('Engraving settings', select_));
+      const engraving = CardSettings.engravingBlock(env, sheetControls, field('Use another set of this card', select_));
+      engraving.sync(chosen);
+      return h('div', {class: 'stack cw-inspector'}, h('h4', {}, `${chosen.length} elements selected`), engraving.el, actionsFor(chosen));
     }
     /** Redraw ``body`` of the right column without taking the cursor from the control the person is in. */
     function keepFocus(rebuild) {
@@ -464,8 +471,10 @@ const CardWork = (() => {
       paintAdd();
       paintRight();
     }
+    let layout = null;                                         // the splitters and the hide buttons of the side columns (card-layout.js)
     function dispose() {
       disposed = true;
+      if (layout) { layout.destroy(); layout = null; }
       if (keys === key) keys = null;
       if (canvas) { canvas.destroy(); canvas = null; }
     }
@@ -481,7 +490,9 @@ const CardWork = (() => {
     keys = key;
     paint.first = true;
     paint();
-    fill(root, head, h('div', {class: 'os-body cw-body'}, left, centre, right));
+    const columns = h('div', {class: 'os-body cw-body'}, left, centre, right);
+    fill(root, head, columns);
+    layout = CardLayout.mount(columns, {left, right});          // widths and hidden columns are the operator's: drag, keys, hide and show
     setTimeout(() => { if (canvas) canvas.fit(); }, 0);
     return root;
   }

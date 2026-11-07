@@ -37,8 +37,9 @@ def get_card_work(plan_id: int, request: Request):
 @router.post("/card-works/{plan_id}/edit")
 def edit_card_work(plan_id: int, body: dict, request: Request):
     """One edit of the card (``op``: add, set, move, resize, rotate, reorder, duplicate, delete, group, ungroup, assign_settings,
-    settings_add, settings_set, settings_delete, set_size, settings_apply, settings_confirm, settings_custom, set_setup); the work is
-    returned as it is now, with ``added``."""
+    assign_choice, settings_add, settings_set, settings_delete, set_size, settings_apply, settings_confirm, settings_custom, set_setup);
+    ``assign_choice`` ({side, ids|group, choice_id}) gives the elements one ready engraving setting of this card's laser, lens and material,
+    taking the card's own set for it or making one. The work is returned as it is now, with ``added``."""
     return card_work.edit(store_of(request), plan_id, body)
 
 

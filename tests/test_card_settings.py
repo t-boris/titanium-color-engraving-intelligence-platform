@@ -102,7 +102,7 @@ def test_the_colours_measured_for_this_laser_lens_and_titanium_are_offered_with_
     chosen = cs.item_by_id(store, world["card"], best["id"])
     assert {k: v for k, v in chosen.items() if k != "origin"} == best
     assert chosen["origin"] == {"kind": "choice", "choice_id": best["id"], "type": "color", "source": best["source"], "label": best["label"],
-                                "detail": best["detail"], "evidence": best["evidence"], "setup": world["card"]}
+                                "detail": best["detail"], "evidence": best["evidence"], "swatch": best["swatch"]["srgb"], "setup": world["card"]}
 
 
 def test_a_colour_of_another_titanium_lens_or_laser_is_never_offered_not_even_as_the_nearest(store, world):

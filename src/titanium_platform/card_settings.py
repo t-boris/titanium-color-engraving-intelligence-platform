@@ -74,7 +74,7 @@ def setup_view(store: Store, setup: Mapping) -> dict:
 
 def _origin(item: Mapping, setup: Mapping) -> dict:
     return {"kind": "choice", "choice_id": item["id"], "type": item["type"], "source": item["source"], "label": item["label"],
-            "detail": item["detail"], "evidence": item["evidence"],
+            "detail": item["detail"], "evidence": item["evidence"], "swatch": (item.get("swatch") or {}).get("srgb"),
             "setup": {k: setup.get(k) for k in ("device_id", "lens_id", "material_id")}}
 
 

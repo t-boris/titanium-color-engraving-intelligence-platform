@@ -79,7 +79,7 @@ STATES = ("unknown", "proposed", "chosen", "custom", "other_setup")
 DATA = ("size_mm", "preset", "sides", "settings", "default_settings_id", "setup", "next_id", "next_settings_id", "undo", "redo", "updated_at")
 # What one step of undo or redo brings back: everything that decides what the card engraves.
 STATE = ("size_mm", "preset", "sides", "settings", "default_settings_id", "setup", "next_id", "next_settings_id")
-EDIT_OPS = ("add", "set", "move", "resize", "rotate", "reorder", "duplicate", "delete", "group", "ungroup", "assign_settings",
+EDIT_OPS = ("add", "set", "move", "resize", "rotate", "reorder", "duplicate", "delete", "group", "ungroup", "assign_settings", "assign_choice",
             "settings_add", "settings_set", "settings_delete", "set_size", "settings_apply", "settings_confirm", "settings_custom", "set_setup")
 
 CARD_OPS = ("settings_add", "settings_set", "settings_delete", "set_size", "settings_apply", "settings_confirm", "settings_custom", "set_setup")
@@ -631,6 +631,32 @@ def _proposed(store: Store, plan: Mapping, current: Mapping) -> dict:
     return current if item is None else _applied(plan, current, item, proposed=True)
 
 
+def _set_of_choice(plan: dict, item: Mapping) -> int:
+    """The id of the card's set that holds ``item`` exactly as chosen (made when there is none): the operator picks a colour for an element and
+    never has to manage sets; two elements given the same choice share one set, so the file has one layer for it."""
+    for current in plan["settings"]:
+        origin = current.get("origin")
+        if origin and origin["kind"] == "choice" and origin.get("choice_id") == item["id"] and current.get("confirmed") and _same_setup(origin.get("setup"), _setup(plan)):
+            return current["id"]
+    settings_id = plan["next_settings_id"]
+    plan["next_settings_id"] += 1
+    fresh = _checked_settings({"name": str(item["label"])[:80]}, _blank_settings(settings_id, ""))
+    plan["settings"].append(_applied(plan, fresh, item, proposed=False))
+    return settings_id
+
+
+def _drop_unused_copies(plan: dict) -> None:
+    """Sets that :func:`_set_of_choice` made and nothing uses any more (the operator tried another colour) go away; a set the operator made, renamed or edited stays."""
+    used = {e["settings_id"] for side in SIDES for e in plan["sides"][side]["elements"]}
+    plan["settings"] = [s for s in plan["settings"]
+                        if s["id"] in used or s["id"] == plan["default_settings_id"] or not _is_copy_of_choice(s)]
+
+
+def _is_copy_of_choice(current: Mapping) -> bool:
+    origin = current.get("origin")
+    return bool(origin) and origin["kind"] == "choice" and current.get("confirmed") is True and current["name"] == str(origin["label"])[:80]
+
+
 def _unknown_set(current: Mapping) -> dict:
     return {**_blank_settings(current["id"], current["name"])}
 
@@ -688,7 +714,7 @@ def _apply(store: Store, plan: dict, body: Mapping) -> list[str]:
     if op == "add":
         added.append(_add(store, plan, body["side"], body.get("element")))
         return added
-    chosen = _find(elements, body["ids"] if "ids" in body else [body.get("id")]) if op != "assign_settings" or body.get("ids") else []
+    chosen = _find(elements, body["ids"] if "ids" in body else [body.get("id")]) if op not in ("assign_settings", "assign_choice") or body.get("ids") else []
     if op == "set":
         element = chosen[0]
         merged = _checked(plan, _merged(plan, element, body.get("changes")))
@@ -745,19 +771,29 @@ def _apply(store: Store, plan: dict, body: Mapping) -> list[str]:
         for element in elements:
             if element["group"] in labels:
                 element["group"] = None
-    elif op == "assign_settings":
-        wanted = body.get("settings_id")
-        if wanted is not None and wanted not in [s["id"] for s in plan["settings"]]:
-            raise su.ValidationError("the engraving settings you chose no longer exist")
+    elif op in ("assign_settings", "assign_choice"):
+        if op == "assign_choice":
+            item = card_settings.item_by_id(store, _setup(plan), body.get("choice_id"))
+            if item is None:
+                raise su.ValidationError("these settings are not measured for this laser, lens and material.")
+            wanted = None
+        else:
+            wanted = body.get("settings_id")
+            if wanted is not None and wanted not in [s["id"] for s in plan["settings"]]:
+                raise su.ValidationError("the engraving settings you chose no longer exist")
         members = {e["id"] for e in chosen}
         labels = {e["group"] for e in chosen if e["group"]}
         if isinstance(body.get("group"), str):
             labels.add(body["group"])
         if not members and not labels:
             raise su.ValidationError("choose the elements or the group to give these engraving settings")
+        if op == "assign_choice":
+            wanted = _set_of_choice(plan, item)
         for element in elements:
             if element["id"] in members or (element["group"] and element["group"] in labels):
                 element["settings_id"] = wanted
+        if op == "assign_choice":
+            _drop_unused_copies(plan)
     return added
 
 

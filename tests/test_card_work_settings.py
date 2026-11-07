@@ -291,3 +291,110 @@ def test_the_file_notes_name_the_cards_own_laser_lens_and_titanium_not_the_works
     cc.save(store, {"material_id": world["other_ti"]})                                          # the workshop moves on; the card does not
     notes = lb.parse_bytes(cw.export(store, plan, "front")[0]).notes
     assert "Titanium: Grade 2 sheet" in notes and "Grade 5" not in notes and "Lens: F-Theta 174" in notes and "S/N" in notes
+
+
+# -- choosing for the element itself (the operator never manages sets) ----------------------------------------------------------------------
+def two_colours(store, world):
+    colour(store, world, [60.0, 5.0, 20.0], engraving="g1")
+    colour(store, world, [40.0, -30.0, -30.0], speed=2000, line_interval=0.02, engraving="b1")
+
+
+def element_view(view, element_id, side="front"):
+    return next(e for e in view["sides"][side]["elements"] if e["id"] == element_id)
+
+
+def test_a_colour_chosen_for_an_element_is_its_own_chosen_set_and_the_element_uses_it(store, world):
+    two_colours(store, world)
+    plan = cw.create(store, "Own colour")
+    one, other = star(store, plan), star(store, plan)
+    item = first_item(store, plan, "color")
+    done = cw.edit(store, plan, {"op": "assign_choice", "side": "front", "ids": [one], "choice_id": item["id"]})
+    mine = element_view(done, one)
+    assert mine["settings_id"] is not None and mine["settings_id"] != done["default_settings_id"]
+    chosen = next(s for s in done["settings"] if s["id"] == mine["settings_id"])
+    assert chosen["name"] == item["label"] and chosen["status"]["state"] == "chosen" and chosen["power"] == item["settings"]["power"]
+    assert element_view(done, other)["settings_id"] is None                                          # the other element keeps the card's default
+    assert done["review"]["front"]["ready"] is False                                                  # the default is still only proposed
+    assert [s["id"] for s in done["settings"]][0] == done["default_settings_id"]
+
+
+def test_two_elements_given_the_same_choice_share_one_set_and_one_layer(store, world):
+    two_colours(store, world)
+    plan = cw.create(store, "Shared")
+    one, other = star(store, plan), star(store, plan)
+    item = first_item(store, plan, "color")
+    cw.edit(store, plan, {"op": "assign_choice", "side": "front", "ids": [one], "choice_id": item["id"]})
+    done = cw.edit(store, plan, {"op": "assign_choice", "side": "front", "ids": [other], "choice_id": item["id"]})
+    assert element_view(done, one)["settings_id"] == element_view(done, other)["settings_id"]
+    assert len(done["settings"]) == 2                                                                  # the default and the colour, nothing else
+
+
+def test_choosing_for_several_elements_or_a_group_gives_all_of_them_the_choice(store, world):
+    two_colours(store, world)
+    plan = cw.create(store, "Several")
+    ids = [star(store, plan) for _ in range(3)]
+    item = first_item(store, plan, "color")
+    done = cw.edit(store, plan, {"op": "assign_choice", "side": "front", "ids": ids[:2], "choice_id": item["id"]})
+    assert {element_view(done, i)["settings_id"] for i in ids[:2]} == {done["settings"][1]["id"]} and element_view(done, ids[2])["settings_id"] is None
+    grouped = cw.edit(store, plan, {"op": "group", "side": "front", "ids": ids[1:]})
+    label = element_view(grouped, ids[2])["group"]
+    other = choices_of(cw.settings_choices(store, plan), "color")["groups"][-1]["items"][-1]
+    done = cw.edit(store, plan, {"op": "assign_choice", "side": "front", "group": label, "ids": [], "choice_id": other["id"]})
+    assert element_view(done, ids[1])["settings_id"] == element_view(done, ids[2])["settings_id"] != element_view(done, ids[0])["settings_id"]
+
+
+def test_trying_another_colour_leaves_no_unused_copy_behind_but_keeps_sets_the_operator_made(store, world):
+    two_colours(store, world)
+    plan = cw.create(store, "Tries")
+    one = star(store, plan)
+    first, second = [i for g in choices_of(cw.settings_choices(store, plan), "color")["groups"] for i in g["items"]][:2]
+    mine = cw.edit(store, plan, {"op": "settings_add", "name": "Mine"})["settings"][-1]["id"]
+    cw.edit(store, plan, {"op": "settings_apply", "settings_id": mine, "choice_id": second["id"]})   # the operator's own set, an exact copy of the second choice
+    cw.edit(store, plan, {"op": "assign_choice", "side": "front", "ids": [one], "choice_id": first["id"]})
+    done = cw.edit(store, plan, {"op": "assign_choice", "side": "front", "ids": [one], "choice_id": second["id"]})
+    names = [s["name"] for s in done["settings"]]
+    assert first["label"] not in names and names.count("Mine") == 1                                     # the first try is gone, the operator's set is reused, not copied
+    assert element_view(done, one)["settings_id"] == mine
+    back = cw.step(store, plan, "undo")
+    assert first["label"] in [s["name"] for s in back["settings"]]                                      # one undo step brings the first try back
+
+
+def test_a_choice_not_measured_for_this_card_or_an_empty_target_is_refused_and_changes_nothing(store, world):
+    two_colours(store, world)
+    plan = cw.create(store, "Refused")
+    one = star(store, plan)
+    item = first_item(store, plan, "color")
+    before = cw.view(store, plan)["settings"]
+    for body in ({"choice_id": "color:nothing", "ids": [one]}, {"choice_id": item["id"], "ids": []}, {"choice_id": item["id"], "ids": ["zzz"]}, {"choice_id": 7, "ids": [one]}):
+        with pytest.raises(su.ValidationError):
+            cw.edit(store, plan, {"op": "assign_choice", "side": "front", **body})
+    assert cw.view(store, plan)["settings"] == before
+
+
+def test_the_file_of_two_colours_has_a_layer_for_each(store, world):
+    two_colours(store, world)
+    plan = cw.create(store, "Layers")
+    one, other = star(store, plan), star(store, plan)
+    first, second = [i for g in choices_of(cw.settings_choices(store, plan), "color")["groups"] for i in g["items"]][:2]
+    cw.edit(store, plan, {"op": "settings_confirm", "settings_id": 1})
+    cw.edit(store, plan, {"op": "assign_choice", "side": "front", "ids": [one], "choice_id": first["id"]})
+    cw.edit(store, plan, {"op": "assign_choice", "side": "front", "ids": [other], "choice_id": second["id"]})
+    layers = lb.parse_bytes(cw.export(store, plan, "front")[0]).layers
+    assert sorted(layer.speed for layer in layers) == sorted([first["settings"]["speed"], second["settings"]["speed"]])
+
+
+def test_the_route_accepts_assign_choice(tmp_path):
+    app = create_app(tmp_path)
+    store = app.state.store
+    w = obs.setup(store)
+    w["ti"] = su.save_material(store, "Grade 2 sheet", grade="Grade 2")["id"]
+    cc.save(store, {"device_id": w["setup"][0], "material_id": w["ti"]})
+    two_colours(store, w)
+    with TestClient(app, base_url="http://127.0.0.1") as client:
+        pid = client.post("/api/card-works", json={"name": "Route"}).json()["id"]
+        item = client.get(f"/api/card-works/{pid}/settings-choices").json()["types"][0]["groups"][0]["items"][0]
+        added = client.post(f"/api/card-works/{pid}/edit", json={"op": "add", "side": "front", "element": {"type": "shape", "shape": {"kind": "star"}}}).json()["added"][0]
+        answer = client.post(f"/api/card-works/{pid}/edit", json={"op": "assign_choice", "side": "front", "ids": [added], "choice_id": item["id"]})
+        assert answer.status_code == 200 and element_view(answer.json(), added)["settings_id"] is not None
+        refused = client.post(f"/api/card-works/{pid}/edit", json={"op": "assign_choice", "side": "front", "ids": [added], "choice_id": "color:nothing"})
+        assert refused.status_code == 422 or refused.status_code == 400

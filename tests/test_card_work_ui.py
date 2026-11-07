@@ -158,7 +158,7 @@ srv.apply = (b) => {
       fresh.passes = null;
       for (const [k, v] of Object.entries(found.settings)) if (v !== null) fresh[k] = v;
       Object.assign(set, fresh, {origin: {kind: 'choice', choice_id: found.id, type: found.type, source: found.source, label: found.label, detail: found.detail, evidence: found.evidence,
-        setup: {...w.setup}, at: 'now', note: null, proposed: false}, confirmed: true});
+        swatch: found.swatch ? found.swatch.srgb : null, setup: {...w.setup}, at: 'now', note: null, proposed: false}, confirmed: true});
     } else if (op === 'settings_confirm') {
       if (!set.origin) fail('there are no settings to confirm: choose some first.');
       if (set.origin.kind === 'choice' && !sameSetup(set.origin.setup, w.setup)) fail('these settings were chosen for another laser, lens or material: choose them again.');
@@ -224,6 +224,20 @@ srv.apply = (b) => {
     else if (op === 'assign_settings') {
       if (b.settings_id !== null && !w.settings.some((s) => s.id === b.settings_id)) fail('the engraving settings you chose no longer exist');
       for (const e of find(side, b.ids)) e.settings_id = b.settings_id;
+    } else if (op === 'assign_choice') {                           // card_work._set_of_choice: the card's own set for this choice, made when there is none
+      const found = srv.items().find((i) => i.id === b.choice_id);
+      if (!found) fail('these settings are not measured for this laser, lens and material.');
+      if (!(b.ids || []).length) fail('choose the elements or the group to give these engraving settings');
+      let set = w.settings.find((s) => s.origin && s.origin.kind === 'choice' && s.origin.choice_id === found.id && s.confirmed && sameSetup(s.origin.setup, w.setup));
+      if (!set) {
+        set = blank(w.nextSettings, found.label); w.nextSettings += 1;
+        set.passes = null;
+        for (const [k, v] of Object.entries(found.settings)) if (v !== null) set[k] = v;
+        Object.assign(set, {origin: {kind: 'choice', choice_id: found.id, type: found.type, source: found.source, label: found.label, detail: found.detail, evidence: found.evidence,
+          swatch: found.swatch ? found.swatch.srgb : null, setup: {...w.setup}, at: 'now', note: null, proposed: false}, confirmed: true});
+        w.settings.push(set);
+      }
+      for (const e of find(side, b.ids)) e.settings_id = set.id;
     } else fail('this edit is not known');
   }
   if (JSON.stringify(snapshot()) !== before) { w.undo.push(JSON.parse(before)); w.redo = []; w.rev += 1; }
@@ -363,7 +377,7 @@ const downloads = [];
 El.prototype.click = function () { downloads.push(this.getAttribute('download')); };
 __SERVER__
 load(ctx, __UI__, [...__TABLES__, 'app.js', 'save-state.js', 'dialogs.js', 'list.js', 'filepick.js', 'hardware.js', 'screens/material-picker.js', 'screens/lifecycle.js',
-  'screens/vector-workspace.js', {code: __GLUE__}, 'screens/card-settings.js', 'screens/card-panels.js', 'screens/card-work.js', 'screens/works.js',
+  'screens/vector-workspace.js', {code: __GLUE__}, 'screens/card-settings.js', 'screens/card-panels.js', 'screens/card-layout.js', 'screens/card-work.js', 'screens/works.js',
   {code: 'globalThis.CardWork = CardWork; globalThis.CardPanels = CardPanels; globalThis.CardSettings = CardSettings; globalThis.Works = Works;'}]);
 const App = ctx.App, doc = ctx.document, Works = ctx.Works;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -725,10 +739,10 @@ def test_layers_are_listed_top_first_and_reordered_grouped_and_given_settings(tm
   await press('Add settings'); await saved();
   out.added = lastPost();
   canvas().handlers.onSelect(['e3']);
-  out.options = control('Engraving settings').options.map((o) => [o.value, o.textContent]);
-  await choose('Engraving settings', '2'); await saved();
+  out.options = control('Use another set of this card').options.map((o) => [o.value, o.textContent]);
+  await choose('Use another set of this card', '2'); await saved();
   out.assign = lastPost();
-  out.badge = root.querySelectorAll('.pill').map((p) => p.textContent);
+  out.badge = root.querySelectorAll('.cw-layer-engraving').map((p) => text(p));              // the layers' own badges, not the state chip of the engraving block
   canvas().handlers.onSelect(['e1', 'e3']);
   const both = () => root.querySelector('.cw-inspector').querySelectorAll('select')[0];
   out.mixed = {value: both().value, options: both().options.map((o) => [o.value, o.disabled, o.textContent])};
