@@ -90,10 +90,82 @@
 
 /* engraving settings and the review */
 .cw-set {border:1px solid var(--line);border-radius:10px;padding:6px 10px;margin-bottom:6px;background:#111826}
-.cw-set summary {display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;margin:0;font-weight:500}
+.cw-set summary {display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;margin:0;font-weight:500;min-height:36px;cursor:pointer}
 .cw-set-flags {display:inline-flex;gap:4px}
 .cw-set-body {padding-top:8px}
 .cw-mode {gap:14px}
+
+/* the laser, lens and material of the card */
+.cw-setup {gap:6px;padding:8px 10px;border:1px solid var(--line-2);border-radius:10px;background:var(--surface)}
+.cw-setup .row {gap:6px 10px;flex-wrap:nowrap;align-items:flex-start}
+.cw-setup-line {margin:0;font-size:13px;line-height:1.5;min-width:0;overflow-wrap:anywhere}
+.cw-setup-part {white-space:nowrap}
+.cw-setup-part:last-child {white-space:normal}
+.cw-setup .alert {margin:0;padding:6px 10px;font-size:12px}
+.cw-setup .btn-small {flex:none}
+
+/* one set: the state in words (a pill whose colour only repeats them), where the figures come from, what is still needed */
+.cw-chip {flex:0 1 auto;max-width:100%;white-space:normal;text-align:left;border-radius:10px;padding:3px 10px;line-height:1.35;font-weight:600}
+.cw-origin,.cw-set-needs {flex:1 1 100%;min-width:0;overflow-wrap:anywhere;font-weight:400}
+.cw-set-needs {color:var(--warning)}
+.cw-set-needs[hidden] {display:none}
+.cw-set-name {overflow-wrap:anywhere}
+.cw-other {margin:0}
+.cw-values-box {gap:6px}
+.cw-values-title {margin:0;font-size:13px}
+.cw-facts {gap:2px 12px}
+.cw-facts dt,.cw-facts dd {font-size:12px;overflow-wrap:anywhere}
+.cw-notgiven>summary,.cw-source>summary,.cw-custom>summary,.cw-group>summary {display:flex;align-items:center;gap:6px;min-height:36px;color:var(--muted);cursor:pointer}
+.cw-notgiven>p,.cw-source>p {margin:0 0 6px}
+.cw-decide {gap:8px}
+.cw-confirm {gap:8px}
+.cw-set .btn-small,.cw-setup .btn-small,.cw-engrave .btn-small {min-height:36px}
+
+/* the choice of ready settings: type, groups, rows */
+.cw-choose {gap:8px;padding:8px 0;border-top:1px solid var(--line)}
+.cw-choose-note {margin:0}
+.cw-types {gap:4px;padding:0;border:0}
+.cw-type {flex:1 1 auto;min-height:36px;padding:6px 8px;display:inline-flex;align-items:center;justify-content:center;gap:4px;flex-wrap:wrap;white-space:normal;line-height:1.25}
+.cw-type-count {font-size:11px;font-weight:500}
+.cw-type.active .cw-type-count {color:var(--text)}
+.cw-type-panel {gap:8px}
+.cw-unknown-title {margin:0}
+.cw-reason {margin:0;padding:8px 10px}
+.cw-group {border:1px solid var(--line);border-radius:10px;padding:0 8px;background:var(--surface)}
+.cw-group[open]>summary {color:var(--text)}
+.cw-group-name {flex:1 1 auto;min-width:0;overflow-wrap:anywhere;font-weight:600}
+.cw-group-body {padding:0 0 8px}
+.cw-list .lst-rows {border-radius:8px;background:var(--surface-2)}
+.cw-list-small .lst-bar {display:none}
+.cw-list .lst-bar {gap:6px 8px}
+.cw-list .lst-search {min-width:0;flex:1 1 140px}
+.cw .cw-list input.lst-search:not([type=file]):not([type=radio]):not([type=range]):not([type=checkbox]) {min-height:36px;height:36px}
+.cw-list .lst-main {padding:6px 0;min-height:36px}
+.cw-list .lst-main .lst-text {flex:1 1 8em}
+.cw-item-detail,.cw-figures {overflow-wrap:anywhere}
+.cw-figures {color:var(--text)}
+.cw-list .lst-act .btn {min-height:36px;min-width:52px}
+.cw-list .lst-row.cw-in-use {background:var(--accent-soft)}
+.cw-list .lst-foot .btn {min-height:36px}
+.cw-swatch {flex:none;width:18px;height:18px;margin-right:6px;border-radius:5px;border:1px solid var(--line-2)}
+.cw-item-details {gap:6px}
+
+/* typing numbers is the last resort: last, closed and quiet */
+.cw-custom {border-top:1px dashed var(--line);padding-top:2px}
+.cw-custom>summary {font-size:12px}
+.cw-custom-body {padding:6px 0 4px}
+.cw-custom-note {margin:0}
+
+/* how a picture is engraved: two segments */
+.cw-engrave {gap:4px}
+.cw-segmented {display:inline-flex;flex-wrap:wrap;align-self:flex-start;max-width:100%;border:1px solid var(--line-2);border-radius:10px;overflow:hidden}
+.cw-seg {display:inline-flex;align-items:center;justify-content:center;min-height:36px;padding:6px 14px;margin:0;cursor:pointer;color:var(--muted);font-size:13px;font-weight:600;background:transparent}
+.cw-seg+.cw-seg {border-left:1px solid var(--line-2)}
+.cw-seg:hover {color:var(--text)}
+.cw-seg.on {background:var(--accent-soft);color:var(--text)}
+.cw-seg:focus-within {outline:2px solid var(--accent);outline-offset:-2px}
+.cw-raster-hint {margin:0}
+.cw-raster-plain {margin:0;padding:6px 10px}
 .cw-review-side {padding:8px 0;border-top:1px solid var(--line)}
 .cw-preview {display:block;width:100%;max-height:96px;object-fit:contain;border-radius:8px;background:#0e1420}
 .cw-problems {margin:0;padding-left:18px}

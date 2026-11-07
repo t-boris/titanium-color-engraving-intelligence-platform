@@ -6,8 +6,10 @@
      const canvas = CardCanvas.create(hostElement, {onSelect, onMove, onResize, onRotate, onDelete, onDuplicate, onUndo, onRedo, onEscape});
      canvas.show({size_mm: {width, height}, elements: [...view elements...], selection: [ids], grid: true});
 
-   A view element is {id, type, x, y, width, height, rotation, group, d, bounds, empty, problems, warnings, color?}: its centre, its box and
-   its rotation in degrees (clockwise on screen) and the SVG path data (``d``, even-odd, card coordinates) of its final geometry. List
+   A view element is {id, type, x, y, width, height, rotation, group, d, bounds, empty, problems, warnings, color?, raster?}: its centre, its box and
+   its rotation in degrees (clockwise on screen) and the SVG path data (``d``, even-odd, card coordinates) of its final geometry. A picture engraved
+   as a photo has ``raster`` ({url, width_px, height_px, dpi, dither, given}): it is drawn as that bitmap at its ``bounds`` (the rectangle of the
+   picture; for a turned picture the bitmap is its bounding box), inside a dotted outline, instead of the path. List
    order is z-order (the last one is on top). Handlers are called only when a gesture finishes, with values in mm rounded to 0.01 and
    degrees rounded to 0.1. After each handler the screen sends the new state with ``show()``: it redraws everything and drops the
    provisional picture the canvas keeps after a gesture, so a refused edit is undone on the screen too. The drawing lives in an SVG whose
@@ -270,8 +272,8 @@ const CardCanvas = (() => {
 .cc-stage:focus-visible{box-shadow:0 0 0 2px var(--accent,#a9b8ff)}
 .cc-svg{display:block;flex:none;margin:auto;overflow:visible;touch-action:none;user-select:none;-webkit-user-select:none}
 .cc-svg *{pointer-events:none}
-.cc-svg .cc-ink{pointer-events:fill;cursor:pointer}
-.cc-svg .cc-selected .cc-ink{cursor:move}
+.cc-svg .cc-ink,.cc-svg .cc-raster{pointer-events:fill;cursor:pointer}
+.cc-svg .cc-selected .cc-ink,.cc-svg .cc-selected .cc-raster{cursor:move}
 .cc-svg .cc-handle{pointer-events:all}
 .cc-card{fill:var(--cc-card);stroke:var(--cc-card-edge);stroke-width:1px;vector-effect:non-scaling-stroke}
 .cc-grid-minor,.cc-grid-major,.cc-tick{fill:none;vector-effect:non-scaling-stroke}
@@ -280,7 +282,8 @@ const CardCanvas = (() => {
 .cc-tick{stroke:var(--cc-ruler);stroke-width:1px}
 .cc-ruler{fill:var(--cc-ruler);font-family:var(--font,system-ui,sans-serif)}
 .cc-note{fill:var(--cc-ruler);font-family:var(--font,system-ui,sans-serif);font-weight:600}
-.cc-warn-box,.cc-ghost{fill:none;vector-effect:non-scaling-stroke}
+.cc-warn-box,.cc-ghost,.cc-raster-outline{fill:none;vector-effect:non-scaling-stroke}
+.cc-raster-outline{stroke:var(--cc-ghost);stroke-width:1px;stroke-dasharray:1 3;stroke-linecap:round}
 .cc-warn-box{stroke:var(--cc-warn);stroke-width:1.5px;stroke-dasharray:6 3}
 .cc-ghost{stroke:var(--cc-ghost);stroke-width:1px;stroke-dasharray:3 3;opacity:.75}
 .cc-sel-halo,.cc-sel-box,.cc-member,.cc-multi,.cc-stem,.cc-guide{fill:none;vector-effect:non-scaling-stroke}
@@ -399,15 +402,26 @@ const CardCanvas = (() => {
       layerBg.replaceChildren(...nodes);
     }
 
+    /** A picture engraved as a photo: its bitmap's url and the rectangle it lies on, or null (a traced picture, or nothing to engrave). */
+    const rasterOf = (el) => {
+      const r = el.raster, b = Array.isArray(el.bounds) && el.bounds.length === 4 ? el.bounds.map(Number) : null;
+      return r && r.url && b && b.every(Number.isFinite) && b[2] > b[0] && b[3] > b[1] ? {url: String(r.url), box: b} : null;
+    };
     const classesOf = (el, selected) => ['cc-el', `cc-el-${el.type}`, selected && 'cc-selected', Array.isArray(el.warnings) && el.warnings.length && 'cc-has-warning',
-      el.empty && 'cc-empty', Array.isArray(el.problems) && el.problems.length && 'cc-has-problems'].filter(Boolean).join(' ');
+      el.empty && 'cc-empty', Array.isArray(el.problems) && el.problems.length && 'cc-has-problems', rasterOf(el) && 'cc-el-raster'].filter(Boolean).join(' ');
     function drawElements() {
       groups.clear();
       const nodes = elements.map((el) => {
         const k = key(el.id), warnings = Array.isArray(el.warnings) ? el.warnings : [], problems = Array.isArray(el.problems) ? el.problems : [];
         const g = svgEl('g', {class: classesOf(el, sel.includes(k)), 'data-id': String(el.id)});
-        if (el.d) g.append(svgEl('path', {class: 'cc-ink', d: el.d, 'fill-rule': 'evenodd', fill: el.color || 'currentColor'}));
-        const note = [...problems, ...warnings.map((w) => w.message || w.code)].filter(Boolean).join('; ');
+        const raster = rasterOf(el);
+        if (raster) {                                   // a photo: the dithered bitmap where the picture lies, not the filled rectangle of its path
+          const [x0, y0, x1, y1] = raster.box;
+          g.append(svgEl('image', {class: 'cc-raster', href: raster.url, x: fmt(x0), y: fmt(y0), width: fmt(x1 - x0), height: fmt(y1 - y0), preserveAspectRatio: 'none'}),
+            svgEl('rect', {class: 'cc-raster-outline', x: fmt(x0), y: fmt(y0), width: fmt(x1 - x0), height: fmt(y1 - y0)}));
+        } else if (el.d) g.append(svgEl('path', {class: 'cc-ink', d: el.d, 'fill-rule': 'evenodd', fill: el.color || 'currentColor'}));
+        const note = [...problems, ...warnings.map((w) => w.message || w.code),
+          raster && el.raster.given === false ? 'Plain grey preview: the engraving settings give no line interval or image mode yet' : null].filter(Boolean).join('; ');
         if (warnings.length) {
           const b = Array.isArray(el.bounds) && el.bounds.length === 4 ? el.bounds.map(Number) : aabb(el), m = 0.3;
           g.append(svgEl('rect', {class: 'cc-warn-box', x: fmt(b[0] - m), y: fmt(b[1] - m), width: fmt(b[2] - b[0] + 2 * m), height: fmt(b[3] - b[1] + 2 * m)}));

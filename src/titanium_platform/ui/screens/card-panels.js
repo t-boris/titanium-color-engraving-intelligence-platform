@@ -1,6 +1,7 @@
 /* Panels of the business-card editor (card-work.js): number, text, choice and check controls bound to one field of an element, the forms of
    the six element types, the physical-suitability box of a QR code, the library pickers, the list of layers and the engraving panel with
-   its review. They draw what the screen hands them and report every edit through ``env``; they never talk to the server themselves.
+   its review (the choice of ready engraving settings itself is card-settings.js). They draw what the screen hands them and report every edit
+   through ``env``; they never talk to the server themselves.
    A control shows the value the server has, laid under what the person typed that is not stored yet (``local()``, save-state.js), and never
    rewrites a box the person is typing in. An edit resolves to its error (shown beside the control) or to null. */
 'use strict';
@@ -10,7 +11,7 @@ const CardPanels = (() => {
   const DEBOUNCE_MS = 700;                                  // the pause after typing before a text is sent (as lettering.js)
   const SIDE_NAME = {front: 'Front', back: 'Back'};
 
-  // The limits are the server's: card_work._checked (position, size, rotation), SETTING_FIELDS and the passes (engraving settings), _card_size (card).
+  // The limits are the server's: card_work._checked (position, size, rotation), SETTING_FIELDS, EXTRA_NUMBERS and the passes (engraving settings), _card_size (card).
   const Q = {
     x: {label: 'Center X', unit: 'mm', min: -1000, max: 1000}, y: {label: 'Center Y', unit: 'mm', min: -1000, max: 1000},
     width: {label: 'Width', unit: 'mm', min: 0.2, max: 500}, height: {label: 'Height', unit: 'mm', min: 0.2, max: 500},
@@ -20,8 +21,9 @@ const CardPanels = (() => {
     frequency: {label: 'Frequency', unit: 'kHz', min: 0, minOpen: true, max: 10000},
     pulse_width: {label: 'Pulse width (optional)', unit: 'ns', min: 0, minOpen: true, max: 10000},
     line_interval: {label: 'Line interval', unit: 'mm', min: 0, minOpen: true, max: 10},
-    passes: {label: 'Passes', unit: '', integer: true, min: 1, max: 100}};
-  const NUMBERS = ['power', 'speed', 'frequency', 'pulse_width', 'line_interval'];
+    passes: {label: 'Passes', unit: '', integer: true, min: 1, max: 100},
+    min_power: {label: 'Minimum power', unit: '%', min: 0, max: 100}, scan_angle: {label: 'Scan angle', unit: 'degrees', min: -360, max: 360},
+    dot_width: {label: 'Dot width', unit: 'mm', min: 0, max: 5}};
   const KIND_NAME = {link: 'Link', vcard: 'Contact card (vCard)', text: 'Text', wifi: 'Wi-Fi network', email: 'Email', phone: 'Phone number'};
   const OPTION_NAME = {nopass: 'No password'};
   const ECC_NAME = {L: 'L: about 7 % of the code can be damaged', M: 'M: about 15 %', Q: 'Q: about 25 %', H: 'H: about 30 %'};
@@ -174,19 +176,46 @@ const CardPanels = (() => {
     sync(next) { for (const [spec, c] of params) c.sync(next[group][spec.name]); }};
   }
 
-  /** A traced picture: how it was added and the tracing parameters (the canvas shows the traced shapes after every change). */
+  /** How a picture is engraved: as traced shapes (the vector settings of its engraving settings) or as a photo (raster: image mode, line interval and
+      minimum power of its engraving settings). A segmented choice of two; ``set(value)`` resolves to the error or null. */
+  function engraveControl(e, set) {
+    const name = `cw-engrave-${e.id}`, error = h('p', {class: 'alert bad small', role: 'alert', hidden: true});
+    const radios = [['vector', 'Traced shapes'], ['raster', 'Photo (raster)']].map(([value, text]) => {
+      const input = h('input', {type: 'radio', class: 'sr-only', name, value, 'aria-label': text, onChange: async () => {
+        const failed = message(await set(value));
+        error.textContent = failed; error.hidden = !failed;
+      }});
+      return {input, value, label: h('label', {class: 'cw-seg', 'data-engrave': value}, input, h('span', {}, text))};
+    });
+    const group = h('div', {class: 'cw-segmented', role: 'radiogroup', 'aria-label': 'Engrave as'}, radios.map((r) => r.label));
+    return {el: h('div', {class: 'stack cw-engrave'}, h('span', {class: 'small'}, 'Engrave as'), group, error),
+      sync(value) { for (const r of radios) { r.input.checked = r.value === value; r.label.classList.toggle('on', r.value === value); } }};
+  }
+
+  /** A picture: how it was added, how it is engraved (traced shapes or a photo) and the tracing parameters (the canvas shows the traced shapes, or
+      the dithered photo, after every change). A photo is not traced, so only "invert" of the tracing remains for it. */
   function imageForm(e, env) {
     const params = (((env.lib().image || {}).params) || []).map((spec) => [spec, paramControl(spec, e, `image.${spec.name}`, env)]);
     const info = h('p', {class: 'small muted'});
-    return {el: h('div', {class: 'stack cw-form'}, info, params.map(([, c]) => c.el)),
+    const engrave = engraveControl(e, (value) => env.set(e, 'image.engrave', value, 'Engrave as'));
+    const hint = h('p', {class: 'small muted cw-raster-hint', hidden: true},
+      'Engraved as a photo with the photo settings of the chosen engraving settings (image mode, line interval, minimum power).');
+    const plain = h('p', {class: 'alert warn small cw-raster-plain', role: 'status', hidden: true},
+      'The engraving settings of this picture give no line interval or image mode yet, so the preview is plain grey at a default resolution.');
+    return {el: h('div', {class: 'stack cw-form'}, info, engrave.el, hint, plain, params.map(([, c]) => c.el)),
       sync(next) {
         const image = next.image, local = env.local(), own = (name) => pick(local, `${e.id}:image.${name}`, image[name]);
+        const raster = own('engrave') === 'raster';
         fill(info, `${image.name || 'picture'} · ${image.size ? `${image.size[0]} × ${image.size[1]} px · ` : ''}`
           + (image.origin === 'generated' ? `generated from “${image.prompt || ''}”` : 'imported graphic'));
+        engrave.sync(raster ? 'raster' : 'vector');
+        hint.hidden = !raster;
+        plain.hidden = !(raster && next.raster && next.raster.given === false);
         for (const [spec, c] of params) {
           c.sync(image[spec.name]);
           if (spec.name === 'threshold') c.setDisabled(!!own('auto_threshold'));              // the grey level is found by the program while the box is ticked
-          if (spec.name === 'detail' || spec.name === 'strength') c.el.hidden = own('treatment') !== 'pencil';   // they shape the pencil look only
+          // a photo is not traced: only "invert" applies; the pencil look is shaped by detail and strength only
+          c.el.hidden = raster ? spec.name !== 'invert' : (spec.name === 'detail' || spec.name === 'strength') && own('treatment') !== 'pencil';
         }
       }};
   }
@@ -268,69 +297,36 @@ const CardPanels = (() => {
 
   // ---- engraving settings and the review ---------------------------------------------------------------------------------------------
 
-  /** One set of engraving settings: a line (name, mode, figures, use) that opens its form. ``env``: setSettings(id, changes, label), settingsDelete(id). */
-  function setRow(first, env) {
-    const id = first.id, K = (p) => `s${id}:${p}`, local = env.local;
-    const commit = (changes, label) => env.setSettings(id, changes, label);
-    const name = textControl({label: 'Name', key: K('name'), local, nonEmpty: true, commit: (v) => commit({name: v}, 'Name')});
-    const mode = h('div', {class: 'row cw-mode', role: 'radiogroup', 'aria-label': 'Mode'}, [['fill', 'Fill'], ['line', 'Line']].map(([value, text]) => h('label', {class: 'row small'},
-      h('input', {type: 'radio', name: `cw-mode-${id}`, value, 'aria-label': text, onChange: async () => { error(message(await commit({mode: value}, 'Mode'))); }}), h('span', {}, text))));
-    const fields = NUMBERS.map((p) => [p, numberControl({label: Q[p].label, key: K(p), local, quantity: Q[p], clearable: true, commit: (v) => commit({[p]: v}, Q[p].label)})]);
-    const passes = numberControl({label: 'Passes', key: K('passes'), local, quantity: Q.passes, commit: (v) => commit({passes: v}, 'Passes')});
-    const failure = h('p', {class: 'alert bad small', role: 'alert', hidden: true});
-    const error = (text) => { failure.textContent = text; failure.hidden = !text; };
-    const usage = h('p', {class: 'small muted'}), summary = h('span', {class: 'cw-set-sum small muted'}), mark = h('strong', {});
-    const flags = h('span', {class: 'cw-set-flags'});
-    const remove = btn('Delete settings', () => env.settingsDelete(id), 'btn-small danger');
-    const el = h('details', {class: 'cw-set', 'data-set': String(id)},
-      h('summary', {}, mark, ' ', flags, summary),
-      h('div', {class: 'stack cw-set-body'}, name.el, mode, fields.map(([, c]) => c.el), passes.el, usage, failure, remove));
-    return {el, id, isOpen: () => el.open, open: () => { el.open = true; },
-      sync(set, used, count) {
-        fill(mark, set.name);
-        name.sync(set.name);
-        const now = pick(local(), K('mode'), set.mode);
-        for (const radio of mode.querySelectorAll('input')) radio.checked = radio.value === now;
-        for (const [p, c] of fields) { c.sync(set[p]); if (p === 'line_interval') c.el.hidden = now === 'line'; }
-        passes.sync(set.passes);
-        fill(summary, ` ${set.mode === 'fill' ? 'Fill' : 'Line'} · ${set.power ?? '—'} % · ${set.speed ?? '—'} mm/s · ${set.frequency ?? '—'} kHz`);
-        fill(flags, set.id === used.defaultId ? pill('default') : null, used.missing.length ? pill(`needs ${used.missing.join(', ')}`, 'warn') : null);
-        fill(usage, used.names.length ? `Used by: ${used.names.slice(0, 6).join(', ')}${used.names.length > 6 ? ` and ${used.names.length - 6} more` : ''}.`
-          : 'No element uses these settings (elements without their own settings use the default ones).');
-        remove.disabled = count < 2;
-        remove.setAttribute('title', count < 2 ? 'A card keeps at least one set of engraving settings' : 'Delete these engraving settings');
-      }};
-  }
-
-  /** The panel shown with nothing selected: the sets of engraving settings and the review of each side. ``env``: view(), local(), select(id, side),
-      settingsAdd(), setSettings, settingsDelete. */
+  /** The panel shown with nothing selected: the laser, lens and material of the card, the sets of engraving settings (each a choice of ready
+      settings, card-settings.js) and the review of each side. ``env``: view(), local(), setup(), select(id, side), settingsAdd(), setSettings,
+      settingsDelete, and what card-settings.js asks of it (choices, applyChoice, confirmSettings, customSettings, setSetup). */
   function engravingPanel(env) {
     const rows = new Map(), setsBox = h('div', {class: 'cw-sets'}), reviewBox = h('div', {class: 'stack cw-review'});
     const previews = Object.fromEntries(Object.keys(SIDE_NAME).map((s) => [s, h('img', {class: 'cw-preview', alt: `${SIDE_NAME[s]} as it will be engraved`})]));
     const heading = h('h4', {}, 'Engraving settings'), failure = h('p', {class: 'alert bad small', role: 'alert', hidden: true});
     const add = btn('Add settings', async () => { const text = message(await env.settingsAdd()); failure.textContent = text; failure.hidden = !text; }, 'btn-small');
+    const setup = CardSettings.setupBar(env);
     const more = {front: false, back: false};
     let ids = null, known = new Set();
-    /** Which elements use a set, and which of its figures are missing (from the review the server made). */
+    /** Which elements use a set (from the review the server made). */
     function usageOf(view, id) {
-      const names = [], missing = new Set();
-      for (const side of Object.keys(SIDE_NAME)) {
-        const r = view.review[side];
-        names.push(...r.elements.filter((x) => x.effective_settings_id === id).map((x) => x.name));
-        for (const s of r.sets) if (s.settings_id === id) s.missing.forEach((m) => missing.add(m));
-      }
-      return {names, missing: [...missing], defaultId: view.default_settings_id};
+      const names = [];
+      for (const side of Object.keys(SIDE_NAME)) names.push(...view.review[side].elements.filter((x) => x.effective_settings_id === id).map((x) => x.name));
+      return {names, defaultId: view.default_settings_id};
     }
     function reviewOf(view, side) {
       const r = view.review[side], elements = view.sides[side].elements;
       const rowsOf = r.elements.filter((x) => !x.complete || x.empty);
+      /** What a set still needs, in the server's words: from the review of the side, else from the set itself. */
+      const needsOf = (settingsId) => {
+        const inReview = r.sets.find((s) => s.settings_id === settingsId), set = view.settings.find((s) => s.id === settingsId);
+        const list = (inReview && inReview.needs) || (set && set.status && set.status.needs) || [];
+        return list.length ? list.join('; ') : 'figures';
+      };
       const why = (x) => {
         const bits = [];
         if (x.empty) bits.push(((elements.find((el) => el.id === x.id) || {}).problems || [])[0] || 'nothing to engrave');
-        if (!x.complete) {
-          const lacking = (r.sets.find((s) => s.settings_id === x.effective_settings_id) || {missing: []}).missing;
-          bits.push(`its engraving settings lack ${lacking.length ? lacking.join(', ') : 'figures'}`);
-        }
+        if (!x.complete) bits.push(`its engraving settings still need ${needsOf(x.effective_settings_id)}`);
         return bits.join('; ');
       };
       const shownRows = more[side] ? rowsOf : rowsOf.slice(0, 5);
@@ -346,15 +342,17 @@ const CardPanels = (() => {
     function draw(view) {
       fill(reviewBox, h('h4', {}, 'Review before export'), Object.keys(SIDE_NAME).map((side) => reviewOf(view, side)));
     }
-    return {el: h('div', {class: 'stack cw-engraving'}, h('div', {class: 'row'}, heading, h('span', {class: 'spacer'}), add), failure, setsBox, reviewBox),
+    const controls = {numberControl, textControl, Q};
+    return {el: h('div', {class: 'stack cw-engraving'}, setup.el, h('div', {class: 'row'}, heading, h('span', {class: 'spacer'}), add), failure, setsBox, reviewBox),
       open(id) { const row = rows.get(id); if (row) row.open(); },
       sync(view) {
+        setup.sync(view.setup || {device: null, lens: null, material: null, complete: false, missing: []});
         const key = view.settings.map((s) => s.id).join(',');
         if (key !== ids) {
           // the sets that were open stay open, a set that has just been added opens, and so does the only set of a card
           const was = new Set([...rows.values()].filter((r) => r.isOpen()).map((r) => r.id));
           rows.clear();
-          for (const s of view.settings) rows.set(s.id, setRow(s, env));
+          for (const s of view.settings) rows.set(s.id, CardSettings.setRow(s, env, controls));
           fill(setsBox, [...rows.values()].map((r) => r.el));
           for (const r of rows.values()) if (was.has(r.id) || (ids !== null && !known.has(r.id)) || (ids === null && view.settings.length === 1)) r.open();
           ids = key;
