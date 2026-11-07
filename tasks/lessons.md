@@ -792,3 +792,12 @@ again in the next commit). Add the exact files a tool or an edit produced; check
   now) or needing the operator, a screen reader, or Electron (record as not executed with the reason). Only the second kind may stay open
   at release. A browser sweep that lists every unnamed control and every number without a unit is cheaper than arguing about which
   forms were migrated. A fix after a published release is a new patch version; never rewrite the published one.
+
+## A test that can reach the network will, with the developer key on this computer (feature-2, 2026-11-06)
+
+- **What happened.** The first API test for generating a card picture used only `research.switched_on = False` to stay offline. `create_app`
+  re-reads the AI switch from the workshop when the test client starts, so the switch was on again; the developer key in `.env.local` was
+  found and the test made two real image-service requests (no output printed, small cost) before it failed on its own wrong assertion.
+- **Rule.** A test of anything that can call an outside service patches the *client factory* (`research.openai_client` raises) in an autouse
+  fixture, not only a switch that application start-up can reset. A test that wants the service hands the code a fake client. Check the
+  first run of such a test for unexpectedly passing "refusal" assertions: a success where a refusal was expected means it went outside.
