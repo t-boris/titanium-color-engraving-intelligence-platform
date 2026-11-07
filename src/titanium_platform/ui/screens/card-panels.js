@@ -236,7 +236,7 @@ const CardPanels = (() => {
 
   /** A compact searchable grid of library items; pressing one calls ``onPick(item)``. */
   function picker(kind, items, onPick) {
-    return App.list({id: `cw.pick.${kind}`, items, key: (i) => i.name, search: (i) => `${i.label} ${i.name}`, page: kind === 'icon' ? 30 : 18, className: 'cw-pick',
+    return App.list({id: `cw.pick.${kind}`, items, key: (i) => i.name, search: (i) => `${i.label} ${i.name}`, page: kind === 'icon' ? 30 : 18, className: `cw-pick cw-pick-${kind}`,
       row: (i) => [h('button', {type: 'button', class: 'cw-pick-item', title: i.label, 'aria-label': `Add ${i.label}`, onClick: () => onPick(i)},
         thumb(i.preview), h('span', {class: 'cw-pick-label small'}, i.label))],
       empty: 'The library has no items of this kind.', noResults: 'Nothing in the library matches this search.'}).el;

@@ -55,6 +55,13 @@
 .cw-pick-label {max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cw-thumb {width:34px;height:34px;color:#dfe7f7}
 
+/* Keep frame choices aligned and their names readable in the narrow panel. */
+.cw-pick-frame .lst-rows,.cw-pick-shape .lst-rows,.cw-pick-icon .lst-rows {grid-template-columns:repeat(3,minmax(0,1fr))}
+:is(.cw-pick-frame,.cw-pick-shape,.cw-pick-icon) .lst-row,:is(.cw-pick-frame,.cw-pick-shape,.cw-pick-icon) .lst-row:last-of-type {border:0;border-radius:0;background:none}
+:is(.cw-pick-frame,.cw-pick-shape,.cw-pick-icon) .lst-main {height:100%}
+:is(.cw-pick-frame,.cw-pick-shape,.cw-pick-icon) .cw-pick-item {height:100%;min-height:96px;justify-content:flex-start;border-radius:0;text-align:center}
+:is(.cw-pick-frame,.cw-pick-shape,.cw-pick-icon) .cw-pick-label {overflow:visible;white-space:normal;overflow-wrap:anywhere;line-height:1.25}
+
 /* layers */
 .cw-layers-list .lst-rows {border-radius:10px}
 .cw-layers-list .lst-row {padding:0 6px}
