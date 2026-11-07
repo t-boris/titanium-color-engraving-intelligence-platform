@@ -76,9 +76,7 @@ resize, rotate, reorder, duplicate, delete, group, ungroup, assign_settings, set
   venv (CI's "installed wheel" smoke plus the card screens and `/api/card-library`: `wheel OK 0.41.0`); frozen core `titanium-core --smoke` says 0.41.0.
   Live data backed up first (`backups/titanium-before-0.41.0-20261107T011250Z.sqlite`, integrity ok), wheel installed into `~/.titanium-platform-app`
   (0.41.0, all libraries import), served on a copy of the backup: `/api/version` 0.41.0, 8 works, `card` facet, foreign Host answers 421.
-- Not deployed: the desktop application `/Applications/Laser workshop.app` (0.40.3) was running and holds the live workshop lock, so it was not quit
-  or replaced; reinstall it from a desktop build once the operator closes it. The branch is not pushed and has no pull request (excluded from this goal),
-  so CI has not run; its steps were mirrored locally. Issue #42 stays open (`status: in progress`); feature-2 stays `implementing` until the work is merged.
+- Desktop application (added later the same day, at the operator's request): `TCE_SIGN=1 npm run make -- --arch arm64` gave `Laser workshop-darwin-arm64-0.41.0.zip` (260 541 268 bytes, SHA-256 `db946275ab8ba12bc0f859a5fec8b3787e0d4773dcc626e6aecd974c023413c2`), signed with the Developer ID (`codesign --verify --deep --strict` ok, unnotarized, DEC-044); the packaged `--smoke` answered `{"smoke":"ok","packaged":true,"ui":2}` with core 0.41.0. The app was quit (no re-check running), the live data backed up (`backups/titanium-before-reinstall-0.41.0-20261107T142214Z.sqlite`, integrity ok), the old 0.40.3 bundle moved aside and 0.41.0 installed into `/Applications/Laser workshop.app`; it starts as shell 0.41.0 and shows the workshop picker. No GitHub release or tag was made. The branch is not pushed and has no pull request (excluded from this goal), so CI has not run; its steps were mirrored locally. Issue #42 stays open (`status: in progress`); feature-2 stays `implementing` until the work is merged.
 
 
 
