@@ -58,6 +58,7 @@ def test_screens_are_loaded_after_the_helpers_they_use():
                       # the choice of ready engraving settings is built by card-settings.js, which card-panels.js hands its controls to
                       ("/app.js", "/screens/card-settings.js"), ("/screens/card-settings.js", "/screens/card-panels.js"), ("/screens/card-settings.js", "/screens/card-work.js"),
                       ("/screens/card-panels.js", "/screens/card-work.js"), ("/screens/card-canvas.js", "/screens/card-work.js"), ("/save-state.js", "/screens/card-work.js"),
+                      ("/app.js", "/screens/card-layout.js"), ("/screens/card-layout.js", "/screens/card-work.js"),      # the splitters of the columns are mounted by the screen
                       ("/screens/lifecycle.js", "/screens/card-work.js"), ("/screens/vector-workspace.js", "/screens/card-work.js"), ("/screens/card-work.js", "/screens/works.js"),
                       # the selector of a stock record (ux-growing-collections-p0, REQ-001) is loaded before every file that builds one
                       *[("/screens/material-picker.js", user) for user in ("/context.js", "/screens/vector.js", "/screens/labs.js", "/screens/plate-dialog.js",

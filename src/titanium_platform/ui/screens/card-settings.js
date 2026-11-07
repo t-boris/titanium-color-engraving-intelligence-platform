@@ -10,7 +10,13 @@
      env.choices() -> {data, loading, error}, env.reloadChoices()                          the ready settings of the card's setup (lazy, cached)
      env.applyChoice(id, choiceId), env.confirmSettings(id), env.customSettings(id)        choose, confirm, keep the numbers as typed by hand
      env.setSetup({device_id, lens_id, material_id})                                       resolves to the error text or null
-   Every edit resolves to its error (an Error) or to null. */
+   Every edit resolves to its error (an Error) or to null.
+
+   What the operator does is choose the engraving of what they selected: ``engravingBlock`` sits at the top of the inspector of an element or
+   of several, shows what the element engraves with (colour swatch, name, figures, state) and opens ``pickerDialog``, a wide dialog with the
+   types and groups on the left and the settings with their figures on the right; choosing there gives the settings to the selected
+   elements at once (env.assignChoice(ids, choiceId)). Sets of settings stay behind "Settings details" and in the panel shown with nothing
+   selected. */
 'use strict';
 const CardSettings = (() => {
   const {h, fill, btn, pill, field} = App;
@@ -173,7 +179,7 @@ const CardSettings = (() => {
       fill(body, entry.list.el);
     }
     function groupBox(type, group, index) {
-      const key = `${type}/${group.source}`, wanted = groupOpen.has(key) ? groupOpen.get(key) : index === 0;
+      const key = `${type}/${index}`, wanted = groupOpen.has(key) ? groupOpen.get(key) : index === 0;       // by place: the groups of one type share a source, only their labels differ
       const body = h('div', {class: 'cw-group-body'});
       const count = group.count ?? (group.items || []).length;
       const box = h('details', {class: 'cw-group', 'data-source': group.source},
@@ -231,7 +237,8 @@ const CardSettings = (() => {
 
   /** One set: a line (name, state, where its figures come from) that opens to its figures, the choice of ready settings and, last and quiet,
       the custom values. ``controls`` are card-panels.js's {numberControl, textControl, Q}. */
-  function setRow(first, env, controls) {
+  function setRow(first, env, controls, options = {}) {
+    const compact = !!options.compact;                       // inside the inspector of an element: its figures and custom values only, the choice is the dialog's
     const {numberControl, textControl, Q} = controls;
     const id = first.id, K = (p) => `s${id}:${p}`, local = env.local;
     const commit = (changes, label) => env.setSettings(id, changes, label);
@@ -251,6 +258,11 @@ const CardSettings = (() => {
     const choose = btn('Choose others', () => { chooseOpen = !chooseOpen; paintChoose(); if (chooseOpen) chooser_.focus(); }, 'btn-small cw-choose-btn');
     choose.setAttribute('aria-controls', `cw-choose-${id}`);
     const decide = h('div', {class: 'row cw-decide'}, confirmSlot, choose);
+    // the same wide choice as in the inspector of an element, here for this whole set (the card's default one is what an element without its own choice engraves with)
+    const wide = btn('Choose colour / engraving…', () => {
+      const o = last.origin;
+      pickerDialog(env, {subject: `“${last.name}”`, inUse: o && o.kind === 'choice' && status.state === 'chosen' ? {id: o.choice_id, type: o.type} : null, onPick: (item) => env.applyChoice(id, item.id)});
+    }, 'btn-small cw-wide-btn');
 
     const customBody = h('div', {class: 'stack cw-custom-body'});
     const customBox = h('details', {class: 'cw-custom', onToggle: () => { if (customBox.open) buildCustom(); }},
@@ -283,9 +295,10 @@ const CardSettings = (() => {
 
     const remove = btn('Delete settings', () => env.settingsDelete(id), 'btn-small danger');
     const usage = h('p', {class: 'small muted'});
-    const head = h('summary', {}, mark, ' ', flags, chip, origin, needs);
-    const el = h('details', {class: 'cw-set', 'data-set': String(id), onToggle: () => { if (el.open) paintChoose(); }},
-      head, h('div', {class: 'stack cw-set-body'}, name.el, note, values, decide, chooser_.el, failure, customBox, usage, remove));
+    const head = h('summary', {}, ...(compact ? ['Figures and custom values of these settings'] : [mark, ' ', flags, chip, origin, needs]));
+    const el = h('details', {class: 'cw-set' + (compact ? ' cw-set-compact' : ''), 'data-set': String(id), onToggle: () => { if (el.open) paintChoose(); }},
+      head, h('div', {class: 'stack cw-set-body'}, ...(compact ? [values, failure, customBox, usage]
+        : [h('div', {class: 'row cw-wide'}, wide), name.el, note, values, decide, chooser_.el, failure, customBox, usage, remove])));
 
     async function confirm() {
       say(message(await env.confirmSettings(id)));
@@ -319,7 +332,7 @@ const CardSettings = (() => {
       choose.setAttribute('aria-expanded', String(shown));
       chooser_.el.hidden = !shown;
       decide.hidden = auto && !confirmSlot.firstChild;
-      if (shown && el.open) chooser_.activate();
+      if (shown && el.open && !compact) chooser_.activate();
     }
 
     return {el, id, isOpen: () => el.open, open: () => { el.open = true; paintChoose(); },
@@ -345,6 +358,206 @@ const CardSettings = (() => {
         remove.disabled = count < 2;
         remove.setAttribute('title', count < 2 ? 'A card keeps at least one set of engraving settings' : 'Delete these engraving settings');
       }};
+  }
+
+  // ---- the wide choice, for what is selected ----------------------------------------------------------------------------------------------
+
+  const PICK_PAGE = 12;                                       // rows shown at once in the wide list (it has room); a filter box is always there
+  /** The dialog that chooses ready settings FOR what is selected: the types of engraving and their groups on the left, the settings of the chosen
+      group (or of the whole type) on the right, each with its figures, its evidence and a Use button. ``onPick(item)`` resolves to an error or
+      null; the dialog closes by itself when the choice was taken. ``inUse`` ({id, type}) marks the setting the selection engraves with now and
+      ``prefer`` names the type to show first (pictures engraved as photos want ``photo``). */
+  function pickerDialog(env, {subject, prefer = null, inUse = null, onPick}) {
+    let selected = null, group = '', seen = null, waiting = null, picked = false, dlg = null, version = 0;
+    const lists = new Map();
+    const setup = env.setup() || {};
+    const where = [setup.device ? setup.device.name : 'no laser', setup.lens ? setup.lens.name : 'unknown lens', setup.material ? setup.material.name : 'no material'].join(' · ');
+    const types = h('div', {role: 'tablist', 'aria-orientation': 'vertical', class: 'cw-pick-types', 'aria-label': 'Type of engraving'});
+    const groupsBox = h('div', {class: 'cw-pick-groups', role: 'group', 'aria-label': 'Groups of this type'});
+    const main = h('div', {class: 'stack cw-pick-main'});
+    const failure = h('p', {class: 'alert bad small', role: 'alert', hidden: true});
+    const said = h('p', {class: 'sr-only', role: 'status', 'aria-live': 'polite'});
+    const body = h('div', {class: 'stack cw-picker'},
+      h('p', {class: 'small muted cw-pick-note'}, `Settings the workshop measured for ${where}. Nothing from another laser, lens or material is offered.`), failure, said,
+      h('div', {class: 'cw-pick-cols'}, h('div', {class: 'stack cw-pick-side'}, types, groupsBox), main));
+
+    const known = (data, type) => { const info = infoOf(data, type); return !!info && info.known; };
+    function firstType(data) {
+      for (const wanted of [prefer, inUse && inUse.type]) if (wanted && known(data, wanted) && total(infoOf(data, wanted)) > 0) return wanted;
+      return TYPES.map(([type]) => type).find((type) => known(data, type) && total(infoOf(data, type)) > 0) || 'color';
+    }
+    function pick(type) { selected = type; group = ''; picked = true; draw(); }
+    function pickGroup(place) { group = place; draw(); }
+    types.addEventListener('keydown', (ev) => {
+      const at = TYPES.findIndex(([type]) => type === selected);
+      const to = ev.key === 'ArrowDown' ? (at + 1) % TYPES.length : ev.key === 'ArrowUp' ? (at + TYPES.length - 1) % TYPES.length : ev.key === 'Home' ? 0 : ev.key === 'End' ? TYPES.length - 1 : -1;
+      if (to < 0) return;
+      ev.preventDefault();
+      pick(TYPES[to][0]);
+      const next = [...types.querySelectorAll('button')].find((b) => b.getAttribute('data-type') === TYPES[to][0]);
+      if (next) next.focus();
+    });
+
+    async function use(item) {
+      if (inUse && item.id === inUse.id) { dlg.close(); return; }
+      const error = message(await onPick(item));
+      failure.textContent = error; failure.hidden = !error;
+      if (error) { env.reloadChoices(); refresh(); return; }
+      fill(said, `Using “${item.label}” for ${subject}.`);
+      dlg.close();
+    }
+    function useButton(item) {
+      const on = !!inUse && item.id === inUse.id;
+      const b = btn(on ? 'In use' : 'Use', () => use(item), 'btn-small cw-use' + (on ? '' : ' primary'));
+      b.setAttribute('aria-pressed', String(on));
+      b.setAttribute('aria-label', on ? `${item.label}: in use` : `Use ${item.label} for ${subject}`);
+      b.setAttribute('data-choice', item.id);
+      return b;
+    }
+    function rowOf(item) {
+      const swatch = item.swatch && /^#[0-9a-f]{6}$/i.test(item.swatch.srgb || '')
+        ? h('span', {class: 'sw cw-swatch', style: `background:${item.swatch.srgb}`, role: 'img', 'aria-label': `Colour ${item.swatch.srgb}`}) : null;
+      return [swatch, h('strong', {class: 'lst-text cw-item-label'}, item.label), evidenceBadge(item), h('span', {class: 'small cw-figures'}, figureLine(item.settings) || 'no figures given')];
+    }
+    function listOf(info) {
+      const key = `${selected}/${group}/${version}`;
+      let entry = lists.get(key);
+      if (!entry) {
+        const groups = info.groups || [];
+        const items = group === '' ? groups.flatMap((g) => g.items || []) : ((groups[Number(group)] || {}).items || []);
+        const list = App.list({items, key: (i) => i.id, page: PICK_PAGE, className: 'cw-list cw-list-wide', search: (i) => `${i.label} ${i.detail || ''} ${figureLine(i.settings)}`,
+          rowClass: (i) => (inUse && i.id === inUse.id ? 'cw-in-use' : ''), row: rowOf, details: (i) => sourceDetails(i), actions: (i) => [useButton(i)],
+          empty: 'No settings in this group.', noResults: 'No setting matches this filter.'});
+        const box = list.el.querySelector('.lst-search');
+        if (box) { box.setAttribute('aria-label', 'Filter the settings'); box.setAttribute('placeholder', 'Filter…'); }
+        entry = {list};
+        lists.set(key, entry);
+      }
+      return entry.list.el;
+    }
+    function paintTypes(data) {
+      fill(types, TYPES.map(([type, label]) => {
+        const info = infoOf(data, type), on = type === selected;
+        const b = h('button', {type: 'button', role: 'tab', class: 'cw-pick-type' + (on ? ' active' : ''), 'data-type': type, 'aria-selected': String(on), tabindex: on ? '0' : '-1', onClick: () => pick(type)},
+          h('span', {class: 'cw-type-name'}, label), ' ', h('span', {class: 'cw-type-count muted'}, !data ? '' : info && info.known ? String(total(info)) : 'unknown'));
+        return b;
+      }));
+    }
+    function paintGroups(info) {
+      const groups = info && info.known ? info.groups || [] : [];
+      if (groups.length < 2) { fill(groupsBox, null); groupsBox.hidden = true; return; }
+      groupsBox.hidden = false;
+      const one = (place, label, count) => h('button', {type: 'button', class: 'cw-pick-group' + (group === place ? ' active' : ''), 'data-group': place, 'aria-pressed': String(group === place),
+        onClick: () => pickGroup(place)}, h('span', {class: 'cw-group-name'}, label), ' ', h('span', {class: 'cw-type-count muted'}, String(count)));
+      fill(groupsBox, h('p', {class: 'small muted cw-pick-heading'}, `${typeName(selected)}: groups`), one('', 'All', total(info)), groups.map((g, i) => one(String(i), g.label, g.count ?? (g.items || []).length)));
+    }
+    function paintMain(data, c) {
+      if (!data) {
+        fill(main, c.error ? h('div', {class: 'alert bad small', role: 'alert'}, `Could not load the ready settings: ${c.error} `, btn('Retry', () => { env.reloadChoices(); refresh(); }, 'btn-small'))
+          : h('p', {class: 'small muted', role: 'status'}, 'Loading the ready settings…'));
+        return;
+      }
+      const info = infoOf(data, selected) || {known: false, reason: 'The workshop has no information about this type of engraving for this laser, lens and material.'};
+      if (!info.known) {
+        fill(main, h('p', {class: 'cw-unknown-title'}, h('strong', {}, `${typeName(selected)}: unknown`)),
+          h('p', {class: 'alert warn small cw-reason', role: 'status'}, info.reason || 'Nothing of this type has been measured for this laser, lens and material.'));
+        return;
+      }
+      fill(main, h('p', {class: 'cw-pick-heading'}, h('strong', {}, typeName(selected)), group ? ` · ${((info.groups || [])[Number(group)] || {}).label || ''}` : ''), listOf(info));
+    }
+    function draw() {
+      const c = env.choices(), data = c.data;
+      if (data !== seen) { seen = data; version += 1; }
+      if (!picked && data) selected = firstType(data);
+      if (!selected) selected = prefer || (inUse && inUse.type) || 'color';
+      paintTypes(data);
+      paintGroups(data ? infoOf(data, selected) : null);
+      paintMain(data, c);
+    }
+    function refresh() {
+      const c = env.choices();
+      if (c.promise && waiting !== c.promise) { waiting = c.promise; c.promise.then(draw, draw); }
+      draw();
+    }
+    dlg = App.modal(`Choose the engraving for ${subject}`, body, [{label: 'Close', run: (m) => m.close(), initial: true}]);
+    refresh();
+    return dlg;
+  }
+
+  // ---- the engraving of what is selected, at the top of its inspector -------------------------------------------------------------------
+
+  /** Which elements (of both sides) engrave with a set, from the review the server made. */
+  function usageOf(view, id) {
+    const names = [];
+    for (const side of Object.keys(view.review || {})) names.push(...view.review[side].elements.filter((x) => x.effective_settings_id === id).map((x) => x.name));
+    return {names, defaultId: view.default_settings_id};
+  }
+  const swatchOf = (set) => (set && set.origin && /^#[0-9a-f]{6}$/i.test(set.origin.swatch || '') ? set.origin.swatch : null);
+  const nameOf = (elements) => (elements.length === 1 ? elements[0].name : `${elements.length} elements`);
+
+  /** The block of the inspector that says what the selected elements engrave with and lets the operator change it in one step: a swatch, the name
+      of the settings, their figures and state, and "Choose colour / engraving…" (the wide dialog). ``extra`` is a node (the old choice among the
+      card's sets) shown under "Settings details" with the figures and the custom values of the settings. */
+  function engravingBlock(env, controls, extra = null) {
+    const swatch = h('span', {class: 'sw cw-swatch cw-eng-swatch', 'aria-hidden': 'true', hidden: true});
+    const name = h('strong', {class: 'cw-eng-name'}), chip = h('span', {class: 'pill cw-chip'}), figures = h('p', {class: 'small cw-eng-figures'});
+    const shared = h('p', {class: 'small muted cw-eng-shared'}), failure = h('p', {class: 'alert bad small', role: 'alert', hidden: true});
+    const confirmSlot = h('span', {class: 'cw-eng-confirm'});
+    let current = [], row = null, rowId = null, shown = null;
+    const choose = btn('Choose colour / engraving…', () => {
+      if (!current.length) return;
+      const set = effective(current);
+      const o = set && set.origin, st = set ? statusOf(set) : null;
+      pickerDialog(env, {subject: nameOf(current), inUse: o && o.kind === 'choice' && st.state === 'chosen' ? {id: o.choice_id, type: o.type} : null,
+        prefer: current.some((e) => e.type === 'image' && e.image && e.image.engrave === 'raster') ? 'photo' : null,
+        onPick: (item) => env.assignChoice(current.map((e) => e.id), item.id)});
+    }, 'primary cw-eng-choose');
+    const detailsBody = h('div', {class: 'stack cw-eng-details-body'});
+    const details = h('details', {class: 'cw-eng-details'}, h('summary', {}, 'Settings details'), detailsBody);
+    const el = h('section', {class: 'stack cw-engraving-block', 'aria-label': 'Engraving of the selection'},
+      h('div', {class: 'row cw-eng-head'}, swatch, name, h('span', {class: 'spacer'}), chip), figures, shared, failure, h('div', {class: 'row cw-eng-actions'}, choose, confirmSlot), details);
+    /** The id of the set all of ``elements`` engrave with, or null when they differ. */
+    const idOf = (elements) => {
+      const view = env.view(), ids = new Set(elements.map((e) => (e.settings_id == null ? view.default_settings_id : e.settings_id)));
+      return ids.size === 1 ? [...ids][0] : null;
+    };
+    function effective(elements) { const id = idOf(elements); return id == null ? null : env.view().settings.find((s) => s.id === id) || null; }
+    async function confirm(set) {
+      const error = message(await env.confirmSettings(set.id));
+      failure.textContent = error; failure.hidden = !error;
+    }
+    return {el, choose, sync(elements) {
+      current = elements;
+      const view = env.view(), set = effective(elements);
+      if (!set) {                                             // the selection engraves with more than one set
+        swatch.hidden = true;
+        fill(name, 'Mixed engravings'); fill(chip, null); chip.hidden = true;
+        fill(figures, `${elements.length} elements engrave with different settings. Choose one to give all of them the same.`);
+        fill(shared, null); fill(confirmSlot, null);
+        row = null; rowId = null;
+        if (shown !== 'mixed') { shown = 'mixed'; fill(detailsBody, extra); }
+        return;
+      }
+      const st = statusOf(set), o = set.origin, colour = swatchOf(set);
+      swatch.hidden = !colour;
+      if (colour) swatch.setAttribute('style', `background:${colour}`);
+      fill(name, st.state === 'unknown' ? 'No engraving chosen yet' : o && o.kind === 'choice' ? o.label : `${set.name} (typed by hand)`);
+      chip.hidden = false;
+      chip.className = `pill ${KIND[st.state] || ''} cw-chip cw-chip-${st.state}`;
+      chip.setAttribute('data-state', st.state);
+      fill(chip, st.state === 'unknown' ? 'Unknown' : st.state === 'proposed' ? 'Proposed: confirm' : st.state === 'chosen' ? 'Chosen' : st.state === 'custom' ? 'Typed by hand' : 'Another setup');
+      fill(figures, st.state === 'unknown' ? st.summary : figureLine(set) || 'no figures given');
+      const used = usageOf(view, set.id), others = used.names.filter((n) => !elements.some((e) => e.name === n));
+      const isDefault = set.id === view.default_settings_id;
+      fill(shared, isDefault ? 'These are the card’s default settings: every element without its own choice engraves with them.'
+        : others.length ? `Also used by ${others.slice(0, 4).join(', ')}${others.length > 4 ? ` and ${others.length - 4} more` : ''}.` : null);
+      const needsConfirm = st.state === 'proposed' || (st.state === 'custom' && !set.confirmed) || (st.state === 'other_setup' && o && o.kind === 'custom');
+      fill(confirmSlot, needsConfirm ? btn(st.state === 'other_setup' ? 'Confirm for this setup' : 'Confirm these settings', () => confirm(set), 'cw-eng-confirm-btn') : null);
+      fill(choose, st.state === 'unknown' ? 'Choose colour / engraving…' : 'Change colour / engraving…');
+      if (rowId !== set.id) { row = setRow(set, env, controls, {compact: true}); rowId = set.id; shown = null; }
+      row.sync(set, used, view.settings.length);
+      if (shown !== rowId) { shown = rowId; fill(detailsBody, row.el, extra); }           // the nodes are moved only when the set changes: a field being typed in keeps its focus
+    }};
   }
 
   // ---- the laser, lens and material of the card -------------------------------------------------------------------------------------
@@ -400,5 +613,6 @@ const CardSettings = (() => {
       }};
   }
 
-  return {PAGE, TYPES, VALUES, figureLine, valuesList, notGiven, originLine, statusOf, chooser, setRow, setupBar, setupDialog, missingText, sameSetup, typeName};
+  return {PAGE, PICK_PAGE, TYPES, VALUES, figureLine, valuesList, notGiven, originLine, statusOf, chooser, setRow, setupBar, setupDialog, missingText, sameSetup, typeName,
+    pickerDialog, engravingBlock, swatchOf, usageOf};
 })();

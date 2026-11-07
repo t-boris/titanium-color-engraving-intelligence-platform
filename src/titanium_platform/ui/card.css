@@ -1,7 +1,8 @@
 /* The business-card editor (screens/card-work.js, card-panels.js). One screen that uses the whole window: the .os layout of styles.css with three
    columns (add and layers, the card, the selected element or the engraving settings). The boxes of the side panels are denser than the 44 px of
    the rest of the application, because an editor shows many of them at once; they are still large enough to hit (32 px) and keep their labels. */
-.cw .os-body {grid-template-columns:minmax(230px,280px) minmax(0,1fr) minmax(300px,360px)}
+.cw .os-body {grid-template-columns:var(--cw-left,280px) 10px minmax(0,1fr) 10px var(--cw-right,420px);column-gap:0}      /* the widths and the splitters: see the end of this file */
+.cw .os-scroll {position:relative}      /* the hidden radios and notes (.sr-only is absolute) scroll with their content: without it they landed below the window and the page scrolled */
 .cw .os-col-head {min-height:40px}
 .cw .os-col-head h3 {white-space:nowrap}
 
@@ -78,6 +79,7 @@
 .cw-tools {gap:6px}
 .cw-panel {flex:1 1 auto;display:flex;min-height:0;padding:8px}
 .cw-canvas {position:relative;flex:1 1 auto;min-width:0;min-height:320px;width:100%;height:100%}
+.cw-canvas .cc-stage {height:100%;min-height:0}      /* the drawing fills its column: its own 72vh made it taller than a short window and the column scrolled */
 
 /* the selected element */
 .cw-inspector .alert {margin:0;padding:6px 10px;font-size:12px}
@@ -148,6 +150,45 @@
 .cw-swatch {flex:none;width:18px;height:18px;margin-right:6px;border-radius:5px;border:1px solid var(--line-2)}
 .cw-item-details {gap:6px}
 
+/* the engraving of the selection, first in the inspector: swatch, name, state, figures and one button to choose it */
+.cw-engraving-block {gap:6px;padding:10px;border:1px solid var(--line-2);border-radius:12px;background:var(--surface)}
+.cw-eng-head {gap:8px;align-items:center;flex-wrap:wrap}
+.cw-eng-head .cw-swatch {width:26px;height:26px;margin:0;border-radius:7px}
+.cw-eng-name {min-width:0;overflow-wrap:anywhere;font-size:15px}
+.cw-eng-figures,.cw-eng-shared {margin:0;overflow-wrap:anywhere}
+.cw-eng-actions {gap:8px;flex-wrap:wrap}
+.cw-eng-choose {min-height:40px}
+.cw-eng-details>summary {display:flex;align-items:center;min-height:36px;color:var(--muted);cursor:pointer}
+.cw-eng-details-body {gap:10px;padding:4px 0}
+.cw-set-compact {border:0;padding:0;background:none}
+.cw-layer-engraving {display:inline-flex;align-items:center;gap:4px}
+.cw-layer-swatch {width:14px;height:14px;margin:0;border-radius:4px}
+
+/* the wide dialog that chooses the engraving: types and groups on the left, the settings with their figures on the right */
+.modal:has(.cw-picker) {width:min(1120px,100%)}
+.cw-picker {gap:10px}
+.cw-pick-note {margin:0}
+.cw-pick-cols {display:grid;grid-template-columns:minmax(200px,260px) minmax(0,1fr);gap:16px;align-items:start}
+.cw-pick-side {gap:12px;position:sticky;top:0}
+.cw-pick-types,.cw-pick-groups {display:flex;flex-direction:column;gap:4px}
+.cw-pick-type,.cw-pick-group {display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:40px;padding:6px 12px;text-align:left;
+  border:1px solid var(--line-2);border-radius:10px;background:var(--surface);color:var(--text);cursor:pointer;font:inherit;font-weight:600}
+.cw-pick-group {min-height:36px;font-weight:500}
+.cw-pick-type.active,.cw-pick-group.active {background:var(--accent-soft);border-color:var(--accent)}
+.cw-pick-heading {margin:0;font-size:13px}
+.cw-pick-main {min-width:0;gap:8px}
+.cw-list-wide .lst-main {flex-wrap:nowrap}
+.cw-list-wide .lst-main .lst-text {flex:0 1 16em}
+.cw-list-wide .cw-figures {flex:1 1 0;min-width:0;text-align:right;color:var(--muted)}
+.cw-list-wide .lst-search {flex:1 1 220px}
+@media (max-width:760px) {
+  .cw-pick-cols {grid-template-columns:minmax(0,1fr)}
+  .cw-pick-side {position:static}
+  .cw-pick-types {flex-direction:row;flex-wrap:wrap}
+  .cw-list-wide .lst-main {flex-wrap:wrap}
+  .cw-list-wide .cw-figures {flex:1 1 100%;text-align:left}
+}
+
 /* typing numbers is the last resort: last, closed and quiet */
 .cw-custom {border-top:1px dashed var(--line);padding-top:2px}
 .cw-custom>summary {font-size:12px}
@@ -174,4 +215,27 @@
   .cw .os-body {grid-template-columns:minmax(0,1fr) !important}
   .cw-add {max-height:none}
   .cw-canvas {min-height:260px}
+}
+
+/* ==== resizable and hideable side columns (screens/card-layout.js) ====================================================================================
+   card-layout.js puts a splitter between the columns, a "Hide panel" button in the head of the left and of the right column and, in each of them,
+   a rail button (shown only while the column is hidden), and sets --cw-left and --cw-right on .cw-body (the width of each column; 36 px when hidden).
+   A stacked page has nothing to resize or hide: styles.css stacks .os-body at max-width 1100px (and the rule above repeats it at 1000px), so the
+   splitters, the buttons and the collapsed look live in the media query that is the exact opposite of 1100px (keep them in step with styles.css).
+   Everywhere else they are display:none, they are not grid items, and the stacked page is exactly as it was. Colours are the app's own variables. */
+.cw .cw-split,.cw .cw-hide,.cw .cw-rail {display:none}
+@media not all and (max-width:1100px) {
+  .cw .cw-split {display:block;position:relative;min-width:0;border-radius:4px;cursor:col-resize;touch-action:none;outline:none}
+  .cw .cw-split::before {content:"";position:absolute;top:0;bottom:0;left:50%;width:2px;margin-left:-1px;border-radius:1px;background:var(--line-2);transition:background .15s}
+  .cw .cw-split:hover::before,.cw .cw-split-drag::before,.cw .cw-split:focus-visible::before {background:var(--accent)}
+  .cw .cw-split:focus-visible {outline:2px solid var(--accent);outline-offset:-1px}
+  .cw .cw-split-off {visibility:hidden;pointer-events:none}
+  .cw .cw-dragging,.cw .cw-dragging * {cursor:col-resize;user-select:none;-webkit-user-select:none}
+  .cw .os-col-head h3 {min-width:0;overflow:hidden;text-overflow:ellipsis}
+  .cw .cw-hide {display:inline-flex;flex:none;margin-left:auto}
+  .cw .cw-collapsed>:not(.cw-rail) {display:none !important}
+  .cw .cw-collapsed>.cw-rail {display:inline-flex;align-self:center;flex:none;width:26px;min-width:0;margin-top:8px;padding:0}
+}
+@media (prefers-reduced-motion:reduce) {
+  .cw .cw-split::before {transition:none}
 }
