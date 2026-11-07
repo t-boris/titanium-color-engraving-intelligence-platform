@@ -37,8 +37,8 @@ import shapely
 from shapely import affinity
 from shapely.geometry import GeometryCollection, MultiPolygon, Polygon, box as shapely_box
 
-from . import (card_generate, card_image, card_library, card_qr, card_raster, card_settings, conversion as cv, creation_context as cc, fonts,
-               grayscale, lettering, plans as pl, render_cache as rc, setup as su)
+from . import (card_generate, card_image, card_library, card_qr, card_raster, card_settings, conversion as cv, creation_context as cc, devices,
+               fonts, grayscale, lenses, lettering, plans as pl, render_cache as rc, setup as su)
 from .db import Store, now
 
 MODE = pl.MODE_CARD_WORK
@@ -1246,10 +1246,13 @@ def export(store: Store, plan_id: int, side: str) -> tuple[bytes, str]:
                        "prediction": None, "parameters": _layer_parameters(s, image=True),
                        "picture": {"x": element["x"] - width / 2, "y": element["y"] - height / 2, "width": width, "height": height,
                                    "pixels": pixels, "file": f"{stem}.png", "dither": s["dither"]}})
-    seen = card_settings.setup_view(store, _setup(plan))
+    own = _setup(plan)                                  # the file names the card's own laser, lens and material, not the workshop's current ones
+    device = devices.brief(store, own["device_id"]) if _exists(store, "laser_device", own["device_id"]) else None
+    lens = lenses.get_lens(store, own["lens_id"]) if _exists(store, "lens", own["lens_id"]) else None
+    material = store.one("SELECT * FROM material_profile WHERE id=?", (own["material_id"],))
     data = pl.export_lbrn2({"mode": MODE, "name": f"{plan['name']} {side}", "layers": layers, "vector_document": {"regions": regions},
                             "size_mm": size_mm(plan), "export_mirror_y": True, "plan_identifier": "",
-                            "experiment": {"label": f"Business card {side}", "test_name": plan["name"], "device": seen.get("device") or {},
-                                           "lens": seen.get("lens") or {}, "material": seen.get("material") or {}}})
+                            "experiment": {"label": f"Business card {side}", "test_name": plan["name"], "device": device or {}, "lens": lens or {},
+                                           "material": dict(material) if material else {}}})
     store.audit("card_work_exported", plan_id=plan["id"], side=side)
     return data, f"{plan['name']} {side}"

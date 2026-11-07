@@ -281,3 +281,13 @@ def test_the_raster_route_serves_the_dithered_picture(tmp_path):
         got = client.get(f"/api/card-works/{pid}/elements/{eid}/raster.png")
         assert got.status_code == 200 and got.headers["content-type"] == "image/png" and got.content.startswith(b"\x89PNG")
         assert client.get(f"/api/card-works/{pid}/elements/nope/raster.png").status_code == 404
+
+
+def test_the_file_notes_name_the_cards_own_laser_lens_and_titanium_not_the_workshops_current_ones(store, world):
+    finding(store, world)
+    plan = cw.create(store, "Notes")
+    cw.edit(store, plan, {"op": "settings_confirm", "id": 1})
+    star(store, plan)
+    cc.save(store, {"material_id": world["other_ti"]})                                          # the workshop moves on; the card does not
+    notes = lb.parse_bytes(cw.export(store, plan, "front")[0]).notes
+    assert "Titanium: Grade 2 sheet" in notes and "Grade 5" not in notes and "Lens: F-Theta 174" in notes and "S/N" in notes
