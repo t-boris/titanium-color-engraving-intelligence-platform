@@ -2,7 +2,7 @@
 type: feature
 id: feature-2
 title: Гравировка титановых визиток
-status: implementing
+status: implemented
 owner: Boris Tsekinovsky
 created: 2026-11-06
 provenance: Created from the feature intake

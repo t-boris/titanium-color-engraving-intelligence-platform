@@ -2,7 +2,7 @@
 type: feature
 id: ui-studio-2
 title: "UI Studio: Добавь в эту структуру же, ну, мне нужно, чтобы, в общем-то, я симули…"
-status: implementing
+status: implemented
 owner: Boris Tsekinovsky
 created: 2026-11-07
 provenance: Recorded by MarkView UI Studio
