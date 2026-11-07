@@ -812,3 +812,15 @@ again in the next commit). Add the exact files a tool or an edit produced; check
   question must wait for the operator, ask it with a recommended default and build on the default; say in the first line of the report what is
   built and what is not. A report that opens with documents when the operator expected a working screen reads as "nothing was done".
 - **Related.** The operator's word "closed" means released and installed (see the memory note on closed = deployed); a merge is not the end.
+
+## A feature is accepted by the operator's own story, not by its criteria and unit tests (card engraving settings, 2026-11-07)
+
+- **What happened.** Release 0.42.0 passed 3868 tests and a browser walk of the settings *panel*, yet the operator could not do the one thing they wanted: select
+  an element (shape, icon, frame, QR) and choose its colour. The chooser lived in the "Engraving" panel that is shown only when nothing is selected, and it edited
+  *sets* of settings; the selected element only had a dropdown of sets. The three panels also had fixed widths with no way to resize or hide one. The operator called
+  the result very bad.
+- **Rule.** Before building a UI, write the operator's story in their words ("select a star, pick gold, see it applied, export") and make that story the first thing
+  walked in the real app, before any criterion. The place where an object is selected (its inspector) must be able to finish the whole task for that object; a
+  helper concept of mine (a "set of settings") must not become what the operator has to manage. Every multi-panel layout gets resizable/hideable panels from the start.
+- **Rule.** A browser walk that tests my panel is not a walk of the operator's task. Do not tick criteria that the operator could not perform; list a criterion as
+  met only after the story that needs it has been performed by hand.

@@ -1,3 +1,37 @@
+# card editor: choose the engraving where the element is, and a layout the operator can resize — 2026-11-07 (plan, waiting for approval)
+
+Operator feedback on 0.42.0: selecting an element (shape, icon, frame, QR, text) gives no way to choose its colour; "Engraving settings" is only a dropdown of sets; the colour chooser is
+hidden in a panel nobody finds; the left/middle/right panels cannot be resized, so nothing can be seen at once. Root cause (checked in code): `card-settings.js` is mounted only
+in the right column when NOTHING is selected and works on *sets*; `card-work.js` `buildInspector` offers only `settings_id` as a `<select>`; `.cw .os-body` has fixed column widths.
+
+## The operator's stories (each one is walked in the real app before anything is reported)
+1. Add a star, select it, press **Choose colour / engraving**, pick a gold, the star shows that colour/recipe at once; export has a layer with those settings.
+2. Select three elements (or a group), choose once, all three get it.
+3. Select a picture, engrave it as a photo, choose a photo setting from the same place.
+4. Open the chooser and see everything: types, hue groups, settings and evidence side by side, without scrolling a narrow column.
+5. Drag the panel edges to make the right (or left) panel wider, hide a panel, reload: the sizes are remembered; double-click an edge resets.
+
+## Design (proposal)
+- **Engraving block in the inspector** (one element and multi-selection), right under the name and size: swatch + one line (`Gold / yellow L* 69 · 90 % · 1800 mm/s`, status
+  chip `Chosen` / `Proposed: confirm` / `Unknown`), a primary button **Choose colour / engraving…**, and a collapsed "Details" with the numbers and Custom values of that element's set.
+  The old dropdown of sets moves into "Details" as "Use another set of this card".
+- **New edit op `assign_choice {ids, choice_id}`**: reuse the card's set that already came from the same choice, otherwise add a set named after the choice, apply the
+  choice (copied values, confirmed), assign it to `ids`. One undo step. Sets are an implementation detail; the nothing-selected panel keeps the list of sets
+  (which elements use them, confirm, rename, delete) under "All engraving settings".
+- **Wide chooser dialog** (about 1100 px, 90 % of the window): left column types (with counts) and hue groups, right column the rows with figures and evidence and **Use for <element>**,
+  filter and paging; the dialog opens from the inspector and from the nothing-selected panel (for the default set).
+- **Resizable layout**: draggable splitters between the three columns (pointer and arrow keys, `role=separator`), min/max, widths kept in `localStorage` (try/catch), double-click resets,
+  buttons to hide the left or the right panel; stacked layout on narrow windows stays.
+- Layer list shows the element's recipe swatch.
+
+## Steps
+- [ ] L1 backend: `assign_choice` (+ group/multi ids, undo/redo, setup guard, review stays right) and tests
+- [ ] L2 UI: inspector Engraving block, wide chooser dialog, details; remove nothing the operator needs
+- [ ] L3 UI: splitters, hide buttons, remembered widths
+- [ ] L4 node UI tests for the block, the dialog and the splitters; full suite `-n 12`
+- [ ] L5 walk stories 1-5 in the real browser on a copy of the live data (screenshots), fix, repeat
+- [ ] L6 release 0.43.0: README, PR, CI, merge, backup, wheel deploy, desktop build and reinstall; report with the stories, not the criteria
+
 # ready-engraving-settings-for-business-cards — 2026-11-07
 
 Goal (MarkView `ready-engraving-settings-for-business-cards`, GitHub #44, follows feature-2): the engraving settings of a business card are never
