@@ -54,8 +54,8 @@ resize, rotate, reorder, duplicate, delete, group, ungroup, assign_settings, set
 - [x] S3 `card_image.py` (raster → geometry, pencil treatment) — tests/test_card_image.py
 - [x] S4 `card_work.py` + `card_generate.py` + `api/routes_card_work.py` + catalog/plans/experiments wiring — tests/test_card_work*.py
 - [x] S5 UI: `card-canvas.js` (canvas, selection, handles) and `card-work.js` (+ works list, router, index.html) — node tests
-- [ ] S6 verify: targeted tests, full suite `-n 12`, real-browser walk on a throw-away workshop, one real OpenAI call
-- [ ] S7 version, README entry, wheel, backup, deploy, confirm deployed version; commits with the `Feature: feature-2` trailer
+- [x] S6 verify: targeted tests, full suite `-n 12` (3711 passed, 0 skipped, 422 s), real-browser walk on a throw-away workshop, one real OpenAI call
+- [x] S7 version 0.41.0, README entry, wheel, backup, deploy to the wheel environment, deployed version confirmed; commits with the `Feature: feature-2` trailer
 
 ### Review (feature-2)
 
@@ -72,6 +72,13 @@ resize, rotate, reorder, duplicate, delete, group, ungroup, assign_settings, set
 - Two real image-service requests also went out by accident from the first API test (see lessons.md); the tests now cannot reach it.
 - Not done on purpose: SVG import (raster only; no SVG reader in the project), REQ-003 criterion 6 (opening a file in LightBurn itself).
 - F-004 front matter still says `resolved_by DEC-037`; the MarkView tools cannot change it (its Resolution text cites DEC-039).
+- Release 0.41.0 (2026-11-07): second full run `3711 passed` (0 skipped); `desktop` `npm test` 36 passed; wheel built and installed into a clean
+  venv (CI's "installed wheel" smoke plus the card screens and `/api/card-library`: `wheel OK 0.41.0`); frozen core `titanium-core --smoke` says 0.41.0.
+  Live data backed up first (`backups/titanium-before-0.41.0-20261107T011250Z.sqlite`, integrity ok), wheel installed into `~/.titanium-platform-app`
+  (0.41.0, all libraries import), served on a copy of the backup: `/api/version` 0.41.0, 8 works, `card` facet, foreign Host answers 421.
+- Not deployed: the desktop application `/Applications/Laser workshop.app` (0.40.3) was running and holds the live workshop lock, so it was not quit
+  or replaced; reinstall it from a desktop build once the operator closes it. The branch is not pushed and has no pull request (excluded from this goal),
+  so CI has not run; its steps were mirrored locally. Issue #42 stays open (`status: in progress`); feature-2 stays `implementing` until the work is merged.
 
 
 
