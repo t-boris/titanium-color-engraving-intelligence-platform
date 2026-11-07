@@ -1,29 +1,28 @@
 name: CI
 
+# By hand only. The tests are run on the developer's machine before a release (python -m pytest -n 12 -q) and that is the gate.
+# This workflow is a deliberate, paid-for check: Actions tab > CI > Run workflow, or `gh workflow run CI`.
+# Until 2026-11-07 it started on EVERY pull request and on EVERY push to main (documentation-only pushes too) and ran three jobs
+# (ubuntu 3.11, ubuntu 3.12, macOS 3.12) of 29, 46 and 59 minutes each, the suite one test after another: about 11 runs in one day.
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_dispatch:
+
+concurrency:                   # a second manual run of the same ref replaces the first one instead of running beside it
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
   test:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-        python: ["3.11", "3.12"]
-        exclude:
-          - os: macos-latest
-            python: "3.11"
+    runs-on: ubuntu-latest     # one job: no macOS (it is billed at ten times the minutes) and no second Python version
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python }}
+          python-version: "3.12"
           cache: pip
       - uses: actions/setup-node@v4
         with:
@@ -31,11 +30,7 @@ jobs:
       - name: Install tesseract   # optional OCR of the matrix reader; its tests must run, not skip
         shell: bash
         run: |
-          if [ "$RUNNER_OS" = "Linux" ]; then
-            sudo apt-get update -q && sudo apt-get install -y -q tesseract-ocr
-          else
-            brew install tesseract
-          fi
+          sudo apt-get update -q && sudo apt-get install -y -q tesseract-ocr
           tesseract --version
       - name: Install
         run: |
@@ -44,7 +39,7 @@ jobs:
       - name: Tests (none may be skipped)
         shell: bash   # explicit bash runs with -eo pipefail, so a failing pytest is not hidden by tee
         run: |
-          python -m pytest -q -rs | tee pytest.log
+          python -m pytest -q -rs -n auto | tee pytest.log      # in parallel on every core of the runner (pytest-xdist is in the dev extras)
           if grep -qE "[0-9]+ skipped" pytest.log; then echo "::error::tests were skipped"; exit 1; fi
       - name: Build wheel
         run: python -m build --wheel
