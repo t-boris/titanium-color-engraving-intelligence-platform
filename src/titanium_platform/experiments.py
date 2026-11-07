@@ -49,7 +49,7 @@ def _groups(store: Store) -> dict[str, dict]:
         groups.setdefault(key, {"plan": None, "pairs": []})["pairs"].append(pair)
     # a vector or photo work nobody has photographed is the operator's work, not an experiment: deleting an "experiment" deletes its
     # plan, and for such a work the plan is the work itself (REQ-044, DEC-082, DEC-104)
-    works = (pl.MODE_VECTOR, pl.MODE_PHOTO_WORK)
+    works = (pl.MODE_VECTOR, pl.MODE_PHOTO_WORK, pl.MODE_CARD_WORK)
     return {key: g for key, g in groups.items() if g["pairs"] or not g["plan"] or g["plan"]["mode"] not in works}
 
 

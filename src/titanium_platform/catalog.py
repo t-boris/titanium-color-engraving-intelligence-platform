@@ -46,10 +46,10 @@ from urllib.parse import quote
 from . import ingest as ig, plans as pl
 from .db import Store
 
-VECTOR, PHOTO = "vector", "photo"
+VECTOR, PHOTO, CARD = "vector", "photo", "card"
 MIXED = "mixed"
-KIND_OF_MODE = {pl.MODE_VECTOR: VECTOR, pl.MODE_PHOTO_WORK: PHOTO}
-TYPES = (VECTOR, MIXED, PHOTO)
+KIND_OF_MODE = {pl.MODE_VECTOR: VECTOR, pl.MODE_PHOTO_WORK: PHOTO, pl.MODE_CARD_WORK: CARD}
+TYPES = (VECTOR, MIXED, PHOTO, CARD)
 STATES = ("prepared", "exported", "result", "checked")
 SORTS = ("modified", "oldest", "name")
 FILTERS = ("type", "laser", "lens", "material")
@@ -57,7 +57,7 @@ NONE = "none"                       # the value of an equipment filter for the w
 PAGE = 20                           # the size of a portion of the list
 MAX_PAGE = 400                      # the most one request may ask for: a read that restores the portions already shown (as far as MAX_THROUGH)
 MAX_THROUGH = 400                   # the most a request that must reach one work (``through``) is extended to
-KEY = re.compile(r"^(vector|photo)-(\d+)$")
+KEY = re.compile(r"^(vector|photo|card)-(\d+)$")
 
 _lock = threading.Lock()
 _facts_memo: dict[tuple, dict] = {}
@@ -112,6 +112,12 @@ def _photo_facts(data: dict) -> dict:
             "exports": 1 if source.get("confirmed") else 0, "material_id": scale.get("material_id"), "version": 0}
 
 
+def _card_facts(data: dict) -> dict:
+    size = data.get("size_mm") if isinstance(data.get("size_mm"), dict) else {}
+    return {"width": _number(size.get("width")), "height": _number(size.get("height")), "updated": _text(data.get("updated_at")), "zones": 0,
+            "texts": 0, "exports": 0, "material_id": None, "version": 0}
+
+
 BROKEN = {"width": None, "height": None, "updated": None, "zones": 0, "texts": 0, "exports": 0, "material_id": None, "version": 0, "broken": True}
 
 
@@ -127,7 +133,7 @@ def _facts(kind: str, row) -> dict:
         data = json.loads(blob)
         if not isinstance(data, dict):
             raise ValueError("not an object")
-        made = {**(_vector_facts(data) if kind == VECTOR else _photo_facts(data)), "broken": False}
+        made = {**{VECTOR: _vector_facts, PHOTO: _photo_facts, CARD: _card_facts}[kind](data), "broken": False}
     except ValueError:
         made = BROKEN
     with _lock:
@@ -154,6 +160,15 @@ def _reference(ident, names: dict) -> dict | None:
     return None if ident is None else {"id": ident, "name": names.get(ident)}
 
 
+def _links(kind: str, plan_id: int, stamp: str) -> dict:
+    """Where a work's picture is, where it opens and the base of its rename and copy routes."""
+    if kind == VECTOR:
+        return {"thumb": f"/api/vector/{plan_id}/thumb.png?v={stamp}", "open": f"/vector?plan={plan_id}", "base": "/vector"}
+    if kind == CARD:
+        return {"thumb": f"/api/card-works/{plan_id}/thumb.svg?v={stamp}", "open": f"/card-work?work={plan_id}", "base": "/card-works"}
+    return {"thumb": f"/api/photo-works/{plan_id}/thumb.png?v={stamp}", "open": f"/photo-engraving?work={plan_id}", "base": "/photo-works"}
+
+
 def _entry(kind: str, row, facts: dict, names: dict, photographs: dict) -> dict:
     """One work as the catalog lists it. ``names`` are the equipment tables, ``photographs`` the checks of every work."""
     plan_id = row["id"]
@@ -169,9 +184,7 @@ def _entry(kind: str, row, facts: dict, names: dict, photographs: dict) -> dict:
             "width_mm": facts["width"], "height_mm": facts["height"], "state": state_of(facts["exports"], checks, accepted),
             "created_at": row["created_at"], "updated_at": updated, "checks": checks, "zones": facts["zones"], "texts": facts["texts"],
             "laser": laser, "lens": lens, "material": material, "missing": missing, "broken": facts["broken"],
-            "thumb": f"/api/vector/{plan_id}/thumb.png?v={stamp}" if kind == VECTOR else f"/api/photo-works/{plan_id}/thumb.png?v={stamp}",
-            "open": f"/vector?plan={plan_id}" if kind == VECTOR else f"/photo-engraving?work={plan_id}",
-            "base": "/vector" if kind == VECTOR else "/photo-works"}
+            **_links(kind, plan_id, stamp)}
 
 
 def merge(*sources: list[dict]) -> list[dict]:
@@ -186,16 +199,16 @@ def merge(*sources: list[dict]) -> list[dict]:
 
 def _rows(store: Store, where: str = "", params: tuple = ()):
     return store.query("SELECT id, name, mode, device_id, lens_id, created_at, data_json FROM plan "
-                       f"WHERE mode IN (?, ?) AND status!='Deleted'{where}", (pl.MODE_VECTOR, pl.MODE_PHOTO_WORK, *params))
+                       f"WHERE mode IN (?, ?, ?) AND status!='Deleted'{where}", (pl.MODE_VECTOR, pl.MODE_PHOTO_WORK, pl.MODE_CARD_WORK, *params))
 
 
 def _build(store: Store, rows) -> list[dict]:
     names, photographs = _equipment(store), _photographs(store)
-    by_kind: dict[str, list[dict]] = {VECTOR: [], PHOTO: []}
+    by_kind: dict[str, list[dict]] = {VECTOR: [], PHOTO: [], CARD: []}
     for row in rows:
         kind = KIND_OF_MODE[row["mode"]]
         by_kind[kind].append(_entry(kind, row, _facts(kind, row), names, photographs))
-    return merge(by_kind[VECTOR], by_kind[PHOTO])
+    return merge(by_kind[VECTOR], by_kind[PHOTO], by_kind[CARD])
 
 
 def all_works(store: Store) -> list[dict]:

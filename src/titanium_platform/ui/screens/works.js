@@ -1,18 +1,19 @@
-/* Paged catalog of vector and photo work. Existing work routes and operations remain its source of truth (REQ-001, REQ-002). */
+/* Paged catalog of vector, photo and business-card work. Existing work routes and operations remain its source of truth (REQ-001, REQ-002). */
 'use strict';
 const Works = (() => {
   const {h, btn, pill, num, field, get, post, del, toast, fail, modal, confirmBox} = App;
   const VIEW_KEY = 'works.view';
   const FILTERS = ['type', 'laser', 'lens', 'material'];
   const DEFAULT_SORT = 'modified';
-  const TYPE = {vector: 'Vector', mixed: 'Mixed', photo: 'Photo engraving'};
-  const TYPE_CHIPS = [['vector', 'Vector'], ['mixed', 'Mixed'], ['photo', 'Photo engraving']];
+  const TYPE = {vector: 'Vector', mixed: 'Mixed', photo: 'Photo engraving', card: 'Business card'};
+  const TYPE_CHIPS = [['vector', 'Vector'], ['mixed', 'Mixed'], ['photo', 'Photo engraving'], ['card', 'Cards']];
   // the same words as the chain of an engraving: prepared -> file received -> result added -> checked
   const STATE = {prepared: ['Prepared', ''], exported: ['File exported', ''], result: ['Result added', 'warn'], checked: ['Checked', 'ok']};
   const SORTS = [['modified', 'Recently modified'], ['oldest', 'Oldest modified'], ['name', 'Name']];
   const NONE_LABEL = {laser: 'laser not specified', lens: 'lens unknown', material: 'stock not specified'};
   const NOUN = {laser: 'laser', lens: 'lens', material: 'stock'};
-  const KINDS = {vector: ['Vector work', 'color regions, fill, lettering and lines'], photo: ['Photo engraving', 'grayscale image']};
+  const KINDS = {vector: ['Vector work', 'color regions, fill, lettering and lines'], photo: ['Photo engraving', 'grayscale image'],
+    card: ['Business card', 'two sides, text, shapes, icons and QR codes']};
   const when = (iso) => (iso ? String(iso).replace('T', ' ').slice(0, 16) : '—');
 
   const stored = {
@@ -23,10 +24,12 @@ const Works = (() => {
 
   // ---- creating a work: one entry, so that the creation flows can be pointed elsewhere without touching the catalog ----------------
 
-  /** Start a new work of ``kind`` (``vector`` or ``photo``). The catalog creates nothing itself: it hands over to the creation screen (Creation.start,
+  /** Start a new work of ``kind`` (``vector``, ``photo`` or ``card``). The catalog creates nothing itself: it hands over to the creation screen (Creation.start,
       feature ux-work-creation-p0), the one entry for every work. A photograph starts with «Photo engraving» chosen as the result; a vector work
-      leaves the choice (colour areas, silhouette, lines) to the person, who sees their own picture in each. */
+      leaves the choice (colour areas, silhouette, lines) to the person, who sees their own picture in each. A business card has no picture to start
+      from: its own dialog (card-work.js) asks for the name and the size and opens the editor. */
   function startCreation(kind) {
+    if (kind === 'card') { CardWork.newDialog(); return; }
     Creation.start({result: kind === 'photo' ? 'photo' : null});
   }
 
@@ -226,13 +229,14 @@ const Works = (() => {
     }
 
     const WARNING = {vector: 'The source image, segmentation and all coloring variants will be deleted and cannot be restored. Make a copy first to preserve them.',
-      photo: 'The image and work settings will be deleted and cannot be restored. Make a copy first to preserve them.'};
+      photo: 'The image and work settings will be deleted and cannot be restored. Make a copy first to preserve them.',
+      card: 'The card, both sides, is deleted; exported files stay with you.'};
     function deleteWork(w) {
       const index = keysShown().indexOf(w.key);
       const all = keysShown();
       const neighbours = [all[index + 1], all[index - 1]].filter(Boolean);
       const photographed = w.checks ? ' This work has engraving photographs and cannot be deleted until they are removed.' : '';
-      confirmBox(`Delete work “${w.name}”?`, WARNING[w.kind] + photographed, 'Delete', () => operate(w, async () => {
+      confirmBox(`Delete work “${w.name}”?`, (WARNING[w.kind] || WARNING.vector) + photographed, 'Delete', () => operate(w, async () => {
         try {
           await del('/plans/' + w.id);
           toast('Work deleted', 'ok');
@@ -276,12 +280,12 @@ const Works = (() => {
         {key: 'material', label: 'Stock', select: true, all: 'any', options: options('material')}],
       sorts: SORTS, row, actions,
       rowClass: (w) => (w.broken ? 'works-broken' : ''),
-      empty: 'No work yet. Use “New work” to create vector artwork from an image or a photo engraving.',
+      empty: 'No work yet. Use “New work” to create vector artwork from an image, a photo engraving or a business card.',
       noResults: 'No work matches these conditions.'});
 
     el.append(
       h('div', {class: 'row'}, h('div', {}, h('h2', {}, 'Works'),
-        h('p', {class: 'sub'}, 'Vector work and photo engravings share one list. Each opens in its editor; mixed work is one document with regions, '
+        h('p', {class: 'sub'}, 'Vector work, photo engravings and business cards share one list. Each opens in its editor; mixed work is one document with regions, '
           + 'photo zones and lettering. Work is stored on this computer.')),
         h('span', {class: 'spacer'}), viewSwitch, create.el),
       notice, list.el);

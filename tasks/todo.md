@@ -1,3 +1,85 @@
+# feature-2: titanium business cards — 2026-11-06
+
+Goal (MarkView `feature-2`, GitHub #42): a two-sided, physically sized card work (85 × 53 / 85 × 54 mm or custom), composed on a canvas
+from lettering, a configurable library of shapes / frames / icons, imported graphics, pictures generated from a description, a pencil-like
+treatment and QR codes; engraving settings per element or group; each side exported as its own LightBurn project. Branch
+`feature/feature-2-titanium-business-cards` from `origin/main` e39f476. Binding records: Q-001..006, DEC-028..036, DEC-038, F-001..005;
+new this session (operator answers, written to the specification): DEC-039 (generation by the OpenAI image service, supersedes DEC-037),
+DEC-040 (QR thresholds: 4 modules quiet zone, 0.40 mm module).
+
+## Design (facts found in the code, then the choices)
+
+- A work is a row of `plan` of a new mode `plans.MODE_CARD_WORK = "Business card work"`; all of it lives in `data_json` (no new table,
+  no migration), like the photo work. `device_id`/`lens_id` come from `creation_context.get` (the plan row needs a laser).
+- Undo/redo, rename, copy, audit follow `photo_work.py` (50 steps, stored in `data_json`). Delete is the generic `DELETE /api/plans/{id}`.
+- Every element reduces to **shapely geometry in mm** (y down, origin top-left of the card). The screen, the preview and the LightBurn
+  file are all drawn from that one geometry, so what the operator sees is what is engraved.
+- LightBurn: one file per side through `plans.export_lbrn2` (layers with `layer_keys` + `vector_document`, `export_mirror_y=True` like
+  vector works, no cleaning layer: this is non-colour engraving, the operator's settings are written as given, nothing defaulted).
+- Imported/generated pictures become vectors (threshold trace; optional pencil treatment) — no Image layer, no SVG parser (raster
+  import only: PNG, JPEG, GIF, BMP, TIFF, WebP). Not supported: SVG import (no SVG reader exists in the project; it would need a new
+  library or a parser — left out and said so in the release notes).
+- QR: `cv2.QRCodeEncoder` (already used for plate markers) and `cv2.QRCodeDetector` (round-trip verification); no new library.
+- Generation: `research.openai_client()` + Images API; gated by the workshop's `ai` switch (`outbound`); model name is a setting.
+
+### Geometry and element contract (all modules agree on this)
+
+* Millimetres, y down. An element's **local geometry** is centred on (0, 0) inside its `width` × `height` box, unrotated. The work then
+  rotates it by `rotation` degrees (clockwise on screen; `shapely.affinity.rotate` in y-down space) about (0, 0) and translates it to
+  the element's centre (`x`, `y`).
+* Element: `{id, type, name, x, y, width, height, rotation, group, settings_id, <type payload>}`; type is `text|shape|frame|icon|image|qr`
+  and exactly one payload object named like the type is present:
+  `text {text, font, height_mm, align, width_pct, spacing_mm, line_pct}` (the `lettering` fields),
+  `shape {kind, filled, stroke_mm, corner_mm, sides, points, inner_pct}`, `frame {style, stroke_mm, gap_mm, corner_mm}`,
+  `icon {name, filled, stroke_mm}`, `image {file, name, size, threshold, invert, treatment, detail, strength, origin, prompt}`,
+  `qr {kind, fields, ecc}`.
+* View of an element adds `d` (SVG path data of its final geometry, card coordinates, even-odd), `bounds [x0,y0,x1,y1]`, `empty`,
+  `problems [str]`, `warnings [{code, message, ...}]`, and for a QR `qr_info {content, modules, module_mm, quiet_modules, thresholds}`.
+* Z-order is list order (last = on top). Groups are a shared `group` string; assignment of engraving settings to a group assigns to every
+  member. Engraving settings: `settings [{id, name, mode: fill|line, power, speed, frequency, pulse_width, line_interval, passes}]`,
+  all operator-defined (null until given); an element's own `settings_id` or, when null, the work's `default_settings_id`.
+
+### API (`api/routes_card_work.py`, prefix `/api`)
+
+`GET /card-library` · `GET|POST /card-works` · `GET /card-works/{id}` · `POST /card-works/{id}/edit` (`{op, side, ...}`: add, set, move,
+resize, rotate, reorder, duplicate, delete, group, ungroup, assign_settings, settings_add, settings_set, settings_delete, set_size) ·
+`POST /undo` · `/redo` · `/copy` · `/rename` · `POST /images` (multipart: import a graphic) · `POST /generate` (`{description, kind, side}`) ·
+`GET /sides/{front|back}/preview.svg` · `GET /sides/{side}/export.lbrn2` · `GET /thumb.svg`. Every edit answers with the work's view.
+
+## Steps
+
+- [x] S0 records: DEC-039, DEC-040 added; DEC-037 superseded; REQ-002/005 and F-004 updated (done through MarkView tools)
+- [x] S1 `card_library.py` (shapes, frames, icons) — tests/test_card_library.py
+- [x] S2 `card_qr.py` (payloads, symbol, geometry, thresholds, clearance, decode) — tests/test_card_qr.py
+- [x] S3 `card_image.py` (raster → geometry, pencil treatment) — tests/test_card_image.py
+- [x] S4 `card_work.py` + `card_generate.py` + `api/routes_card_work.py` + catalog/plans/experiments wiring — tests/test_card_work*.py
+- [x] S5 UI: `card-canvas.js` (canvas, selection, handles) and `card-work.js` (+ works list, router, index.html) — node tests
+- [x] S6 verify: targeted tests, full suite `-n 12` (3711 passed, 0 skipped, 422 s), real-browser walk on a throw-away workshop, one real OpenAI call
+- [x] S7 version 0.41.0, README entry, wheel, backup, deploy to the wheel environment, deployed version confirmed; commits with the `Feature: feature-2` trailer
+
+### Review (feature-2)
+
+- Built in parallel by five agents on disjoint files (library, QR, image tracing, canvas, editor screen) and integrated by the lead:
+  `card_work.py` (+ `card_generate.py`, `api/routes_card_work.py`, wiring in `catalog.py`, `experiments.py`, `plans.py`, `app.py`, lifecycle
+  routes), `research.generated_image` (the only place that talks to the image service, so `openai` stays imported in `research.py` only).
+- Tests: `test_card_work.py` (51), `test_card_library.py` (342), `test_card_qr.py` (189), `test_card_image.py` (65), `test_card_canvas.py`,
+  `test_card_work_ui.py` (25), plus the catalog/UI tests that list work types. Full suite `-n 12`: first run 2 failed / 3709 passed (the
+  network-import boundary test saw `openai` imported in `card_generate.py` and a URL literal; the facet list gained `card`), fixed
+  structurally (no allowlist change), second full run recorded in the release notes below.
+- Real browser (own tab, throw-away workshop on port 8797, never the live 8765): New work -> Business card, add text/frame/icon/shape/QR,
+  drag and corner-resize on the canvas, QR module-size warning at 8 mm, back side, works list with thumbnail, one real generation
+  ("a fox sitting", about 45 s, traced into vectors), pencil treatment visible on the canvas, both sides' files parsed back.
+- Two real image-service requests also went out by accident from the first API test (see lessons.md); the tests now cannot reach it.
+- Not done on purpose: SVG import (raster only; no SVG reader in the project), REQ-003 criterion 6 (opening a file in LightBurn itself).
+- F-004 front matter still says `resolved_by DEC-037`; the MarkView tools cannot change it (its Resolution text cites DEC-039).
+- Release 0.41.0 (2026-11-07): second full run `3711 passed` (0 skipped); `desktop` `npm test` 36 passed; wheel built and installed into a clean
+  venv (CI's "installed wheel" smoke plus the card screens and `/api/card-library`: `wheel OK 0.41.0`); frozen core `titanium-core --smoke` says 0.41.0.
+  Live data backed up first (`backups/titanium-before-0.41.0-20261107T011250Z.sqlite`, integrity ok), wheel installed into `~/.titanium-platform-app`
+  (0.41.0, all libraries import), served on a copy of the backup: `/api/version` 0.41.0, 8 works, `card` facet, foreign Host answers 421.
+- Desktop application (added later the same day, at the operator's request): `TCE_SIGN=1 npm run make -- --arch arm64` gave `Laser workshop-darwin-arm64-0.41.0.zip` (260 541 268 bytes, SHA-256 `db946275ab8ba12bc0f859a5fec8b3787e0d4773dcc626e6aecd974c023413c2`), signed with the Developer ID (`codesign --verify --deep --strict` ok, unnotarized, DEC-044); the packaged `--smoke` answered `{"smoke":"ok","packaged":true,"ui":2}` with core 0.41.0. The app was quit (no re-check running), the live data backed up (`backups/titanium-before-reinstall-0.41.0-20261107T142214Z.sqlite`, integrity ok), the old 0.40.3 bundle moved aside and 0.41.0 installed into `/Applications/Laser workshop.app`; it starts as shell 0.41.0 and shows the workshop picker. No GitHub release or tag was made. The branch is not pushed and has no pull request (excluded from this goal), so CI has not run; its steps were mirrored locally. Issue #42 stays open (`status: in progress`); feature-2 stays `implementing` until the work is merged.
+
+
+
 # UX P0 pass: nine features in one release (0.39.0) — 2026-11-05
 
 Operator's goal: implement all nine `ux-*-p0` MarkView features (27 requirements, answers already given, `status: review`) in one pass,
