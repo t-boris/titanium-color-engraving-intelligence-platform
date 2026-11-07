@@ -99,8 +99,7 @@
 .cw-setup {gap:6px;padding:8px 10px;border:1px solid var(--line-2);border-radius:10px;background:var(--surface)}
 .cw-setup .row {gap:6px 10px;flex-wrap:nowrap;align-items:flex-start}
 .cw-setup-line {margin:0;font-size:13px;line-height:1.5;min-width:0;overflow-wrap:anywhere}
-.cw-setup-part {white-space:nowrap}
-.cw-setup-part:last-child {white-space:normal}
+.cw-setup-part {display:inline-block;max-width:100%;overflow-wrap:anywhere}
 .cw-setup .alert {margin:0;padding:6px 10px;font-size:12px}
 .cw-setup .btn-small {flex:none}
 
@@ -140,10 +139,9 @@
 .cw-list .lst-bar {gap:6px 8px}
 .cw-list .lst-search {min-width:0;flex:1 1 140px}
 .cw .cw-list input.lst-search:not([type=file]):not([type=radio]):not([type=range]):not([type=checkbox]) {min-height:36px;height:36px}
-.cw-list .lst-main {padding:6px 0;min-height:36px}
-.cw-list .lst-main .lst-text {flex:1 1 8em}
-.cw-item-detail,.cw-figures {overflow-wrap:anywhere}
-.cw-figures {color:var(--text)}
+.cw-list .lst-main {padding:6px 0;min-height:36px;flex-wrap:wrap;align-items:center;gap:2px 6px;min-width:0}
+.cw-list .lst-main .lst-text {flex:1 1 8em;min-width:0;overflow-wrap:anywhere}
+.cw-figures {flex:1 1 100%;min-width:0;overflow-wrap:anywhere;color:var(--text)}
 .cw-list .lst-act .btn {min-height:36px;min-width:52px}
 .cw-list .lst-row.cw-in-use {background:var(--accent-soft)}
 .cw-list .lst-foot .btn {min-height:36px}

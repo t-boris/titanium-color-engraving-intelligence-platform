@@ -52,7 +52,9 @@ const CardSettings = (() => {
     if (s.power != null) parts.push(`${fixed(s.power)} %`);
     if (s.speed != null) parts.push(`${fixed(s.speed)} mm/s`);
     if (s.frequency != null) parts.push(`${fixed(s.frequency)} kHz`);
+    if (s.pulse_width != null) parts.push(`${fixed(s.pulse_width)} ns`);
     if (s.line_interval != null) parts.push(`${fixed(s.line_interval)} mm interval`);
+    if (s.passes != null && s.passes > 1) parts.push(`${s.passes} passes`);
     if (s.dither) parts.push(String(s.dither));
     return parts.join(' · ');
   }
@@ -150,8 +152,9 @@ const CardSettings = (() => {
     function itemRow(item) {
       const swatch = item.swatch && /^#[0-9a-f]{6}$/i.test(item.swatch.srgb || '')
         ? h('span', {class: 'sw cw-swatch', style: `background:${item.swatch.srgb}`, role: 'img', 'aria-label': `Colour ${item.swatch.srgb}`}) : null;
-      return [swatch, h('strong', {class: 'lst-text cw-item-label'}, item.label), item.detail ? h('span', {class: 'small muted cw-item-detail'}, item.detail) : null,
-        h('span', {class: 'small cw-figures'}, figureLine(item.settings) || 'no figures given'), evidenceBadge(item)];
+      // the sentence about the source is in the details (opened on demand); the row keeps the name, the evidence and the figures
+      return [swatch, h('strong', {class: 'lst-text cw-item-label'}, item.label), evidenceBadge(item),
+        h('span', {class: 'small cw-figures'}, figureLine(item.settings) || 'no figures given')];
     }
     function fillGroup(key, group, body) {
       const many = (group.items || []).length > PAGE;

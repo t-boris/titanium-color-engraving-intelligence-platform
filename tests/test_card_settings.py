@@ -177,3 +177,12 @@ def test_an_id_from_a_type_that_does_not_exist_or_is_not_text_never_resolves(sto
     colour(store, world, [60.0, 5.0, 20.0])
     for bad in (None, 7, "", "color", "deep:1", "nonsense:1", "color:nothing"):
         assert cs.item_by_id(store, world["card"], bad) is None
+
+
+def test_two_palette_entries_with_the_same_settings_and_colour_are_one_choice(store, world, monkeypatch):
+    colour(store, world, [60.0, 5.0, 20.0])
+    real = cs.palette.vector_palette(store, *world["setup"], world["ti"])
+    twin = {**real["entries"][0], "id": "twin-of-the-first"}
+    monkeypatch.setattr(cs.palette, "vector_palette", lambda *args, **kwargs: {**real, "entries": [real["entries"][0], twin]})
+    found = types_of(store, world["card"])["color"]
+    assert sum(g["count"] for g in found["groups"]) == 1

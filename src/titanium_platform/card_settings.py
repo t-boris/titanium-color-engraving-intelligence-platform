@@ -133,10 +133,14 @@ def _rank(entry: Mapping) -> tuple:
 def _colours(store: Store, setup: Mapping) -> list[dict]:
     found = palette.vector_palette(store, setup["device_id"], setup["lens_id"], setup["material_id"])
     entries = [e for e in found["entries"] if not e["caution"] and e["parameters"].get("power") is not None]
-    items = []
+    items, seen = [], set()
     for entry in sorted(entries, key=_rank):
         params = entry["parameters"]
         settings = {"mode": "fill", **{k: params.get(k) for k in SETTING_KEYS if k != "mode"}}
+        same = (tuple(sorted(settings.items())), tuple(round(float(v), 1) for v in entry["lab"]))
+        if same in seen:                                    # the same settings that gave the same colour, kept apart by the palette: one choice
+            continue
+        seen.add(same)
         word = _colour_word(entry["lab"])
         engravings = entry["engravings"]
         detail = (f"Measured {BASIS_WORDS.get(entry['basis'], entry['basis'])}; {engravings} independent engraving"

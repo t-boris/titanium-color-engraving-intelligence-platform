@@ -131,7 +131,7 @@ def test_a_group_has_a_count_the_first_group_is_open_and_use_posts_the_choice_wi
   out.groups = groups.map((g) => [text(g.querySelector('.cw-group-name')), text(g.querySelector('.pill')), g.open]);
   const first = groups[0];
   const row = rowsIn(first)[1];
-  out.row = {label: text(row.querySelector('.cw-item-label')), detail: text(row.querySelector('.cw-item-detail')), figures: text(row.querySelector('.cw-figures')),
+  out.row = {label: text(row.querySelector('.cw-item-label')), plain: row.querySelector('.cw-item-detail') === null, figures: text(row.querySelector('.cw-figures')),
     badge: text(row.querySelector('.pill')), use: useIn(row).getAttribute('aria-label')};
   await groups[1].dispatch('toggle');                                          // the second group is closed: its rows are made when it opens
   out.closed = rowsIn(groups[1]).length;
@@ -153,7 +153,7 @@ def test_a_group_has_a_count_the_first_group_is_open_and_use_posts_the_choice_wi
   out.stored = srv.w.settings[0].origin.choice_id;
 """)
     assert out["groups"] == [["Colour plates", "20", True], ["Measured colours", "3", False]]
-    assert out["row"] == {"label": "Colour plate 2", "detail": "measured on 2 mm", "figures": "32 % · 500 mm/s · 40 kHz · 0.02 mm interval", "badge": "Validated", "use": "Use Colour plate 2"}
+    assert out["row"] == {"label": "Colour plate 2", "plain": True, "figures": "32 % · 500 mm/s · 40 kHz · 0.02 mm interval", "badge": "Validated", "use": "Use Colour plate 2"}
     assert out["closed"] == 0
     assert out["swatch"] == ["background:#3a6ea5", "Colour #3a6ea5"]
     assert out["post"] == {"op": "settings_apply", "settings_id": 1, "choice_id": "color:plate:2"}
@@ -217,7 +217,7 @@ def test_details_of_a_row_open_on_demand_and_show_what_the_source_gives_and_does
     assert out["after"]["detail"] == "measured on 1 mm"
     assert out["after"]["keys"] == ["Mode", "Power", "Speed", "Frequency", "Passes", "Engravings"]
     assert out["after"]["unused"] == "Not used for shapes and text: image mode, dot width."
-    assert out["figures"] == "40 % · 300 mm/s · 50 kHz"                              # a figure the source does not give is not made up
+    assert out["figures"] == "40 % · 300 mm/s · 50 kHz · 2 passes"                              # a figure the source does not give is not made up
 
 
 @node
