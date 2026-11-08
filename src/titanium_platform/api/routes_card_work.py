@@ -1,11 +1,13 @@
-"""Business card works (feature-2): list, create, open, edit, undo and redo, copy, rename, import a graphic, generate a picture from a
+"""Business card works (feature-2): list, create, open, edit, undo and redo, copy, rename, import a graphic or vector artwork, generate a picture from a
 description, and the preview and LightBurn file of each side. A work is deleted as every plan is (``DELETE /api/plans/{id}``)."""
 from __future__ import annotations
 
 from fastapi import APIRouter, File, Form, Request, Response, UploadFile
 
-from .. import card_work, setup as su
+from .. import card_vector, card_work, setup as su
 from .common import MAX_IMAGE_BYTES, content_disposition, read_upload, store_of
+
+MAX_VECTOR_BYTES = card_vector.MAX_FILE_BYTES
 
 router = APIRouter(prefix="/api")
 
@@ -37,9 +39,11 @@ def get_card_work(plan_id: int, request: Request):
 @router.post("/card-works/{plan_id}/edit")
 def edit_card_work(plan_id: int, body: dict, request: Request):
     """One edit of the card (``op``: add, set, move, resize, rotate, reorder, duplicate, delete, group, ungroup, assign_settings,
-    assign_choice, settings_add, settings_set, settings_delete, set_size, settings_apply, settings_confirm, settings_custom, set_setup);
-    ``assign_choice`` ({side, ids|group, choice_id}) gives the elements one ready engraving setting of this card's laser, lens and material,
-    taking the card's own set for it or making one. The work is returned as it is now, with ``added``."""
+    assign_choice, settings_add, settings_set, settings_delete, set_size, settings_apply, settings_confirm, settings_custom, set_setup,
+    recolour, scale); ``assign_choice`` ({side, ids|group, choice_id}) gives the elements one ready engraving setting of this card's laser, lens
+    and material, taking the card's own set for it or making one (``only``: just the listed parts, not the rest of their group, as
+    ``assign_settings``); ``recolour`` ({side, ids, fill|reset}) changes the design colour of imported vector parts and never what they engrave
+    with; ``scale`` ({side, ids, factor}) scales the elements about the centre of their box. The work is returned as it is now, with ``added``."""
     return card_work.edit(store_of(request), plan_id, body)
 
 
@@ -83,6 +87,21 @@ async def import_card_image(plan_id: int, request: Request, side: str = Form(...
     """Add a graphic (PNG, JPEG, GIF, BMP, TIFF, WebP) to a side; it is traced into shapes that can be engraved."""
     file_name, data = await read_upload(picture, MAX_IMAGE_BYTES, "picture")
     return card_work.add_image(store_of(request), plan_id, side, file_name, data)
+
+
+@router.post("/card-works/{plan_id}/vector")
+async def import_card_vector(plan_id: int, request: Request, side: str = Form(...), artwork: UploadFile = File(None)):
+    """Import an SVG or Adobe Illustrator (PDF-compatible) file into a side as a group of editable parts, each with its design colour; the answer is
+    the work with ``added`` and ``import`` (what was imported and what could not be carried over)."""
+    file_name, data = await read_upload(artwork, MAX_VECTOR_BYTES, "artwork")
+    return card_work.import_vector(store_of(request), plan_id, side, file_name, data)
+
+
+@router.get("/card-works/{plan_id}/colour-matches")
+def card_colour_matches(plan_id: int, request: Request, colours: str = ""):
+    """The measured engraving colours of this card's laser, lens and material nearest to each design colour (``colours``: ``#rrggbb`` values
+    separated by commas)."""
+    return card_work.colour_matches(store_of(request), plan_id, [c for c in colours.split(",") if c.strip()])
 
 
 @router.post("/card-works/{plan_id}/generate")

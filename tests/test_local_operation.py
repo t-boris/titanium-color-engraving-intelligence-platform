@@ -23,6 +23,8 @@ URL = re.compile(r"""https?://[^\s"'`)<>]+|(?<=["'(`])//[A-Za-z0-9-]+(?:\.[A-Za-
 UI_URLS = {"http://www.w3.org/2000/svg": "the SVG namespace: a name passed to createElementNS and xmlns, never fetched"}
 # URLs that may appear in the server code, and why no request is made to them.
 SERVER_URLS = {"http://www.w3.org/2000/svg": "the SVG namespace written into generated SVG files",
+               "http://www.w3.org/1999/xlink}href": "the XLink namespace in ElementTree's {namespace}name form: how the SVG reader of imported artwork "
+                                                    "(card_vector_svg.py) names the href attribute; a name, never fetched",
                "http://{host}:{bound}": "the local address the launcher prints for the operator's browser",
                "http://{LOOPBACK}:{outcome[": "the loopback address of the core the --smoke check starts and asks itself (electron REQ-080)",
                "https://{address}:{port}": "the address of this workshop on the local network, shown for the tablet to open (lan.py, electron "

@@ -20,7 +20,7 @@
 .cw-export .lc-download {display:inline-flex;flex-direction:column;gap:4px}
 
 /* denser boxes in the side columns */
-.cw input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]),.cw select {min-height:32px;height:32px;padding:4px 9px;font-size:13px}
+.cw input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]):not([type=color]),.cw select {min-height:32px;height:32px;padding:4px 9px;font-size:13px}
 .cw select {padding-right:32px}
 .cw textarea {min-height:64px;padding:6px 9px;font-size:13px}
 .cw .btn {min-height:32px}
@@ -65,13 +65,15 @@
 
 /* layers */
 .cw-layers-list .lst-rows {border-radius:10px}
-.cw-layers-list .lst-row {padding:0 6px}
+.cw-layers-list .lst-row {padding:0 6px;flex-wrap:nowrap}
+.cw-layers-list .lst-act {flex:none;flex-wrap:nowrap}
 .cw-layers-list .cw-on {background:#17223a}
 .cw-layer {display:flex;align-items:center;gap:8px;flex:1 1 auto;min-width:0;padding:4px 0;border:0;background:none;color:inherit;text-align:left;cursor:pointer}
 .cw-layer-type {flex:none;min-width:26px;text-align:center;font-size:11px;font-weight:700;color:var(--accent)}
 .cw-layer-name {min-width:0;overflow:hidden;text-overflow:ellipsis}
 .cw-dot {flex:none;color:var(--warning);font-size:11px}
-.cw-layers-list .lst-act .btn {min-width:26px;min-height:26px;padding:2px 6px}
+.cw-layer-design {flex:none;width:12px;height:12px;border-radius:3px;border:1px solid var(--line-2)}
+.cw-layers-list .lst-act .btn {min-width:24px;min-height:24px;padding:2px 4px}
 
 /* the card */
 .cw-centre {min-height:0}
@@ -239,3 +241,17 @@
 @media (prefers-reduced-motion:reduce) {
   .cw .cw-split::before {transition:none}
 }
+
+/* imported vector artwork (feature-3): the colours of its parts, the engraving colour chosen for each, the report of an import */
+.cw-art {gap:10px}
+.cw-art h4 {margin:0}
+.cw-art-row {gap:6px;padding:8px 0;border-top:1px solid var(--line-2)}
+.cw-art-row:first-of-type {border-top:0}
+.cw-art-row .row {gap:8px;align-items:center;flex-wrap:wrap}
+.cw .cw-art-row input.cw-colour-input {flex:none;width:34px;min-height:28px;height:28px;padding:0;border:1px solid var(--line-2);border-radius:6px;background:none;cursor:pointer}
+.cw-art-engraves,.cw-art-suggest {margin:0;overflow-wrap:anywhere}
+.cw-art-far,.cw-art-none {margin:0}
+.cw-import-report {gap:6px}
+.cw-import-report p,.cw-import-notes {margin:0}
+.cw-import-notes ul {margin:4px 0 0;padding-left:18px}
+.cw-nodes-note {margin:0}

@@ -1,3 +1,49 @@
+# card editor: delete from the layer list + import and edit vector artwork (SVG, Adobe Illustrator) — 2026-11-08 (ordered by the operator in one goal; building)
+
+One pull request, one release (0.44.0), then the wheel is deployed and the desktop app reinstalled.
+Binding records: `docs/features/ui-studio-3/` (REQ-001, REQ-002: delete button and smaller right-hand buttons in the layer list, already in the working tree from UI Studio) and
+`docs/features/feature-3/` (REQ-003..005, DEC-001..003, Q-001 A, Q-002 C, F-001 resolved: selected engraving colours are used by preparation and export, issue #48).
+
+## Design (no new library; the AI reader is a small PDF reader on `zlib`)
+- New element type `vector` = ONE editable part of imported artwork. `vector: {artwork, part, fill, source}`: `artwork` is the file NAME (relative to `files/`, so a moved or restored
+  workshop still finds it) of `vector-<id>.json`, which holds the parts of the import as polygon rings in millimetres; `fill` is the DESIGN colour (editable), `source` the colour
+  of the file (kept). The element box / rotation / group / `settings_id` are those of every element, so move, resize, rotate, duplicate, order, group, ungroup and delete already work.
+  The undo history stores only the small payload, never the rings.
+- Import: `POST /api/card-works/{id}/vector` (side, file) → `card_vector.read` (SVG: `card_vector_svg`; AI: `card_vector_ai`, PDF-compatible files only) → parts in painting order → one
+  group on the side, centred and fitted to the card, one undo step, with a report (parts, merged parts, what could not be carried over). A file that cannot be read says why.
+- Colours: design colour ≠ engraving colour. `POST /edit` `recolour {ids, fill}` changes design colours; `GET /card-works/{id}/colour-matches?colours=` suggests the measured engraving
+  colours of the card's own laser/lens/material by ΔE (never another setup); the import applies the close suggestions through the existing `assign_choice` machinery (same undo step),
+  the operator changes them with the existing chooser; a colour with no close measured colour says so.
+- Selecting ONE part of a group: double-click on the card, or click the layer again when its whole group is selected. `scale {ids, factor}` scales a selection (the whole artwork) about its centre.
+- Export: the vector parts are shapes like any other (rings → layers per settings set), so the chosen engraving colours reach the LightBurn file (DEC-003, feature-2/REQ-003 updated).
+
+## Steps
+- [x] V0 UI Studio feature: test for the delete button, REQ statuses
+- [x] V1 `card_vector_geometry.py` shared helpers; `card_vector_svg.py`; `card_vector_ai.py` (+ tests, real files from ~/Downloads read only)
+- [x] V2 `card_vector.py` (artwork build, storage, matching) and `card_work.py` (type `vector`, import, recolour, scale, view, preview) + route + tests
+- [x] V3 UI: import panel + report, part form, colour panel, drill-in selection, scale, canvas colours; node tests
+- [x] V4 docs: feature-2/REQ-003, feature-3 criteria ticked with the code and test seen, plan statuses, README, lessons
+- [x] V5 full suite `-n 12`, walk the stories in the real browser on a copy of the live data (rehearsal, port 8796)
+- [ ] V6 release 0.44.0: commit, PR (one), merge, wheel deploy, desktop build and reinstall, report
+
+## Stories walked before anything is reported
+1. A layer row has a delete button next to up/down; it deletes that layer; undo brings it back.
+2. Import an SVG from ~/Downloads: parts appear grouped on the card in their own colours; the report names what was not carried over.
+3. Import an AI file from ~/Downloads (PDF-compatible) and one that is not (clear message).
+4. Double-click a part, recolour it (design colour), reset to the source colour; the canvas and the layer list follow.
+5. Match engraving colours: suggestions shown with ΔE, "no close colour" said; choose another with the existing chooser.
+6. Duplicate / move / resize / rotate / reorder / group / ungroup / delete parts; save, reload, same card.
+7. Export the side: layers per chosen engraving colour in the LightBurn file.
+
+## Review of 0.44.0 (2026-11-08)
+- Built: V0-V5 above. Two requests of the goal in one release: the delete button of a layer row (ui-studio-3 REQ-001/REQ-002) and importing SVG / Adobe Illustrator artwork as editable parts (feature-3 REQ-003..REQ-005, DEC-003; feature-2/REQ-003 updated).
+- Tests: `pytest -n 12` 4319 passed, 2 failed, both static registries (a new `{namespace}name` string seen as a URL by `test_local_operation`, a new message ending in data in `test_i18n_coverage`): registered, both files rerun green. Vector tests: 413 (SVG reader 209, AI reader 171 incl. 450 fuzzed files, card_vector 25, UI 8 + canvas/work UI).
+- Real files (read only, ~/Downloads, 42 SVG + 52 AI): every file either imports or is refused with a reason; no crash; the slowest import 7.8 s (a 6.9 MB AI with 9.7 thousand merged pieces); a 43 MB AI is refused as too detailed.
+- Walked in the real browser on a rehearsal copy of the live workshop (port 8796, tab «Репетиция», card with Cat.svg, 53 parts): import with report, whole-group selection then double-click / layer click to pick one part, design colour change and «Back to the colour of the file», closest engraving colour with ΔE and «Use», «No close colour» wording, delete from the layer row and undo, resize / rotate / duplicate / reorder / group / ungroup, reload (same card), Back.ai import, a non-PDF-compatible .ai refused with the message, the LightBurn export of the front (54 shapes in 8 layers, one per chosen engraving colour).
+- Found only in the running app and fixed: a quadratic merge (minutes) on a long run of one colour; self-touching rounded outlines poisoned the whole card (every view 500) → repaired on load, a damaged part degrades to a problem and a file whose parts cannot be built is refused before anything is saved; the colour input rendered full-width; the import report was clipped in the add panel; the colours of a part sat below the position fields.
+- Not built / limits told to the operator: PostScript-only .ai (no PDF content), live text, embedded pictures, patterns, masks and filters are not imported (counted in the report); gradients become their average colour; dashes are drawn solid; parts beyond the room of a side (300) are merged by colour; artwork files are not removed when a card is deleted (as picture files); the whole-card view is large for 200+ parts (~4 MB at 211).
+- [ ] V6 release 0.44.0: commit, PR, merge, wheel deploy, desktop build and reinstall: recorded after it is done
+
 # card editor: choose the engraving where the element is, and a layout the operator can resize — 2026-11-07 (approved by the operator; building)
 
 Operator feedback on 0.42.0: selecting an element (shape, icon, frame, QR, text) gives no way to choose its colour; "Engraving settings" is only a dropdown of sets; the colour chooser is

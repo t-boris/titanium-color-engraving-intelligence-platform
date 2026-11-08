@@ -20,6 +20,7 @@ const CardCanvas = (() => {
   const PAD = 10;                     // mm of room around the card inside the picture
   const CORNER_MM = 3;                // the rounded corners of the card outline
   const MIN_MM = 0.5;                 // the smallest width or height a resize leaves
+  const MIN_PART_MM = 0.05;           // ... of a part of imported artwork, which may be a hairline (the server leaves 0.02)
   const GRID_MM = 0.1;                // a move is rounded to this grid (Alt switches it off)
   const SNAP_MM = 0.5;                // the card's edges and centre pull an element within this distance
   const MAJOR_MM = 10;                // the major lines of the grid and the ruler labels
@@ -603,7 +604,7 @@ const CardCanvas = (() => {
         for (const [k, el] of g.from) setBox(k, el, {x: num(el.x) + g.dx, y: num(el.y) + g.dy});
       } else if (g.kind === 'resize') {
         const keep = ASPECT_TYPES.has(g.from.type) || !!ev.shiftKey;
-        setBox(g.key, g.from, resizeFromHandle(g.from, g.handle, [pt[0] + g.grab[0], pt[1] + g.grab[1]], {keepAspect: keep, minMm: MIN_MM}));
+        setBox(g.key, g.from, resizeFromHandle(g.from, g.handle, [pt[0] + g.grab[0], pt[1] + g.grab[1]], {keepAspect: keep, minMm: g.from.type === 'vector' ? MIN_PART_MM : MIN_MM}));
       } else setBox(g.key, g.from, {rotation: rotationFromPoint(g.from, pt, ev.shiftKey ? 15 : 1, g.offset)});
       applyPreview();
       drawOverlay();
@@ -699,6 +700,17 @@ const CardCanvas = (() => {
         call('onRedo');
       }
     }
+    /** A double click picks the element under the pointer out of its group (a part of an imported artwork); on an element without a group it changes nothing. */
+    function onDouble(ev) {
+      if (dead || ev.isPrimary === false) return;
+      const s = scale(), hit = hitTest(shown(), toMm(ev), HIT_PX / s);
+      if (hit == null) return;
+      const only = [key(hit)];
+      if (sameSet(sel, only)) return;
+      sel = sorted(only);
+      markSelection(); drawOverlay(); announce();
+      call('onSelect', ordered(sel));
+    }
     function onWheel(ev) {
       if (dead || !(ev.ctrlKey || ev.metaKey)) return;               // a plain wheel scrolls the page, as everywhere
       ev.preventDefault();
@@ -707,7 +719,7 @@ const CardCanvas = (() => {
     }
 
     const bound = [[stage, 'pointerdown', onDown], [stage, 'pointermove', onMove], [stage, 'pointerup', onUp], [stage, 'pointercancel', cancel],
-      [stage, 'lostpointercapture', cancel], [stage, 'keydown', onKey], [stage, 'wheel', onWheel, {passive: false}]];
+      [stage, 'lostpointercapture', cancel], [stage, 'dblclick', onDouble], [stage, 'keydown', onKey], [stage, 'wheel', onWheel, {passive: false}]];
     for (const [target, type, fn, opts] of bound) target.addEventListener(type, fn, opts);
     const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(() => { if (!dead) { layout(); redrawScale(); } }) : null;
     if (observer) observer.observe(stage);

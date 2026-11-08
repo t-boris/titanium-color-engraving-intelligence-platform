@@ -262,6 +262,14 @@ def choices(store: Store, setup: Mapping) -> dict:
     return {"setup": view, "types": types}
 
 
+def colour_items(store: Store, setup: Mapping) -> list[dict]:
+    """The measured colours of the card's own laser, lens and material, the best measurement of a colour first, each with its swatch, its
+    CIELAB colour and its origin; none while the setup is incomplete or no colour is measured (feature-3: suggestions for imported artwork)."""
+    if not setup_view(store, setup)["complete"]:
+        return []
+    return _items_of(store, setup, "color")[0]
+
+
 def item_by_id(store: Store, setup: Mapping, choice_id) -> dict | None:
     """The item with this id when it is offered for exactly this setup, else None (an id from another setup never resolves)."""
     if not isinstance(choice_id, str) or ":" not in choice_id or not setup_view(store, setup)["complete"]:
