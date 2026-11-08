@@ -13,7 +13,8 @@ workshop's creation context) and everything else is a JSON document in ``data_js
 
 An element is ``{id, type, name, x, y, width, height, rotation, group, settings_id}`` plus one payload object named like its type:
 ``text`` (the lettering fields), ``shape`` / ``frame`` / ``icon`` (:mod:`card_library`), ``image`` (a stored picture and how it is traced,
-:mod:`card_image`) or ``qr`` (:mod:`card_qr`). ``x``/``y`` is its centre in millimetres on the card (origin top-left, y down) and
+:mod:`card_image`), ``qr`` (:mod:`card_qr`) or ``vector`` (one part of an imported SVG or Illustrator artwork, :mod:`card_vector`: the name of the
+stored artwork file, the part's number, its design colour ``fill`` and the colour the file gave it, ``source``). ``x``/``y`` is its centre in millimetres on the card (origin top-left, y down) and
 ``rotation`` is in degrees, clockwise on the screen.
 
 Every element reduces to one shapely geometry in the card's millimetres. The screen draws that geometry, the preview shows it and the
@@ -26,6 +27,7 @@ import base64
 import copy
 import hashlib
 import json
+import logging
 import math
 import shutil
 import threading
@@ -37,19 +39,24 @@ import shapely
 from shapely import affinity
 from shapely.geometry import GeometryCollection, MultiPolygon, Polygon, box as shapely_box
 
-from . import (card_generate, card_image, card_library, card_qr, card_raster, card_settings, conversion as cv, creation_context as cc, devices,
+from . import (card_generate, card_image, card_library, card_qr, card_raster, card_settings, card_vector, conversion as cv, creation_context as cc, devices,
                fonts, grayscale, lenses, lettering, plans as pl, render_cache as rc, setup as su)
 from .db import Store, now
 
+log = logging.getLogger(__name__)
 MODE = pl.MODE_CARD_WORK
+UNREADABLE_PART = "The shape of this part could not be read from its artwork file"
 IDENTIFIER_PREFIX = "TCE-C"
 SIDES = ("front", "back")
-TYPES = ("text", "shape", "frame", "icon", "image", "qr")
+TYPES = ("text", "shape", "frame", "icon", "image", "qr", "vector")
 PRESETS = [{"id": "85x53", "width": 85.0, "height": 53.0, "label": "85 × 53 mm"},
            {"id": "85x54", "width": 85.0, "height": 54.0, "label": "85 × 54 mm"}]
 CUSTOM = "custom"
 MIN_CARD_MM, MAX_CARD_MM = 10.0, 300.0
 MIN_ELEMENT_MM, MAX_ELEMENT_MM = 0.2, 500.0
+MIN_VECTOR_MM = card_vector.MIN_PART_MM       # an imported part may be a hairline: it is as thin as the artwork draws it
+SCALE_RANGE = (0.05, 20.0)
+MAX_COLOURS_ASKED = 64
 MAX_ELEMENTS = 300                      # on one side
 MAX_NAME = 80
 UNDO_DEPTH = 50
@@ -80,7 +87,8 @@ DATA = ("size_mm", "preset", "sides", "settings", "default_settings_id", "setup"
 # What one step of undo or redo brings back: everything that decides what the card engraves.
 STATE = ("size_mm", "preset", "sides", "settings", "default_settings_id", "setup", "next_id", "next_settings_id")
 EDIT_OPS = ("add", "set", "move", "resize", "rotate", "reorder", "duplicate", "delete", "group", "ungroup", "assign_settings", "assign_choice",
-            "settings_add", "settings_set", "settings_delete", "set_size", "settings_apply", "settings_confirm", "settings_custom", "set_setup")
+            "settings_add", "settings_set", "settings_delete", "set_size", "settings_apply", "settings_confirm", "settings_custom", "set_setup",
+            "recolour", "scale")
 
 CARD_OPS = ("settings_add", "settings_set", "settings_delete", "set_size", "settings_apply", "settings_confirm", "settings_custom", "set_setup")
 
@@ -288,11 +296,23 @@ def _image_payload(payload) -> dict:
             "engrave": payload.get("engrave") if payload.get("engrave") in ENGRAVE else "vector"}
 
 
+def _vector_payload(payload) -> dict:
+    """One part of an imported artwork: the stored file of the artwork, the part's number, its design colour and the colour the file gave it."""
+    if not isinstance(payload, dict) or not isinstance(payload.get("artwork"), str) or not card_vector.FILE_PATTERN.match(payload["artwork"]):
+        raise su.ValidationError("a vector part needs the stored file of its artwork")
+    part = payload.get("part")
+    if not isinstance(part, int) or isinstance(part, bool) or part < 0:
+        raise su.ValidationError("a vector part needs its number in the artwork")
+    fill = card_vector.fill_of(payload.get("fill"))
+    return {"artwork": payload["artwork"], "part": part, "fill": fill, "source": card_vector.fill_of(payload.get("source", fill)),
+            "file": str(payload.get("file") or "artwork")[:MAX_NAME], "kind": payload.get("kind") if payload.get("kind") in ("svg", "ai") else "svg"}
+
+
 def _checked(plan: Mapping, element: Mapping) -> dict:
     """An element with every field present and in range; ValidationError names the first that is not."""
     kind = element.get("type")
     if kind not in TYPES:
-        raise su.ValidationError("an element is a text, shape, frame, icon, image or QR code")
+        raise su.ValidationError("an element is a text, shape, frame, icon, image, QR code or vector part")
     out = {"id": element["id"], "type": kind}
     out["name"] = _name(element.get("name") or kind.capitalize(), "the element's name")
     out["x"] = _number(element.get("x"), "the position x (mm)", -1000.0, 1000.0)
@@ -318,10 +338,13 @@ def _checked(plan: Mapping, element: Mapping) -> dict:
         out["icon"] = _library_payload("icon", "name", payload)
     elif kind == "image":
         out["image"] = _image_payload(payload)
+    elif kind == "vector":
+        out["vector"] = _vector_payload(payload)
     else:
         out["qr"] = card_qr.checked(payload)
-    out["width"] = _number(element.get("width", 1.0), "the width (mm)", MIN_ELEMENT_MM, MAX_ELEMENT_MM)
-    out["height"] = _number(element.get("height", 1.0), "the height (mm)", MIN_ELEMENT_MM, MAX_ELEMENT_MM)
+    least = MIN_VECTOR_MM if kind == "vector" else MIN_ELEMENT_MM
+    out["width"] = _number(element.get("width", 1.0), "the width (mm)", least, MAX_ELEMENT_MM)
+    out["height"] = _number(element.get("height", 1.0), "the height (mm)", least, MAX_ELEMENT_MM)
     if kind == "qr":
         out["width"] = out["height"] = max(out["width"], out["height"])
     return out
@@ -349,7 +372,7 @@ def _picture(path: str):
 def _local(store: Store, element: Mapping):
     """The element's geometry centred on (0, 0), unrotated, with the problems found and, for a text, the size it measures."""
     kind = element["type"]
-    key_parts = {"type": kind, kind: element[kind]}
+    key_parts = {"type": kind, kind: element[kind] if kind != "vector" else {k: v for k, v in element[kind].items() if k not in ("fill", "source", "file", "kind")}}
     if kind != "text":                                  # a text measures its own box
         key_parts.update(w=round(element["width"], 3), h=round(element["height"], 3))
     if kind == "image":
@@ -384,6 +407,19 @@ def _local(store: Store, element: Mapping):
         elif kind == "icon":
             geometry = card_library.geometry("icon", element["icon"]["name"], element["width"], element["height"],
                                              {k: v for k, v in element["icon"].items() if k != "name"})
+        elif kind == "vector":
+            payload = element["vector"]
+            if not card_vector.exists(store.data_dir, payload["artwork"]):
+                problems.append("The artwork file of this part is missing")
+                geometry = Polygon()
+            else:
+                artwork = card_vector.load(store.data_dir, payload["artwork"])
+                try:
+                    geometry = card_vector.part_geometry(card_vector.part(artwork, payload["part"]), element["width"], element["height"])
+                except (shapely.errors.GEOSException, ValueError, IndexError, KeyError, TypeError) as error:       # a damaged part is one problem of the card, not the end of its view
+                    log.warning("the shape of part %s of %s could not be built: %s", payload.get("part"), payload.get("artwork"), error)
+                    problems.append(UNREADABLE_PART)
+                    geometry = Polygon()
         elif kind == "image":
             path = element["image"]["file"]
             if not Path(path).exists():
@@ -430,7 +466,7 @@ def _fit_text(store: Store, element: dict) -> None:
 
 
 def _label_of(kind: str) -> str:
-    return {"qr": "QR code"}.get(kind, kind.capitalize())
+    return {"qr": "QR code", "vector": "Vector part"}.get(kind, kind.capitalize())
 
 
 def _new_name(elements: list[dict], kind: str) -> str:
@@ -442,7 +478,9 @@ def _defaults_for(plan: Mapping, spec: Mapping) -> dict:
     """A new element from the operator's request: what it names, the rest from the library's defaults, in the middle of the card."""
     kind = spec.get("type")
     if kind not in TYPES:
-        raise su.ValidationError("an element is a text, shape, frame, icon, image or QR code")
+        raise su.ValidationError("an element is a text, shape, frame, icon, image, QR code or vector part")
+    if kind == "vector":
+        raise su.ValidationError("vector parts come from an imported SVG or Illustrator file: import the file")
     card = size_mm(plan)
     element = {k: copy.deepcopy(v) for k, v in spec.items() if k not in ("id",)}
     element.setdefault("x", round(card["width"] / 2, 3))
@@ -503,6 +541,8 @@ def _merged(plan: Mapping, element: dict, changes) -> dict:
         if key == element["type"]:
             if not isinstance(value, dict):
                 raise su.ValidationError(f"the {key} settings must be an object")
+            if key == "vector" and set(value) - {"fill"}:
+                raise su.ValidationError("only the design colour of an imported part can be changed here")
             merged[key] = {**merged[key], **value}
         elif key in ("name", "x", "y", "width", "height", "rotation", "group", "settings_id"):
             merged[key] = value
@@ -513,8 +553,9 @@ def _merged(plan: Mapping, element: dict, changes) -> dict:
 
 def _resize(store: Store, plan: dict, element: dict, body: Mapping) -> dict:
     new = copy.deepcopy(element)
-    width = _number(body.get("width", element["width"]), "the width (mm)", MIN_ELEMENT_MM, MAX_ELEMENT_MM)
-    height = _number(body.get("height", element["height"]), "the height (mm)", MIN_ELEMENT_MM, MAX_ELEMENT_MM)
+    least = MIN_VECTOR_MM if element["type"] == "vector" else MIN_ELEMENT_MM
+    width = _number(body.get("width", element["width"]), "the width (mm)", least, MAX_ELEMENT_MM)
+    height = _number(body.get("height", element["height"]), "the height (mm)", least, MAX_ELEMENT_MM)
     if "x" in body:
         new["x"] = body["x"]
     if "y" in body:
@@ -771,6 +812,15 @@ def _apply(store: Store, plan: dict, body: Mapping) -> list[str]:
         for element in elements:
             if element["group"] in labels:
                 element["group"] = None
+    elif op == "recolour":
+        parts = [e for e in chosen if e["type"] == "vector"]
+        if not parts:
+            raise su.ValidationError("choose imported vector parts to give a design colour")
+        wanted = None if body.get("reset") is True else card_vector.fill_of(body.get("fill"))
+        for element in parts:
+            element["vector"]["fill"] = wanted or element["vector"]["source"]
+    elif op == "scale":
+        _scale(store, plan, body["side"], chosen, body.get("factor"))
     elif op in ("assign_settings", "assign_choice"):
         if op == "assign_choice":
             item = card_settings.item_by_id(store, _setup(plan), body.get("choice_id"))
@@ -782,7 +832,7 @@ def _apply(store: Store, plan: dict, body: Mapping) -> list[str]:
             if wanted is not None and wanted not in [s["id"] for s in plan["settings"]]:
                 raise su.ValidationError("the engraving settings you chose no longer exist")
         members = {e["id"] for e in chosen}
-        labels = {e["group"] for e in chosen if e["group"]}
+        labels = set() if body.get("only") is True else {e["group"] for e in chosen if e["group"]}      # "only": just these, a part picked out of its group
         if isinstance(body.get("group"), str):
             labels.add(body["group"])
         if not members and not labels:
@@ -795,6 +845,24 @@ def _apply(store: Store, plan: dict, body: Mapping) -> list[str]:
         if op == "assign_choice":
             _drop_unused_copies(plan)
     return added
+
+
+def _scale(store: Store, plan: dict, side: str, chosen: list[dict], factor) -> None:
+    """The chosen elements made ``factor`` times as large about the centre of their boxes (their places keep their proportions), as one change."""
+    factor = _number(factor, "the scale factor", *SCALE_RANGE)
+    elements = plan["sides"][side]["elements"]
+    cx = (min(e["x"] - e["width"] / 2 for e in chosen) + max(e["x"] + e["width"] / 2 for e in chosen)) / 2
+    cy = (min(e["y"] - e["height"] / 2 for e in chosen) + max(e["y"] + e["height"] / 2 for e in chosen)) / 2
+    for element in chosen:
+        grown = copy.deepcopy(element)
+        grown["x"], grown["y"] = cx + (element["x"] - cx) * factor, cy + (element["y"] - cy) * factor
+        if element["type"] == "text":
+            grown["text"]["height_mm"] = round(element["text"]["height_mm"] * factor, 4)
+        else:
+            grown["width"], grown["height"] = element["width"] * factor, element["height"] * factor
+        merged = _checked(plan, grown)
+        _fit_text(store, merged)
+        elements[elements.index(element)] = merged
 
 
 def _exists(store: Store, table: str, record_id) -> bool:
@@ -1010,6 +1078,92 @@ def generate(store: Store, plan_id: int, side: str, description, kind: str) -> d
     return add_image(store, plan_id, side, text[:40].capitalize(), data, origin="generated", prompt=text)
 
 
+# -- imported vector artwork (feature-3) --------------------------------------------------------------------------------------------------
+def _suggest_engraving(store: Store, plan: dict, parts: list[dict]) -> dict:
+    """Give the parts of a new artwork the measured engraving colour that is close to their design colour (the operator changes any of them
+    with the chooser; a colour with no close match keeps the card's default settings and is told so). Returns what was done, for the report."""
+    setup = _setup(plan)
+    colours = sorted({e["vector"]["fill"] for e in parts})
+    items = card_settings.colour_items(store, setup)
+    out = {"available": bool(items), "reason": None, "colours": len(colours), "assigned": 0, "unmatched": []}
+    if not items:
+        out["reason"] = card_settings.REASONS["color" if card_settings.setup_view(store, setup)["complete"] else "setup"]
+        return out
+    found = card_vector.matches(colours, items)
+    by_id = {item["id"]: item for item in items}
+    for colour in colours:
+        best = found[colour]["best"]
+        if best is not None and found[colour]["close"]:
+            settings_id = _set_of_choice(plan, by_id[best["choice_id"]])
+            for element in parts:
+                if element["vector"]["fill"] == colour:
+                    element["settings_id"] = settings_id
+            out["assigned"] += 1
+        else:
+            out["unmatched"].append(colour)
+    if out["assigned"]:
+        _drop_unused_copies(plan)
+    return out
+
+
+def import_vector(store: Store, plan_id: int, side: str, file_name: str, data: bytes) -> dict:
+    """Import an SVG or Adobe Illustrator file as a group of editable parts on a side (REQ-003): each path of the file is a part with its design
+    colour, the drawing is fitted to the card and centred, close measured engraving colours are suggested for it (REQ-004), all as one change
+    that can be undone. Returns the work with ``added`` and ``import``: what was imported and what could not be carried over."""
+    plan = _work(store, plan_id)
+    elements = _side(plan, side)
+    room = MAX_ELEMENTS - len(elements)
+    if room < 1:
+        raise su.ValidationError(f"a side holds at most {MAX_ELEMENTS} elements")
+    parsed = card_vector.read(data, file_name or "")
+    stem = (Path(file_name or "").stem or "artwork")[:40]
+    card = size_mm(plan)
+    artwork = card_vector.prepare(parsed, stem, card, room)
+    before = _here(plan)
+    stored = card_vector.store(store.data_dir, artwork)
+    factor, shown = artwork["factor"], (file_name or "artwork")[:MAX_NAME]
+    label = None
+    if len(artwork["parts"]) > 1:
+        label = f"g{plan['next_id']}"
+        plan["next_id"] += 1
+    added = []
+    for number, item in enumerate(artwork["parts"]):
+        x0, y0, x1, y1 = item["box"]
+        spec = {"id": f"e{plan['next_id']}", "type": "vector", "name": item["name"], "rotation": 0.0, "group": label, "settings_id": None,
+                "x": card["width"] / 2 + ((x0 + x1) / 2 - artwork["width"] / 2) * factor, "y": card["height"] / 2 + ((y0 + y1) / 2 - artwork["height"] / 2) * factor,
+                "width": max((x1 - x0) * factor, MIN_VECTOR_MM), "height": max((y1 - y0) * factor, MIN_VECTOR_MM),
+                "vector": {"artwork": stored, "part": number, "fill": item["fill"], "source": item["fill"], "file": shown, "kind": artwork["kind"]}}
+        plan["next_id"] += 1
+        elements.append(_checked(plan, spec))
+        added.append(spec["id"])
+    parts = [e for e in elements if e["id"] in added]
+    report = {**artwork["report"], "size_mm": {"width": round(artwork["width"] * factor, 1), "height": round(artwork["height"] * factor, 1)},
+              "file": shown, "engraving": _suggest_engraving(store, plan, parts)}
+    _push(plan, before)
+    plan["updated_at"] = now()
+    out = _view(store, plan, added)                 # drawn before anything is saved: a file whose parts cannot be drawn is refused, not kept in the card
+    if any(UNREADABLE_PART in problem for e in out["sides"][side]["elements"] if e["id"] in added for problem in e["problems"]):
+        raise su.ValidationError("the shapes of this file could not be built: save it again from the program that made it, or export it as SVG")
+    out["import"] = report
+    with store.transaction():
+        _save(store, plan, plan["id"])
+        store.audit("card_work_vector_added", plan_id=plan["id"], kind=artwork["kind"], parts=len(added))
+    return out
+
+
+def colour_matches(store: Store, plan_id: int, colours) -> dict:
+    """For design colours, the measured engraving colours of this card's own laser, lens and material that are nearest, by ΔE (REQ-004):
+    ``matches[colour]`` has ``best`` (None when nothing is measured), ``close`` and ``alternatives``; ``available`` and ``reason`` say whether and why not."""
+    plan = _work(store, plan_id)
+    if not isinstance(colours, (list, tuple)) or len(colours) > MAX_COLOURS_ASKED:
+        raise su.ValidationError(f"ask for at most {MAX_COLOURS_ASKED} colours at a time")
+    wanted = sorted({card_vector.fill_of(c) for c in colours})
+    setup = _setup(plan)
+    items = card_settings.colour_items(store, setup)
+    reason = None if items else card_settings.REASONS["color" if card_settings.setup_view(store, setup)["complete"] else "setup"]
+    return {"available": bool(items), "reason": reason, "close_delta_e": card_vector.CLOSE_DELTA_E, "matches": card_vector.matches(wanted, items)}
+
+
 # -- the view ---------------------------------------------------------------------------------------------------------------------------
 def _is_raster(element: Mapping) -> bool:
     return element["type"] == "image" and element["image"].get("engrave") == "raster"
@@ -1098,6 +1252,8 @@ def _element_view(plan: Mapping, built: list[dict], index: int, card) -> dict:
     if element["type"] == "image":
         out["image"].pop("file", None)
         out["raster"] = _raster_view(plan, element) if _is_raster(element) and not geometry.is_empty and not entry["problems"] else None
+    if element["type"] == "vector":
+        out["color"] = element["vector"]["fill"]
     out["d"] = path_d(geometry)
     out["bounds"] = [round(v, 3) for v in geometry.bounds] if not geometry.is_empty else None
     out["empty"] = geometry.is_empty
@@ -1228,7 +1384,8 @@ def preview_svg(store: Store, plan_id: int, side: str) -> str:
             pictures.append(f'<image href="data:image/png;base64,{png}" x="{_fmt(element["x"] - width / 2)}" y="{_fmt(element["y"] - height / 2)}" '
                             f'width="{_fmt(width)}" height="{_fmt(height)}"/>')
         else:
-            paths.append(f'<path d="{path_d(entry["geometry"])}" fill-rule="evenodd"/>')
+            tint = f' fill="{entry["element"]["vector"]["fill"]}"' if entry["element"]["type"] == "vector" else ""
+            paths.append(f'<path d="{path_d(entry["geometry"])}" fill-rule="evenodd"{tint}/>')
     return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {_fmt(card["width"])} {_fmt(card["height"])}">'
             f'<rect width="{_fmt(card["width"])}" height="{_fmt(card["height"])}" rx="3" fill="{CARD_FILL}"/>'
             f'<g fill="{ENGRAVED_FILL}">{"".join(paths)}</g>{"".join(pictures)}</svg>')

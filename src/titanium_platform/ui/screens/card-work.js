@@ -15,12 +15,13 @@ const CardWork = (() => {
   const PRESETS = [['85x53', '85 × 53 mm'], ['85x54', '85 × 54 mm'], ['custom', 'Custom size']];          // card_work.PRESETS, and a card of any size
   const PICTURES = 'image/png,image/jpeg,image/gif,image/bmp,image/tiff,image/webp';
   const LIBRARY_KEY = {shape: 'kind', frame: 'style', icon: 'name'};                                        // the name of the item in the element's payload
-  const ADD = [['text', 'Text'], ['shape', 'Shape'], ['frame', 'Frame'], ['icon', 'Icon'], ['image', 'Image'], ['generate', 'Generate'], ['qr', 'QR code']];
+  const VECTORS = '.svg,.svgz,.ai,.pdf,image/svg+xml,application/illustrator,application/pdf,application/postscript';                          // card_vector.read takes SVG, SVGZ and Illustrator (PDF-compatible)
+  const ADD = [['text', 'Text'], ['shape', 'Shape'], ['frame', 'Frame'], ['icon', 'Icon'], ['image', 'Image'], ['vector', 'Vector'], ['generate', 'Generate'], ['qr', 'QR code']];
   const ORDER = [['front', 'To front'], ['forward', 'Forward'], ['backward', 'Backward'], ['back', 'To back']];
   const CARD_OPS = new Set(['settings_add', 'settings_set', 'settings_delete', 'set_size', 'settings_apply', 'settings_confirm', 'settings_custom', 'set_setup']);   // edits of the card, not of a side
   const FIELD_NAME = {name: 'Name', x: 'Center X, mm', y: 'Center Y, mm', width: 'Width, mm', height: 'Height, mm', rotation: 'Rotation, degrees', settings_id: 'Engraving settings',
     'text.text': 'Text', 'text.font': 'Font', 'text.height_mm': 'Letter height, mm', 'text.width_pct': 'Letter width, %', 'text.spacing_mm': 'Letter spacing, mm',
-    'text.line_pct': 'Line spacing, %', 'text.align': 'Alignment', 'qr.kind': 'QR content type', 'qr.ecc': 'QR error correction', 'image.engrave': 'Engrave as'};
+    'text.line_pct': 'Line spacing, %', 'text.align': 'Alignment', 'qr.kind': 'QR content type', 'qr.ecc': 'QR error correction', 'image.engrave': 'Engrave as', 'vector.fill': 'Design colour'};
   const SETTING_NAME = {name: 'Name', mode: 'Mode', power: 'Power, %', speed: 'Speed, mm/s', frequency: 'Frequency, kHz', pulse_width: 'Pulse width, ns',
     line_interval: 'Line interval, mm', passes: 'Passes', min_power: 'Minimum power, %', scan_angle: 'Scan angle, degrees', dot_width: 'Dot width, mm', dither: 'Image mode'};
   const dig = (object, path) => path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), object);
@@ -108,7 +109,7 @@ const CardWork = (() => {
   // ---- the screen ---------------------------------------------------------------------------------------------------------------------
   function screen(first, lib) {
     const id = first.id, base = `/card-works/${id}`;
-    let view = first, side = 'front', selection = [], grid = true, pendingSelect = null, canvas = null, inspected = null, shownName = null, disposed = false;
+    let view = first, side = 'front', selection = [], grid = true, pendingSelect = null, canvas = null, inspected = null, shownName = null, disposed = false, importReport = null;
     const root = h('div', {class: 'os cw'});
 
     // -- the document: every change goes through the tracker
@@ -121,6 +122,7 @@ const CardWork = (() => {
         return wrap(view);
       }
       request.refusal = null;
+      if (next.import) importReport = next.import;               // told once, by the panel that asked for the import
       view = next;
       if (request.select && next.added && next.added.length) pendingSelect = {side: request.side, ids: next.added};
       return wrap(next);
@@ -183,12 +185,18 @@ const CardWork = (() => {
         if (error) throw error;
       });
     }
-    const assign = (ids, value) => edit({op: 'assign_settings', ids, settings_id: value === '' || value == null ? null : Number(value)},
+    const assign = (ids, value) => edit({op: 'assign_settings', ids, ...(partial(ids) ? {only: true} : {}), settings_id: value === '' || value == null ? null : Number(value)},
       ids.length === 1 ? {local: {[`${ids[0]}:settings_id`]: value === '' || value == null ? null : Number(value)}} : {retryable: false});
 
     // -- selection
-    function select(ids) {
-      selection = expand(ids);
+    /** The ids belong to a group of which not every member is among them (a part picked out of its artwork). */
+    const partial = (ids) => ids.some((id) => { const e = elementById(id); return !!e && !!e.group && sideElements().some((x) => x.group === e.group && !ids.includes(x.id)); });
+    /** Choosing a layer chooses its group, as on the canvas; choosing a member of a group that is chosen as a whole (or the double click on the
+        canvas, ``o.single``) picks that part out of it, so that a part of an imported artwork can be coloured and moved on its own. */
+    function select(ids, o = {}) {
+      const whole = (id) => { const e = elementById(id); return !!e && !!e.group && sideElements().filter((x) => x.group === e.group).every((x) => selection.includes(x.id)); };
+      const stay = ids.length === 1 && selection.length === 1 && selection[0] === ids[0];
+      selection = o.single || stay || (ids.length === 1 && whole(ids[0])) ? ids : expand(ids);
       if (canvas) canvas.setSelection(selection);
       layers.update(sideElements(), selection);
       paintRight();
@@ -217,12 +225,33 @@ const CardWork = (() => {
       }
       return cache;
     }
+    // -- the measured engraving colours nearest to the design colours of imported parts, asked for the card's setup and these colours
+    const near = {key: null, data: null, json: null, error: null, loading: false};
+    function colourMatches(colours) {
+      const setup = view.setup || {}, key = JSON.stringify([setup.device_id ?? null, setup.lens_id ?? null, setup.material_id ?? null, [...colours].sort()]);
+      if (near.key !== key) {
+        Object.assign(near, {key, data: null, json: null, error: null, loading: true});
+        get(`${base}/colour-matches?colours=${encodeURIComponent(colours.join(','))}`).then((data) => {
+          if (near.key !== key) return;
+          near.loading = false;
+          const json = JSON.stringify(data);
+          if (json !== near.json) { near.json = json; near.data = data; }
+          paintRight();
+        }, (e) => { if (near.key === key) { near.loading = false; near.error = e.message || String(e); paintRight(); } });
+      }
+      return near;
+    }
     const env = {lib: () => lib, local, view: () => view, set: (e, path, value) => setField(e, path, value), setQr, setQrKind, select, reveal, settingsName,
       reorder: (elementId, to) => edit({op: 'reorder', id: elementId, to}, {retryable: false}),
+      deleteLayer: (elementId) => edit({op: 'delete', ids: [elementId]}, {retryable: false}),
       settingsAdd: () => edit({op: 'settings_add'}, {retryable: false}), setSettings: (settingsId, changes) => setSettings(settingsId, changes), settingsDelete,
-      setup: () => view.setup, choices, reloadChoices: () => { cache.key = null; },
+      setup: () => view.setup, choices, reloadChoices: () => { cache.key = null; near.key = null; },
       applyChoice: (settingsId, choiceId) => edit({op: 'settings_apply', settings_id: settingsId, choice_id: choiceId}, {retryable: false}),
-      assignChoice: (ids, choiceId) => edit({op: 'assign_choice', ids, choice_id: choiceId}, {retryable: false}),
+      assignChoice: (ids, choiceId) => edit({op: 'assign_choice', ids, ...(partial(ids) ? {only: true} : {}), choice_id: choiceId}, {retryable: false}),
+      assignChoiceTo: (ids, choiceId) => edit({op: 'assign_choice', ids, only: true, choice_id: choiceId}, {retryable: false}),
+      recolour: (ids, fill_, reset) => edit({op: 'recolour', ids, ...(reset ? {reset: true} : {fill: fill_})}, {retryable: false}),
+      scale: (ids, factor) => edit({op: 'scale', ids, factor}, {retryable: false}),
+      colourMatches,
       engravingOf: (e) => view.settings.find((x) => x.id === (e.settings_id == null ? view.default_settings_id : e.settings_id)) || null,
       confirmSettings: (settingsId) => edit({op: 'settings_confirm', settings_id: settingsId}, {retryable: false}),
       customSettings: (settingsId) => edit({op: 'settings_custom', settings_id: settingsId}, {retryable: false}),
@@ -252,6 +281,39 @@ const CardWork = (() => {
       return h('div', {class: 'stack'}, h('h4', {}, 'Add a picture'), App.filePick(input, 'Choose picture'), state, failure,
         h('p', {class: 'small muted'}, 'PNG, JPEG, GIF, BMP, TIFF or WebP. The picture is traced into shapes that can be engraved; adjust the tracing after it is added, or engrave it as a photo.'));
     }
+    /** Import an SVG or an Illustrator file as a group of parts, each a path of the file in its own colour. What could not be carried over is told here. */
+    function vectorPanel() {
+      const input = h('input', {type: 'file', accept: VECTORS, 'aria-label': 'Vector file'});
+      const failure = h('p', {class: 'alert bad small', role: 'alert', hidden: true}), state = h('p', {class: 'small muted', role: 'status'}), report = h('div', {class: 'stack cw-import-report'});
+      const line = (...bits) => h('p', {class: 'small'}, ...bits);
+      function told(r) {
+        const eng = r.engraving || {};
+        fill(report, h('p', {class: 'alert ok small', role: 'status'}, `Imported “${r.file}” (${r.kind === 'ai' ? 'Illustrator' : 'SVG'}): ${r.parts} ${r.parts === 1 ? 'part' : 'parts'} in ${r.colours} ${r.colours === 1 ? 'colour' : 'colours'}, `
+            + `${r.size_mm.width} × ${r.size_mm.height} mm. They are grouped; double-click one to select it alone.`),
+          eng.available ? line(eng.assigned ? `Engraving colours: ${eng.assigned} of ${eng.colours} colours were matched to colours measured for this card; change any of them in the panel on the right.` : 'No colour is close to a colour measured for this card; choose the engraving colours in the panel on the right.')
+            : line(eng.reason || 'No engraving colours could be suggested.'),
+          (r.notes || []).length ? h('div', {class: 'alert warn small cw-import-notes', role: 'status'}, h('strong', {}, 'Not carried over or changed:'), h('ul', {}, r.notes.map((n) => h('li', {}, n)))) : null);
+        if (report.scrollIntoView) report.scrollIntoView({block: 'nearest'});      // the panel scrolls: the report must not stay below its edge
+      }
+      input.addEventListener('change', async () => {
+        const file = input.files && input.files[0];
+        if (!file) return;
+        const body = new FormData();
+        body.append('side', side);
+        body.append('artwork', file, file.name);
+        failure.hidden = true;
+        fill(report, null);
+        importReport = null;
+        fill(state, 'Reading the file…');
+        const error = await soft({path: `${base}/vector`, upload: body});
+        fill(state, null);
+        input.value = '';
+        if (error) { failure.textContent = error.message || String(error); failure.hidden = false; } else if (importReport) told(importReport);
+      });
+      return h('div', {class: 'stack'}, h('h4', {}, 'Import vector artwork'), App.filePick(input, 'Choose SVG or AI file'), state, failure, report,
+        h('p', {class: 'small muted'}, 'SVG, or an Illustrator file saved with “Create PDF Compatible File”. Every path becomes a part you can colour, copy, move, resize, rotate and delete; the shape of a part cannot be edited. '
+          + 'Text must be converted to outlines first.'));
+    }
     const generation = {};
     function generatePanel() {
       const text = h('textarea', {rows: '3', maxlength: '300', 'aria-label': 'Describe the picture'});
@@ -280,7 +342,7 @@ const CardWork = (() => {
     let open = null;
     const build = {shape: () => h('div', {class: 'stack'}, h('h4', {}, 'Add a shape'), P.picker('shape', lib.shape, (item) => addLibrary('shape', item))),
       frame: () => h('div', {class: 'stack'}, h('h4', {}, 'Add a frame'), P.picker('frame', lib.frame, (item) => addLibrary('frame', item))),
-      icon: () => h('div', {class: 'stack'}, h('h4', {}, 'Add an icon'), P.picker('icon', lib.icon, (item) => addLibrary('icon', item))), image: imagePanel, generate: generatePanel};
+      icon: () => h('div', {class: 'stack'}, h('h4', {}, 'Add an icon'), P.picker('icon', lib.icon, (item) => addLibrary('icon', item))), image: imagePanel, vector: vectorPanel, generate: generatePanel};
     const toggles = new Map(ADD.map(([name, label]) => [name, h('button', {type: 'button', class: 'btn btn-small cw-add-btn', 'aria-expanded': name in build ? 'false' : null, onClick: () => {
       if (name === 'text') add({type: 'text'});
       else if (name === 'qr') add({type: 'qr'});
@@ -314,7 +376,7 @@ const CardWork = (() => {
       if (canvas) canvas.show({size_mm: view.size_mm, elements: sideElements(), selection, grid});
     }
     const handlers = {
-      onSelect: (ids) => { selection = ids; layers.update(sideElements(), selection); paintRight(); },
+      onSelect: (ids) => { selection = ids; layers.update(sideElements(), selection); paintRight(); },          // the canvas has chosen already, a part out of its group too
       onMove: (ids, dx, dy) => edit({op: 'move', ids, dx, dy}, {retryable: false}),
       onResize: (elementId, box) => edit({op: 'resize', id: elementId, ...box}, {retryable: false}),
       onRotate: (elementId, rotation) => edit({op: 'rotate', id: elementId, rotation}, {retryable: false}),
@@ -344,15 +406,15 @@ const CardWork = (() => {
     function buildInspector(e) {
       const K = (p) => `${e.id}:${p}`, number = (label, p, quantity) => P.numberControl({label, key: K(p), local, quantity, commit: (v) => setField(e, p, v)});
       const name = P.textControl({label: 'Name', key: K('name'), local, nonEmpty: true, commit: (v) => setField(e, 'name', v)});
-      const [x, y, width, height, rotation] = [number('Center X', 'x', Q.x), number('Center Y', 'y', Q.y), number('Width', 'width', Q.width), number('Height', 'height', Q.height),
+      const [x, y, width, height, rotation] = [number('Center X', 'x', Q.x), number('Center Y', 'y', Q.y), number('Width', 'width', e.type === 'vector' ? Q.partWidth : Q.width), number('Height', 'height', e.type === 'vector' ? Q.partHeight : Q.height),
         number('Rotation', 'rotation', Q.rotation)];
       const settings = P.selectControl({label: 'Use another set of this card', key: K('settings_id'), local, options: settingsOptions(), commit: (v) => assign([e.id], v)});
       const engraving = CardSettings.engravingBlock(env, sheetControls, settings.el);
       const form_ = P.typeForm(e, env), notes = h('div', {class: 'stack'}), actions = h('div', {}), head = h('h4', {});
       let optionsKey = '';
       return {key: `${e.id}:${e.type}:${e.type === 'qr' ? e.qr.kind : ''}`,
-        el: h('div', {class: 'stack cw-inspector'}, head, notes, engraving.el, name.el, h('div', {class: 'cw-pair'}, x.el, y.el), h('div', {class: 'cw-pair'}, width.el, height.el), rotation.el,
-          actions, form_.el),
+        el: h('div', {class: 'stack cw-inspector'}, head, notes, engraving.el, e.type === 'vector' ? form_.el : null,       // the colours of a part come with its engraving, not after the position fields
+          name.el, h('div', {class: 'cw-pair'}, x.el, y.el), h('div', {class: 'cw-pair'}, width.el, height.el), rotation.el, actions, e.type === 'vector' ? null : form_.el),
         sync(next) {
           fill(head, `${TYPE_NAME[next.type]}${next.group ? ' · in a group' : ''}`);
           fill(notes, (next.problems || []).map((p) => h('p', {class: 'alert bad small'}, p)), next.type === 'qr' ? null : (next.warnings || []).map((w) => h('p', {class: 'alert warn small'}, w.message)));
@@ -373,7 +435,17 @@ const CardWork = (() => {
       select_.value = values.size > 1 ? '__mixed' : [...values][0];
       const engraving = CardSettings.engravingBlock(env, sheetControls, field('Use another set of this card', select_));
       engraving.sync(chosen);
-      return h('div', {class: 'stack cw-inspector'}, h('h4', {}, `${chosen.length} elements selected`), engraving.el, actionsFor(chosen));
+      const parts = chosen.filter((e) => e.type === 'vector'), colours = parts.length ? P.artworkColours(env) : null;
+      if (colours) colours.sync(parts);
+      const ids = chosen.map((e) => e.id);
+      const scale = P.numberControl({label: 'Scale the selection', key: 'scale', local, quantity: {label: 'Scale', unit: '%', min: 5, max: 2000}, commit: async (v) => {
+        const error = await env.scale(ids, v / 100);
+        if (!error) scale.input.value = '100';
+        return error;
+      }});
+      scale.sync(100);
+      return h('div', {class: 'stack cw-inspector'}, h('h4', {}, `${chosen.length} elements selected`), engraving.el, colours ? colours.el : null, scale.el, actionsFor(chosen),
+        parts.length ? h('p', {class: 'small muted'}, 'Double-click a part on the card, or click its layer again, to select only that part.') : null);
     }
     /** Redraw ``body`` of the right column without taking the cursor from the control the person is in. */
     function keepFocus(rebuild) {

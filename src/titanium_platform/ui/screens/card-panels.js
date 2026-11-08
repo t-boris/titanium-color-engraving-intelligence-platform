@@ -23,12 +23,13 @@ const CardPanels = (() => {
     line_interval: {label: 'Line interval', unit: 'mm', min: 0, minOpen: true, max: 10},
     passes: {label: 'Passes', unit: '', integer: true, min: 1, max: 100},
     min_power: {label: 'Minimum power', unit: '%', min: 0, max: 100}, scan_angle: {label: 'Scan angle', unit: 'degrees', min: -360, max: 360},
-    dot_width: {label: 'Dot width', unit: 'mm', min: 0, max: 5}};
+    dot_width: {label: 'Dot width', unit: 'mm', min: 0, max: 5},
+    partWidth: {label: 'Width', unit: 'mm', min: 0.02, max: 500}, partHeight: {label: 'Height', unit: 'mm', min: 0.02, max: 500}};      // an imported part may be a hairline (card_work.MIN_VECTOR_MM)
   const KIND_NAME = {link: 'Link', vcard: 'Contact card (vCard)', text: 'Text', wifi: 'Wi-Fi network', email: 'Email', phone: 'Phone number'};
   const OPTION_NAME = {nopass: 'No password'};
   const ECC_NAME = {L: 'L: about 7 % of the code can be damaged', M: 'M: about 15 %', Q: 'Q: about 25 %', H: 'H: about 30 %'};
-  const TYPE_MARK = {text: 'T', shape: '◆', frame: '▢', icon: '★', image: '▣', qr: 'QR'};
-  const TYPE_NAME = {text: 'Text', shape: 'Shape', frame: 'Frame', icon: 'Icon', image: 'Image', qr: 'QR code'};
+  const TYPE_MARK = {text: 'T', shape: '◆', frame: '▢', icon: '★', image: '▣', qr: 'QR', vector: '✦'};
+  const TYPE_NAME = {text: 'Text', shape: 'Shape', frame: 'Frame', icon: 'Icon', image: 'Image', qr: 'QR code', vector: 'Vector part'};
   const NO_GUARANTEE = 'Passing the checks does not guarantee that the engraved code will scan.';
 
   const fixed = (v) => String(+(+v).toFixed(3));
@@ -255,10 +256,86 @@ const CardPanels = (() => {
       }};
   }
 
+  // ---- imported vector artwork (feature-3) ------------------------------------------------------------------------------------------
+  const HEX6 = /^#[0-9a-f]{6}$/i;
+  const dot = (colour, label) => h('span', {class: 'sw cw-swatch', style: `background:${colour}`, role: 'img', 'aria-label': label || `Colour ${colour}`});
+  const parts_ = (n) => `${n} ${n === 1 ? 'part' : 'parts'}`;
+
+  /** The colours of imported vector parts, one row for each design colour among ``parts``: the colour the file drew (changeable, with a way back),
+      the engraving colour the parts engrave with now, and the measured engraving colour that is nearest to the design colour, with its distance.
+      The two are kept apart: recolouring never changes what is engraved, and choosing an engraving never recolours the drawing (REQ-004).
+      ``env``: colourMatches(colours) → {data, error, loading}, recolour(ids, fill, reset), assignChoiceTo(ids, choiceId), engravingOf(e), reloadChoices,
+      and what card-settings.js asks of it (pickerDialog). */
+  function artworkColours(env) {
+    const box = h('section', {class: 'stack cw-art', 'aria-label': 'Colours of the imported artwork'});
+    let signature = null;
+    const failure = h('p', {class: 'alert bad small', role: 'alert', hidden: true});
+    const show = (error) => { const text = message(error); failure.textContent = text; failure.hidden = !text; };
+    function engravingLine(group, found) {
+      const sets = new Set(group.map((e) => env.engravingOf(e)).map((x) => (x ? x.id : null)));
+      const set = sets.size === 1 ? env.engravingOf(group[0]) : null, colour = CardSettings.swatchOf(set);
+      const origin = set && set.origin;
+      const name = !set ? 'Mixed engravings' : origin && origin.kind === 'choice' ? origin.label : set.name;
+      return {set, line: h('p', {class: 'row small cw-art-engraves'}, h('span', {class: 'muted'}, 'Engraved with'), colour ? dot(colour, `Engraving colour ${name}`) : null, h('strong', {}, name)),
+        choiceId: origin && origin.kind === 'choice' ? origin.choice_id : null};
+    }
+    function row(colour, group, cache) {
+      const ids = group.map((e) => e.id), changed = group.some((e) => e.vector.fill !== e.vector.source);
+      const input = h('input', {type: 'color', class: 'cw-colour-input', value: HEX6.test(colour) ? colour : '#000000', 'aria-label': `Design colour ${colour} of ${parts_(group.length)}`});
+      input.addEventListener('change', async () => show(await env.recolour(ids, input.value)));
+      const back = changed ? btn('Back to the colour of the file', async () => show(await env.recolour(ids, null, true)), 'btn-small') : null;
+      const engraves = engravingLine(group);
+      const data = cache.data, found = data && data.matches ? data.matches[colour] : null;
+      let suggestion;
+      if (cache.error) suggestion = h('p', {class: 'alert warn small', role: 'status'}, cache.error);
+      else if (!data) suggestion = h('p', {class: 'small muted', role: 'status'}, 'Looking for the engraving colours measured for this card…');
+      else if (!data.available) suggestion = h('p', {class: 'small muted cw-art-none', role: 'status'}, data.reason || 'No engraving colour is measured for this card yet.');
+      else if (!found || !found.best) suggestion = h('p', {class: 'small muted cw-art-none', role: 'status'}, 'No measured engraving colour is available for this card.');
+      else {
+        const best = found.best, on = engraves.choiceId === best.choice_id;
+        const use = btn(on ? 'In use' : found.close ? 'Use' : 'Use nearest', async () => show(await env.assignChoiceTo(ids, best.choice_id)), `btn-small cw-art-use${on ? '' : ' primary'}`);
+        use.setAttribute('aria-label', on ? `${best.label}: in use for ${colour}` : `Use ${best.label} for ${parts_(group.length)} of ${colour}`);
+        use.setAttribute('aria-pressed', String(on));
+        suggestion = h('div', {class: 'stack'},
+          h('div', {class: 'row small cw-art-suggest'}, h('span', {class: 'muted'}, found.close ? 'Closest engraving colour' : 'Nearest, but not close'), HEX6.test(best.swatch) ? dot(best.swatch, `Engraving colour ${best.label}`) : null,
+            h('strong', {}, best.label), h('span', {class: 'muted'}, `ΔE ${best.delta_e}`), use),
+          found.close ? null : h('p', {class: 'alert warn small cw-art-far', role: 'status'}, `No measured engraving colour is close to ${colour} (the nearest is ${best.delta_e} ΔE away; ${data.close_delta_e} or less is close). Choose one yourself or keep the card’s default settings.`));
+      }
+      const another = btn('Choose another…', () => CardSettings.pickerDialog(env, {subject: `${parts_(group.length)} of ${colour}`, inUse: engraves.choiceId ? {id: engraves.choiceId, type: 'color'} : null,
+        prefer: 'color', onPick: (item) => env.assignChoiceTo(ids, item.id)}), 'btn-small');
+      another.setAttribute('aria-label', `Choose another engraving colour for ${parts_(group.length)} of ${colour}`);
+      return h('div', {class: 'stack cw-art-row', 'data-colour': colour},
+        h('div', {class: 'row'}, h('span', {class: 'small muted'}, 'Design colour'), input, h('strong', {class: 'small'}, colour), h('span', {class: 'small muted'}, parts_(group.length)), h('span', {class: 'spacer'}), back),
+        engraves.line, suggestion, h('div', {class: 'row'}, another));
+    }
+    return {el: box, sync(parts) {
+      const groups = new Map();
+      for (const e of parts) { const key = e.vector.fill; if (!groups.has(key)) groups.set(key, []); groups.get(key).push(e); }
+      const colours = [...groups.keys()], cache = env.colourMatches(colours);
+      const next = JSON.stringify([[...groups].map(([colour, group]) => [colour, group.map((e) => [e.id, e.vector.source, e.settings_id])]), cache.data, cache.error, cache.loading, env.view().settings.map((x) => [x.id, x.name, x.origin && x.origin.choice_id])]);
+      if (next === signature) return;
+      signature = next;
+      fill(box, h('h4', {}, parts.length === 1 ? 'Colour of this part' : 'Colours of the artwork'),
+        h('p', {class: 'small muted'}, 'The design colour is what the file draws. The engraving colour is what the laser makes; it is chosen separately.'), failure,
+        [...groups].map(([colour, group]) => row(colour, group, cache)));
+    }};
+  }
+
+  /** One imported part: where it comes from, its design colour and engraving colour, and what cannot be done with it. */
+  function vectorForm(e, env) {
+    const info = h('p', {class: 'small muted'}), colours = artworkColours(env);
+    return {el: h('div', {class: 'stack cw-form'}, info, colours.el,
+      h('p', {class: 'small muted cw-nodes-note'}, 'The shape of an imported part cannot be edited (no path nodes). Move, resize, rotate, copy or delete it, or change its colour. Double-click a part of a group to select only that part.')),
+    sync(next) {
+      fill(info, `Part ${next.vector.part + 1} of “${next.vector.file}” (${next.vector.kind === 'ai' ? 'Illustrator' : 'SVG'})`);
+      colours.sync([next]);
+    }};
+  }
+
   /** The form of the type of element ``e``: {el, sync(element)}. */
   function typeForm(e, env) {
     return {text: textForm, shape: (x, v) => libraryForm(x, v, 'shape', 'kind'), frame: (x, v) => libraryForm(x, v, 'frame', 'style'),
-      icon: (x, v) => libraryForm(x, v, 'icon', 'name'), image: imageForm, qr: qrForm}[e.type](e, env);
+      icon: (x, v) => libraryForm(x, v, 'icon', 'name'), image: imageForm, qr: qrForm, vector: vectorForm}[e.type](e, env);
   }
 
   // ---- the library and the layers ---------------------------------------------------------------------------------------------------
@@ -288,6 +365,7 @@ const CardPanels = (() => {
         const bad = (e.problems || []).length || (e.warnings || []).length;
         return [h('button', {type: 'button', class: 'cw-layer', 'aria-pressed': String(on.includes(e.id)), title: `${TYPE_NAME[e.type]}: ${e.name}`, onClick: () => env.select([e.id])},
           h('span', {class: 'cw-layer-type', 'aria-hidden': 'true'}, TYPE_MARK[e.type]), h('span', {class: 'sr-only'}, `${TYPE_NAME[e.type]}: `),
+          e.type === 'vector' && e.vector && HEX6.test(e.vector.fill) ? h('span', {class: 'cw-layer-design', style: `background:${e.vector.fill}`, role: 'img', 'aria-label': `Design colour ${e.vector.fill}`}) : null,
           h('span', {class: 'lst-text cw-layer-name'}, e.name)),
         e.group ? pill(`Group of ${groupSize(e)}`) : null,
         engravingMark(e),
@@ -296,7 +374,9 @@ const CardPanels = (() => {
       actions: (e) => {
         const at = shown.indexOf(e), up = btn('↑', () => env.reorder(e.id, 'forward'), 'btn-small', at === 0), down = btn('↓', () => env.reorder(e.id, 'backward'), 'btn-small', at === shown.length - 1);
         up.setAttribute('aria-label', `Move ${e.name} forward`); down.setAttribute('aria-label', `Move ${e.name} backward`);
-        return [up, down];
+        const remove = btn('×', () => env.deleteLayer(e.id), 'btn-small');
+        remove.setAttribute('aria-label', `Delete ${e.name}`); remove.title = `Delete ${e.name}`;
+        return [up, down, remove];
       },
       empty: 'Nothing on this side yet. Add text, a shape, an icon or a QR code.', noResults: 'No layer matches this search.'});
     return {el: list.el, update(elements, selection) { on = selection; shown = [...elements].reverse(); list.items = shown; return list.refresh(); }};
@@ -309,7 +389,7 @@ const CardPanels = (() => {
       settingsDelete, and what card-settings.js asks of it (choices, applyChoice, confirmSettings, customSettings, setSetup). */
   function engravingPanel(env) {
     const rows = new Map(), setsBox = h('div', {class: 'cw-sets'}), reviewBox = h('div', {class: 'stack cw-review'});
-    const previews = Object.fromEntries(Object.keys(SIDE_NAME).map((s) => [s, h('img', {class: 'cw-preview', alt: `${SIDE_NAME[s]} as it will be engraved`})]));
+    const previews = Object.fromEntries(Object.keys(SIDE_NAME).map((s) => [s, h('img', {class: 'cw-preview', alt: `${SIDE_NAME[s]}: the shapes that will be engraved (imported artwork is drawn in its design colours)`})]));
     const heading = h('h4', {}, 'Engraving settings'), failure = h('p', {class: 'alert bad small', role: 'alert', hidden: true});
     const add = btn('Add settings', async () => { const text = message(await env.settingsAdd()); failure.textContent = text; failure.hidden = !text; }, 'btn-small');
     const setup = CardSettings.setupBar(env);
@@ -371,5 +451,5 @@ const CardPanels = (() => {
       }};
   }
 
-  return {Q, SIDE_NAME, TYPE_NAME, TYPE_MARK, NO_GUARANTEE, thumb, numberControl, textControl, selectControl, checkControl, typeForm, suitability, picker, layerList, engravingPanel, choices};
+  return {Q, SIDE_NAME, TYPE_NAME, TYPE_MARK, NO_GUARANTEE, thumb, numberControl, textControl, selectControl, checkControl, typeForm, suitability, picker, layerList, engravingPanel, choices, artworkColours};
 })();

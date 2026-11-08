@@ -90,6 +90,7 @@ function build(side, spec) {
   if (type === 'text') Object.assign(e, {text: {...TEXT_DEFAULT, ...(spec.text || {})}, width: 20, height: 5});
   else if (type === 'qr') Object.assign(e, {qr: spec.qr || {kind: 'link', fields: deep(QR_FIELDS.link), ecc: 'M'}, width: 18, height: 18});
   else if (type === 'image') Object.assign(e, {image: spec.image, width: spec.width, height: spec.height});
+  else if (type === 'vector') Object.assign(e, {vector: spec.vector, width: spec.width, height: spec.height, group: spec.group || null});
   else {
     const key = {shape: 'kind', frame: 'style', icon: 'name'}[type], chosen = (spec[type] || {})[key];
     const found = LIB[type].find((i) => i.name === chosen);
@@ -102,7 +103,7 @@ function build(side, spec) {
 function checkEdited(e) {
   if (!e.name.trim()) fail('give the element\'s name some text');
   number(e.x, 'the position x (mm)', -1000, 1000); number(e.y, 'the position y (mm)', -1000, 1000);
-  number(e.width, 'the width (mm)', 0.2, 500); number(e.height, 'the height (mm)', 0.2, 500);
+  number(e.width, 'the width (mm)', e.type === 'vector' ? 0.02 : 0.2, 500); number(e.height, 'the height (mm)', e.type === 'vector' ? 0.02 : 0.2, 500);
   if (e.type === 'text') number(e.text.height_mm, 'the letter height (mm)', 0.3, 500);
   if (['shape', 'frame', 'icon'].includes(e.type)) {
     const key = {shape: 'kind', frame: 'style', icon: 'name'}[e.type], found = LIB[e.type].find((i) => i.name === e[e.type][key]);
@@ -200,7 +201,7 @@ srv.apply = (b) => {
       els[els.indexOf(e)] = checkEdited(next);
     } else if (op === 'move') { for (const e of find(side, b.ids)) { e.x += b.dx; e.y += b.dy; } }
     else if (op === 'resize') {
-      const e = find(side, [b.id])[0], width = number(b.width ?? e.width, 'the width (mm)', 0.2, 500), height = number(b.height ?? e.height, 'the height (mm)', 0.2, 500);
+      const e = find(side, [b.id])[0], least = e.type === 'vector' ? 0.02 : 0.2, width = number(b.width ?? e.width, 'the width (mm)', least, 500), height = number(b.height ?? e.height, 'the height (mm)', least, 500);
       if ('x' in b) e.x = b.x;
       if ('y' in b) e.y = b.y;
       if (e.type === 'text') e.text.height_mm = Math.round(e.text.height_mm * width / e.width * 10000) / 10000;
@@ -238,6 +239,15 @@ srv.apply = (b) => {
         w.settings.push(set);
       }
       for (const e of find(side, b.ids)) e.settings_id = set.id;
+    } else if (op === 'recolour') {
+      const hex = /^#[0-9a-f]{6}$/i;
+      if (!b.reset && !hex.test(b.fill || '')) fail('a design colour is written like #c08040');
+      for (const e of find(side, b.ids)) { if (e.type !== 'vector') fail('only the parts of imported artwork have a design colour'); e.vector.fill = b.reset ? e.vector.source : b.fill.toLowerCase(); }
+    } else if (op === 'scale') {
+      const f = number(b.factor, 'the scale', 0.05, 20), chosen = find(side, b.ids);
+      const x0 = Math.min(...chosen.map((e) => e.x - e.width / 2)), x1 = Math.max(...chosen.map((e) => e.x + e.width / 2)), y0 = Math.min(...chosen.map((e) => e.y - e.height / 2)), y1 = Math.max(...chosen.map((e) => e.y + e.height / 2));
+      const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+      for (const e of chosen) { e.x = cx + (e.x - cx) * f; e.y = cy + (e.y - cy) * f; e.width *= f; e.height *= f; }
     } else fail('this edit is not known');
   }
   if (JSON.stringify(snapshot()) !== before) { w.undo.push(JSON.parse(before)); w.redo = []; w.rev += 1; }
@@ -286,6 +296,15 @@ function review(side) {
   if (!w.sides[side].elements.some((e) => !isEmpty(e))) problems.push(`There is nothing to engrave on the ${side}`);
   return {ready: !problems.length, problems, sets: Object.values(sets), elements: rows, empty: !rows.length};
 }
+srv.matches = (colours) => {
+  const items = srv.items().filter((i) => i.type === 'color');
+  const out = {available: items.length > 0, reason: items.length ? null : 'No colour is measured for this laser, lens and material yet.', close_delta_e: 25, matches: {}};
+  for (const c of colours) {
+    const near = items.map((i) => ({choice_id: i.id, label: i.label, swatch: i.swatch ? i.swatch.srgb : null, delta_e: srv.deltaE && srv.deltaE[c] ? (srv.deltaE[c][i.id] ?? 99) : 10})).sort((a, b) => a.delta_e - b.delta_e);
+    out.matches[c] = {best: near[0] || null, close: !!near[0] && near[0].delta_e <= 25, alternatives: near.slice(1, 3)};
+  }
+  return out;
+};
 srv.items = () => (srv.choices || []).flatMap((t) => t.groups.flatMap((g) => g.items));
 srv.setupView = () => {
   const s = srv.w.setup, device = named('device', s.device_id), material = named('material', s.material_id);
@@ -296,7 +315,7 @@ srv.choicesAnswer = () => ({setup: srv.setupView(), types: srv.choices || [['col
   .map(([type, label]) => ({type, label, known: false, reason: `Nothing of type ${type} has been measured for this laser, lens and material.`, groups: []}))});
 function elementView(e, els) {
   const out = deep(e), warnings = [];
-  out.d = 'M0 0L1 0L1 1Z'; out.bounds = [e.x - e.width / 2, e.y - e.height / 2, e.x + e.width / 2, e.y + e.height / 2]; out.empty = isEmpty(e);
+  out.d = 'M0 0L1 0L1 1Z'; if (e.type === 'vector') out.color = e.vector.fill; out.bounds = [e.x - e.width / 2, e.y - e.height / 2, e.x + e.width / 2, e.y + e.height / 2]; out.empty = isEmpty(e);
   out.problems = isEmpty(e) ? ['Nothing to engrave: the text is empty'] : [];
   if (e.type === 'qr') {
     const modules = 25, moduleMm = e.width / modules, quiet = els.some((o) => o !== e && !isEmpty(o)) ? 1.5 : 10;
@@ -330,7 +349,7 @@ const reply = (status, json, type) => ({ok: status < 300, status, headers: {get:
   json: async () => json, blob: async () => ({size: 10}), text: async () => ''});
 ctx.fetch = async (url, opts = {}) => {
   const method = opts.method || 'GET', path = String(url).split('?')[0], raw = opts.body;
-  const body = typeof raw === 'string' ? JSON.parse(raw) : raw instanceof FormData ? {side: raw.get('side'), picture: raw.get('picture') && raw.get('picture').name} : null;
+  const body = typeof raw === 'string' ? JSON.parse(raw) : raw instanceof FormData ? {side: raw.get('side'), ...(raw.get('picture') ? {picture: raw.get('picture').name} : {picture: null}), ...(raw.get('artwork') ? {artwork: raw.get('artwork').name} : {})} : null;
   log.push({method, path, url: String(url), body});
   await Promise.resolve();
   const refused = srv.refuse.findIndex((r) => r.when(method, path, body));
@@ -356,6 +375,24 @@ ctx.fetch = async (url, opts = {}) => {
       const e = build(body.side, {type: 'image', name: stem, width: 30, height: 15, image: {name: stem, size: [200, 100], auto_threshold: true, threshold: 128, invert: false, treatment: 'none',
         detail: 50, strength: 60, min_feature_mm: 0.15, origin: 'import', prompt: null, engrave: 'vector'}});
       srv.w.sides[body.side].elements.push(e); srv.w.undo.push(snapshot()); return reply(200, srv.view([e.id]));
+    }
+    if (method === 'GET' && path === '/api/card-works/7/colour-matches') {
+      const wanted = decodeURIComponent((String(url).split('colours=')[1] || '')).split(',').filter(Boolean);
+      return reply(200, srv.matches(wanted));
+    }
+    if (method === 'POST' && path === '/api/card-works/7/vector') {
+      const stem = body.artwork.replace(/\.[^.]+$/, ''), kind = /\.ai$/i.test(body.artwork) ? 'ai' : 'svg';
+      if (srv.vectorFile && srv.vectorFile.fail) fail(srv.vectorFile.fail);
+      const parts = (srv.vectorFile && srv.vectorFile.parts) || [['body', '#a05a2c', 20, 12, 40, 26], ['ear', '#a05a2c', 6, 6, 30, 18], ['eye', '#101010', 4, 4, 44, 24]];
+      const label = 'gv' + srv.w.undo.length, ids = [];
+      for (const [name, fill, width, height, x, y] of parts) {
+        const e = build(body.side, {type: 'vector', name, width, height, x, y, group: parts.length > 1 ? label : null, vector: {artwork: 'vector-0123456789ab.json', part: ids.length, fill, source: fill, file: body.artwork, kind}});
+        srv.w.sides[body.side].elements.push(e); ids.push(e.id);
+      }
+      srv.w.undo.push(snapshot());
+      const report = {kind, parts: parts.length, colours: new Set(parts.map((q) => q[1])).size, merged: 0, dropped: 0, background: false, notes: (srv.vectorFile && srv.vectorFile.notes) || [],
+        size_mm: {width: 30, height: 20}, file: body.artwork, engraving: (srv.vectorFile && srv.vectorFile.engraving) || {available: false, reason: 'No engraving colour is measured for this card yet.', assigned: 0, colours: 2}};
+      return reply(200, {...srv.view(ids), import: report});
     }
     if (method === 'POST' && path === '/api/card-works/7/generate') {
       if (!srv.generation.available) fail(srv.generation.reason);
@@ -766,6 +803,26 @@ def test_layers_are_listed_top_first_and_reordered_grouped_and_given_settings(tm
     assert out["mixed"] == {"value": "__mixed", "options": [["__mixed", True, "Mixed: choose to set all"], ["", False, "Default (Engraving 1)"], ["1", False, "Engraving 1"], ["2", False, "Engraving 2"]]}
     assert out["assignMany"] == {"side": "front", "op": "assign_settings", "ids": ["e3", "e1"], "settings_id": 1}   # in the order of the layers
     assert out["after"] == {"value": "1", "shown": [["e3", 1], ["e1", 1], ["e2", None]]}
+
+
+@node
+def test_a_layer_row_has_a_delete_button_beside_the_move_buttons(tmp_path):
+    """ui-studio-3 REQ-001/002: every row of the layer list can delete its own layer, in the same row as up and down, and a deleted layer is gone."""
+    out = run(tmp_path, """
+  await open();
+  await press('Text'); await saved(); await press('QR code'); await saved(); await press('Shape'); await press('Add Rectangle'); await saved();
+  const row = root.querySelectorAll('.lst-row').find((r) => r.textContent.includes('QR code 1'));
+  out.actions = row.querySelectorAll('button').filter((b) => !b.classList.contains('cw-layer')).map((b) => b.getAttribute('aria-label'));
+  out.before = layerNames();
+  await press('Delete QR code 1'); await saved();
+  out.post = lastPost();
+  out.after = layerNames();
+  out.gone = srv.w.sides.front.elements.map((e) => e.id);
+""")
+    assert out["actions"] == ["Move QR code 1 forward", "Move QR code 1 backward", "Delete QR code 1"]
+    assert out["before"] == ["Shape 1", "QR code 1", "Text 1"]
+    assert out["post"] == {"side": "front", "op": "delete", "ids": ["e2"]}
+    assert out["after"] == ["Shape 1", "Text 1"] and out["gone"] == ["e1", "e3"]
 
 
 @node

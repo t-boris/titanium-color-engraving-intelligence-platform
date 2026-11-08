@@ -80,6 +80,8 @@ DATA_TAILS = {
     "the sign-in service answered with an error: ": "the OAuth error of the sign-in service, as the browser brought it (cloud_session.py)",
     "the sign-in service refused the code: ": "the OAuth error of the token endpoint (cloud_session.py)",
     "the sign-in service did not renew the sign-in: ": "the OAuth error of the token endpoint (cloud_session.py)",
+    "nothing to engrave was found in this file: ": "the first note of the SVG or Illustrator reader about what it could not carry over (card_vector.py): "
+                                                   "an English sentence of this application that names the file's own content, shown as it is",
 }
 # A handler that passes on the whole message of a caught exception that is not a user error: (file, function) -> the
 # module and class whose raised messages reach the operator through it.

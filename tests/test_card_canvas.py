@@ -522,6 +522,54 @@ def test_a_click_selects_shift_or_cmd_toggles_a_group_goes_together_and_empty_sp
 
 
 @node
+def test_a_double_click_picks_one_part_out_of_its_group_and_the_other_parts_stay_where_they_were(tmp_path):
+    """feature-3 REQ-003: the parts of an imported artwork are a group, selected as a whole by a click; a double click takes the part under the pointer alone."""
+    got = run(tmp_path, VIEW + """
+  const t = mount(view);
+  const rows = {};
+  t.click(70, 45); rows.group = t.take();
+  t.fire('dblclick', 70, 45); rows.alone = [t.take(), t.canvas.getSelection(), t.group('g1').getAttribute('class').includes('cc-selected'), t.group('g2').getAttribute('class').includes('cc-selected')];
+  t.fire('dblclick', 70, 45); rows.again = t.take();                                // already the only one selected: nothing to report
+  t.fire('dblclick', 78, 45); rows.other = [t.take(), t.canvas.getSelection()];
+  t.fire('dblclick', 5, 5); rows.empty = [t.take(), t.canvas.getSelection()];       // empty space changes nothing
+  t.click(30, 20); t.take();
+  t.fire('dblclick', 30, 20); rows.plain = t.take();                                // an element without a group: nothing new either
+  t.click(70, 45); t.take();                                                         // a click on a member takes the whole group again
+  t.drag([70, 45], [70, 43]); rows.moved = t.take();                                // and a drag moves it whole
+  out.rows = rows;
+""")
+    rows = got["rows"]
+    assert rows["group"] == [["onSelect", ["g1", "g2"]]]
+    assert rows["alone"] == [[["onSelect", ["g1"]]], ["g1"], True, False] and rows["again"] == []
+    assert rows["other"] == [[["onSelect", ["g2"]]], ["g2"]] and rows["empty"] == [[], ["g2"]] and rows["plain"] == []
+    assert rows["moved"] == [["onMove", ["g1", "g2"], 0, -2]]
+
+
+@node
+def test_a_part_of_artwork_is_taken_on_its_ink_resizes_freely_and_may_become_a_hairline(tmp_path):
+    got = run(tmp_path, """
+  const part = el('p1', 'vector', 40, 30, 20, 10, {d: rectD(30, 25, 50, 35) + ' ' + rectD(34, 28, 46, 32)});     // a ring: hollow in the middle
+  const thin = el('p2', 'vector', 70, 30, 0.2, 12);
+  const under = el('under', 'shape', 40, 30, 10, 10);
+  const t = mount({elements: [under, part, thin]});
+  const rows = {};
+  t.click(40, 30); rows.hollow = t.take();                                           // the middle of the ring: what lies beneath
+  t.click(31, 30); rows.ink = t.take();                                              // its ink
+  t.canvas.setSelection(['p1']);
+  rows.handles = t.handles();                                                        // edges as well as corners: no fixed proportions
+  t.canvas.setSelection(['p2']);
+  const before = M.handlePositions(thin, 3);
+  t.drag([70.1, 36], [70.1, 33]);                                                    // the bottom edge pulled up by 3 mm
+  rows.thin = t.take();
+  out.rows = rows;
+""")
+    rows = got["rows"]
+    assert rows["hollow"] == [["onSelect", ["under"]]] and rows["ink"] == [["onSelect", ["p1"]]]
+    assert {"n", "s", "e", "w", "nw", "ne", "sw", "se"} <= set(rows["handles"])
+    assert rows["thin"] and rows["thin"][-1][0] == "onResize" and rows["thin"][-1][2]["width"] == pytest.approx(0.2, abs=0.01), "a hairline stays a hairline when it is stretched by its edge"
+
+
+@node
 def test_pressing_a_hollow_frame_in_its_middle_picks_what_lies_beneath(tmp_path):
     got = run(tmp_path, """
   const inner = el('inner', 'shape', 40, 30, 10, 10);
@@ -911,12 +959,12 @@ def test_destroy_removes_every_listener_and_the_canvas_and_later_events_do_nothi
   out.balanced = added.every(([target, type, fn]) => removed.some(([r, rt, rf]) => r === target && rt === type && rf === fn));
   out.gone = [t.host.children.length, t.stage.parentNode === null];
   t.canvas.destroy();
-  t.click(30, 20); t.drag([30, 20], [45, 20]); t.key('Delete'); t.key('z', {ctrlKey: true}); t.key('Escape');
+  t.click(30, 20); t.drag([30, 20], [45, 20]); t.fire('dblclick', 70, 45); t.key('Delete'); t.key('z', {ctrlKey: true}); t.key('Escape');
   t.stage.dispatch('wheel', {ctrlKey: true, deltaY: -100, preventDefault() {}});
   t.canvas.show(view); t.canvas.setSelection(['a']); t.canvas.fit(); t.canvas.setZoom(2);
   out.calls = t.take();
 """)
-    assert got["types"] == ["keydown", "lostpointercapture", "pointercancel", "pointerdown", "pointermove", "pointerup", "wheel"]
+    assert got["types"] == ["dblclick", "keydown", "lostpointercapture", "pointercancel", "pointerdown", "pointermove", "pointerup", "wheel"]
     assert got["balanced"] is True
     assert got["gone"] == [0, True]
     assert got["calls"] == []                                                          # even a listener the page failed to remove does nothing

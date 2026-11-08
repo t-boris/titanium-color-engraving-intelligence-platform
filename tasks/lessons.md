@@ -839,3 +839,17 @@ again in the next commit). Add the exact files a tool or an edit produced; check
   on every pull request and every push to main (11 runs in one day), after the whole suite had already passed locally.
 - Rule: the local full suite is the release gate; CI is manual-only (main 761fee0). Do not open pull requests, push branches or start workflows to get checks, and never wait for them.
   Before relying on any automatic job, read its triggers, matrix and duration, and say what it costs. When the operator says stop, cancel first, diagnose second.
+
+## A reader is not done until it has read the operator's real files, with a clock running (2026-11-08, vector import)
+- What happened: the unit tests of the SVG and Illustrator readers passed with boxes and curves made by hand. The first real files found two faults that no synthetic test showed:
+  a CorelDRAW business card of 927 pieces took minutes because same-coloured neighbours were united one by one (quadratic), and the outlines of a real logo, rounded to a tenth of
+  a micron, crossed themselves; the union then raised a TopologyException after the import had been saved, so every later view of the card was an HTTP 500.
+- Rules: (1) run each new reader over every file of the kind in `~/Downloads` (read only, never committed) with a per-file time limit and print time, parts and notes;
+  (2) unite a run of shapes once, never shape by shape; (3) geometry read back from storage is repaired (`make_valid`) before it is used, and a damaged piece is one problem of that
+  piece, never an error of the whole view; (4) build the answer (the view) before saving, so that a file that cannot be drawn is refused and leaves nothing in the card;
+  (5) every refusal says what the operator can do (save the Illustrator file with "Create PDF Compatible File", convert text to outlines, use fewer colours).
+- Also: the fake server of a node UI test must accept the new upload field without changing what the old uploads post (the picture test compares the whole body).
+
+## 2026-11-08: a new module is checked by the static registries before the full suite
+- Miss: the full suite (7 minutes) was the first thing to show that a new `{namespace}name` string looks like a URL to `test_local_operation` and that a new message ending in `: {data}` must be classified in `test_i18n_coverage` (`DATA_TAILS`).
+- Rule: after writing a new server module run `tests/test_local_operation.py tests/test_i18n_coverage.py tests/test_ui_files.py` at once (a few seconds), then register what they ask for with the reason in the registry itself.
